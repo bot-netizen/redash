@@ -66,12 +66,18 @@ export function tooBigToExport({ width, height, widgets }) {
   );
 }
 
-function checkSize(element) {
-  const reason = tooBigToExport({
+// The same question about a dashboard on the page. Exported so the button
+// can ask it before it starts anything, and answer at once.
+export function exportSizeProblem(element) {
+  return tooBigToExport({
     width: element.scrollWidth,
     height: element.scrollHeight,
     widgets: element.querySelectorAll(".react-grid-item").length,
   });
+}
+
+function checkSize(element) {
+  const reason = exportSizeProblem(element);
   if (reason) {
     throw new TooBigToExport(reason);
   }

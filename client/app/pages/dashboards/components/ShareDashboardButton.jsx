@@ -4,13 +4,14 @@ import { get } from "lodash";
 import Button from "antd/lib/button";
 import Dropdown from "antd/lib/dropdown";
 import Menu from "antd/lib/menu";
+import Modal from "antd/lib/modal";
 import ShareAltOutlinedIcon from "@ant-design/icons/ShareAltOutlined";
 import LinkOutlinedIcon from "@ant-design/icons/LinkOutlined";
 import FilePdfOutlinedIcon from "@ant-design/icons/FilePdfOutlined";
 import FileImageOutlinedIcon from "@ant-design/icons/FileImageOutlined";
 import PlainButton from "@/components/PlainButton";
 import notification from "@/services/notification";
-import { renderDashboardToPng, renderDashboardToPdf, downloadBlob, filenameFor } from "../export";
+import { exportSizeProblem, renderDashboardToPng, renderDashboardToPdf, downloadBlob, filenameFor } from "../export";
 
 /*
   The dashboard's share surface.
@@ -31,6 +32,14 @@ export default function ShareDashboardButton({ dashboard, getExportTarget, onSho
       const element = getExportTarget();
       if (!element) {
         notification.error("Nothing to export", "The dashboard is still loading.");
+        return;
+      }
+      // Asked before anything starts, and answered where the person is
+      // looking. As a corner notice after a spinner, the answer took 100ms
+      // to arrive and 3s to vanish, and read as the button being broken.
+      const tooBig = exportSizeProblem(element);
+      if (tooBig) {
+        Modal.warning({ title: "Too big to export", content: tooBig, okText: "OK" });
         return;
       }
       setBusy(kind);
@@ -57,16 +66,21 @@ export default function ShareDashboardButton({ dashboard, getExportTarget, onSho
           );
         }
         if (missing.length > 0) {
-          notification.warning("Exported, with something missing", `${missing.join(" ")} Everything else is included.`);
+          notification.warning(
+            "Exported, with something missing",
+            `${missing.join(" ")} Everything else is included.`,
+            { duration: 10 }
+          );
         }
       } catch (error) {
         if (error && error.name === "TooBigToExport") {
-          notification.warning("Too big to export", error.message);
+          Modal.warning({ title: "Too big to export", content: error.message, okText: "OK" });
           return;
         }
         notification.error(
           `Could not export as ${extension.toUpperCase()}`,
-          (error && error.message) || "The dashboard could not be captured."
+          (error && error.message) || "The dashboard could not be captured.",
+          { duration: 10 }
         );
       } finally {
         setBusy(null);
@@ -122,9 +136,12 @@ export default function ShareDashboardButton({ dashboard, getExportTarget, onSho
         </Menu>
       }
     >
-      <Button className="m-l-5" data-test="ShareDashboardButton" loading={!!busy}>
-        {!busy && <ShareAltOutlinedIcon aria-hidden="true" />}
-        <span className="m-l-5">Share</span>
+      {/* Words rather than antd's loading icon. An export takes under a second,
+          and the icon spent it inside its own entrance animation -- a clipped
+          quarter arc that looked broken rather than busy. */}
+      <Button className="m-l-5" data-test="ShareDashboardButton" disabled={!!busy} aria-busy={!!busy}>
+        <ShareAltOutlinedIcon aria-hidden="true" />
+        <span className="m-l-5">{busy ? "Exporting…" : "Share"}</span>
       </Button>
     </Dropdown>
   );
