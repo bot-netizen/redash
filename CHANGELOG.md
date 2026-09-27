@@ -13,9 +13,18 @@ or running, with a Harvest button per source. The scheduled harvest and the
 buttons use the same queue entry per source, so a harvest already waiting is
 never queued twice.
 
-**Dashboard panels no longer show the query's description.** Queries are
-described mostly for MCP; on a panel the description sat between the title
-and the chart. A visualization's own description still shows.
+**A panel shows its chart's description, not its query's.** The chart's
+description is written for the chart, so it now sits under the panel's title
+as text, at most two lines, with the rest on hover when it is cut. Before, it
+was an "i" mark nobody on a phone, a wall screen or an exported picture could
+read. The query's description, written mostly for MCP, is no longer shown on
+panels.
+
+**MCP reads charts.** `find_queries` and `find_dashboards` search charts'
+names and descriptions, and list each chart in one line: its kind, which
+columns it plots, its description, and on a dashboard the query behind it.
+A chart on a data source the user cannot read is left out, and no longer
+makes its dashboard match a search either.
 
 **"Too big to export" is a dialog.** A dashboard past the one-page limit
 says so where you are looking, instead of a spinner and a notice in the
