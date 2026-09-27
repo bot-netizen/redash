@@ -16,6 +16,7 @@ from sqldesk.monitor import get_overview, rq_status
 from sqldesk.permissions import require_super_admin
 from sqldesk.serializers import QuerySerializer
 from sqldesk.tasks import Job, Queue
+from sqldesk.tasks.catalog import enqueue_harvest, harvest_states
 from sqldesk.tasks.queries.maintenance import cleanup_events, cleanup_query_results
 from sqldesk.utils import json_loads
 
@@ -206,6 +207,103 @@ def catalog_tables():
             ]
         }
     )
+
+
+@routes.route("/api/admin/catalog/sources", methods=["GET"])
+@login_required
+@require_super_admin
+def catalog_sources():
+    """
+    Every data source, with what the catalog holds for it: how many tables,
+    when it was last harvested, and whether a harvest is waiting or running.
+    A source with no tables has never been harvested -- or its schema came
+    back empty, which is worth harvesting again anyway.
+    """
+    sources = models.DataSource.query.filter(models.DataSource.org == current_org).order_by(models.DataSource.name)
+    sources = sources.all()
+    held = dict(
+        (row[0], (row[1], row[2]))
+        for row in models.db.session.query(
+            models.CatalogTable.data_source_id,
+            models.db.func.count(),
+            models.db.func.max(models.CatalogTable.harvested_at),
+        )
+        .filter(models.CatalogTable.org == current_org)
+        .group_by(models.CatalogTable.data_source_id)
+    )
+    states = harvest_states(source.id for source in sources)
+
+    return json_response(
+        {
+            "sources": [
+                {
+                    "id": source.id,
+                    "name": source.name,
+                    "type": source.type,
+                    "paused": bool(source.paused),
+                    "tables": held.get(source.id, (0, None))[0],
+                    "harvested_at": held.get(source.id, (0, None))[1],
+                    "state": states.get(source.id),
+                }
+                for source in sources
+            ]
+        }
+    )
+
+
+@routes.route("/api/admin/catalog/harvest", methods=["POST"])
+@login_required
+@require_super_admin
+def harvest_catalog_now():
+    """
+    Harvest now rather than at the next scheduled run.
+
+    `{"data_source_id": 3}` harvests one source; `{"only": "unharvested"}`
+    only the sources with nothing in the catalog yet, which is what a new
+    data source needs without re-reading every other one; `{}` all of them.
+    Each source is its own job on the `schemas` queue, as on the schedule.
+    """
+    body = request.get_json(silent=True) or {}
+    sources = models.DataSource.query.filter(models.DataSource.org == current_org)
+
+    source_id = body.get("data_source_id")
+    if source_id is not None:
+        sources = sources.filter(models.DataSource.id == source_id)
+    elif body.get("only") == "unharvested":
+        # NOT IN over a list holding a NULL matches nothing at all, so the
+        # NULLs go before the list is used.
+        harvested = models.db.session.query(models.CatalogTable.data_source_id).filter(
+            models.CatalogTable.org == current_org, models.CatalogTable.data_source_id.isnot(None)
+        )
+        sources = sources.filter(~models.DataSource.id.in_(harvested.subquery()))
+    elif body.get("only") is not None:
+        abort(400, message='`only` can be "unharvested", or left out for every data source.')
+
+    sources = sources.all()
+    if source_id is not None and not sources:
+        abort(404, message="No such data source.")
+
+    queued, skipped = [], []
+    for source in sources:
+        reason = enqueue_harvest(source)
+        if reason:
+            skipped.append({"id": source.id, "name": source.name, "reason": reason})
+        else:
+            queued.append(source.id)
+
+    record_event(
+        current_org,
+        current_user._get_current_object(),
+        {
+            "action": "harvest",
+            "object_type": "catalog",
+            "object_id": source_id,
+            "queued": queued,
+            "only": body.get("only"),
+        },
+    )
+
+    return json_response({"queued": queued, "skipped": skipped})
 
 
 @routes.route("/api/admin/catalog/tables/<int:table_id>", methods=["POST"])

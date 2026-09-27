@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Alert from "antd/lib/alert";
 import Button from "antd/lib/button";
 import Input from "antd/lib/input";
@@ -11,6 +11,8 @@ import Tag from "antd/lib/tag";
 import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import Layout from "@/components/admin/Layout";
 import HelpTrigger from "@/components/HelpTrigger";
+import TimeAgo from "@/components/TimeAgo";
+import Tooltip from "@/components/Tooltip";
 import { axios } from "@/services/axios";
 import notification from "@/services/notification";
 import routes from "@/services/routes";
@@ -194,6 +196,197 @@ function Measures({ sourceId }) {
   );
 }
 
+/*
+  Harvesting now rather than at the next scheduled run: for a data source
+  added this morning, or a schema that changed an hour ago.
+
+  "Only what has not been harvested" is the default, because it is the cheap
+  answer to the common case: a source with nothing in the catalog yet, filled
+  without re-reading every other one. Each source is its own job on the
+  worker, so the page asks the server what is still waiting rather than
+  guessing, and stops asking once nothing is.
+*/
+function plural(count, word) {
+  return `${count} ${word}${count === 1 ? "" : "s"}`;
+}
+
+function useHarvest(onFinished) {
+  const [sources, setSources] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const loadSources = useCallback(
+    () =>
+      axios
+        .get("/api/admin/catalog/sources")
+        .then((data) => setSources(data.sources))
+        .catch(() => {}),
+    []
+  );
+
+  useEffect(() => {
+    loadSources();
+  }, [loadSources]);
+
+  const inFlight = sources.some((source) => source.state);
+
+  useEffect(() => {
+    if (!inFlight) {
+      return undefined;
+    }
+    const timer = setInterval(loadSources, 3000);
+    return () => clearInterval(timer);
+  }, [inFlight, loadSources]);
+
+  // The moment the last harvest in flight finishes, the tables it wrote are
+  // worth showing -- without anybody pressing Refresh to find out.
+  const wasInFlight = useRef(false);
+  useEffect(() => {
+    if (wasInFlight.current && !inFlight) {
+      notification.success("Harvest finished.");
+      onFinished();
+    }
+    wasInFlight.current = inFlight;
+  }, [inFlight, onFinished]);
+
+  const harvest = useCallback(
+    (body) => {
+      setBusy(true);
+      return axios
+        .post("/api/admin/catalog/harvest", body)
+        .then(({ queued, skipped }) => {
+          if (queued.length) {
+            notification.success(`Harvesting ${plural(queued.length, "data source")}.`);
+          }
+          if (skipped.length) {
+            notification.info(
+              "Not harvested",
+              skipped.map((source) => `${source.name}: ${source.reason}`).join(". ") + "."
+            );
+          }
+          if (!queued.length && !skipped.length) {
+            notification.info("Every data source is already in the catalog.");
+          }
+          return loadSources();
+        })
+        .catch(() => notification.error("Could not start the harvest."))
+        .finally(() => setBusy(false));
+    },
+    [loadSources]
+  );
+
+  // Not harvested: nothing in the catalog, not paused, and not already on its way.
+  const unharvested = sources.filter((source) => !source.tables && !source.paused && !source.state);
+
+  return { sources, busy, inFlight, unharvested, harvest };
+}
+
+function HarvestButton({ harvesting, sourceId }) {
+  const { sources, busy, unharvested, harvest } = harvesting;
+
+  if (sourceId) {
+    const source = sources.find((candidate) => candidate.id === sourceId);
+    return (
+      <Button
+        size="small"
+        type="primary"
+        loading={busy}
+        disabled={!source || source.paused || !!source.state}
+        onClick={() => harvest({ data_source_id: sourceId })}
+      >
+        {source && source.state ? "Harvesting…" : `Harvest ${source ? source.name : "this data source"}`}
+      </Button>
+    );
+  }
+
+  const button = (
+    <Button
+      size="small"
+      type="primary"
+      loading={busy}
+      disabled={!unharvested.length}
+      onClick={() => harvest({ only: "unharvested" })}
+    >
+      {unharvested.length ? `Harvest ${plural(unharvested.length, "new data source")}` : "Harvest new data sources"}
+    </Button>
+  );
+  if (unharvested.length) {
+    return button;
+  }
+  return (
+    <Tooltip title="Every data source is in the catalog already. Pick one to harvest it again, or use the Data sources tab.">
+      {/* A disabled button swallows the hover its tooltip needs. */}
+      <span className="catalog-harvest-disabled">{button}</span>
+    </Tooltip>
+  );
+}
+
+function Sources({ harvesting }) {
+  const { sources, busy, harvest } = harvesting;
+
+  const columns = [
+    {
+      title: "Data source",
+      dataIndex: "name",
+      render: (name, row) => (
+        <div>
+          <div>{name}</div>
+          <div className="catalog-muted">{row.type}</div>
+        </div>
+      ),
+    },
+    {
+      title: "In the catalog",
+      dataIndex: "tables",
+      width: 150,
+      align: "right",
+      render: (tables) => (tables ? plural(tables, "table") : <span className="catalog-muted">not harvested</span>),
+    },
+    {
+      title: "Last harvested",
+      dataIndex: "harvested_at",
+      width: 170,
+      render: (when) => (when ? <TimeAgo date={when} /> : <span className="catalog-muted">—</span>),
+    },
+    {
+      title: "",
+      dataIndex: "state",
+      width: 140,
+      align: "right",
+      render: (state, row) => {
+        if (state === "running") {
+          return <Tag color="blue">Harvesting…</Tag>;
+        }
+        if (state === "queued") {
+          return <Tag>Waiting</Tag>;
+        }
+        if (row.paused) {
+          return <Tag>Paused</Tag>;
+        }
+        return (
+          <Button size="small" onClick={() => harvest({ data_source_id: row.id })}>
+            Harvest
+          </Button>
+        );
+      },
+    },
+  ];
+
+  return (
+    <div>
+      <p className="catalog-muted">
+        Harvesting reads each data source&apos;s schema and the saved SQL that ran against it recently. It happens on a
+        schedule; harvest here when you would rather not wait. It never touches a description somebody wrote.
+      </p>
+      <div className="catalog-controls">
+        <Button size="small" loading={busy} onClick={() => harvest({})}>
+          Harvest every data source again
+        </Button>
+      </div>
+      <Table dataSource={sources} columns={columns} rowKey="id" size="small" pagination={false} />
+    </div>
+  );
+}
+
 export default function Catalog() {
   const [tables, setTables] = useState([]);
   const [sources, setSources] = useState([]);
@@ -239,6 +432,7 @@ export default function Catalog() {
   }, []);
 
   const missing = useMemo(() => tables.filter((table) => !table.description).length, [tables]);
+  const harvesting = useHarvest(load);
 
   const columns = [
     {
@@ -307,6 +501,7 @@ export default function Catalog() {
           <Button size="small" onClick={load} loading={loading}>
             Refresh
           </Button>
+          <HarvestButton harvesting={harvesting} sourceId={sourceId} />
           {/*
             A plain link rather than a fetch: the browser handles the file,
             the session cookie authenticates it, and nothing has to hold the
@@ -337,8 +532,24 @@ export default function Catalog() {
               <Alert
                 type="info"
                 showIcon
-                message="Nothing harvested yet"
-                description="The catalog fills on a schedule, or immediately with `manage ai harvest`."
+                message={harvesting.inFlight ? "Harvesting" : "Nothing harvested yet"}
+                description={
+                  harvesting.inFlight
+                    ? "The tables appear here as soon as it finishes."
+                    : "The catalog fills on a schedule. Harvest now to fill it straight away."
+                }
+                action={
+                  !harvesting.inFlight && (
+                    <Button
+                      size="small"
+                      type="primary"
+                      loading={harvesting.busy}
+                      onClick={() => harvesting.harvest({ only: "unharvested" })}
+                    >
+                      Harvest now
+                    </Button>
+                  )
+                }
               />
             )}
 
@@ -360,6 +571,9 @@ export default function Catalog() {
           </Tabs.TabPane>
           <Tabs.TabPane tab="Measures" key="measures">
             <Measures sourceId={sourceId} />
+          </Tabs.TabPane>
+          <Tabs.TabPane tab="Data sources" key="sources">
+            <Sources harvesting={harvesting} />
           </Tabs.TabPane>
         </Tabs>
       </div>

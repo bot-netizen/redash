@@ -6,8 +6,10 @@ from unittest import mock
 import yaml
 from rq.exceptions import NoSuchJobError
 
-from sqldesk import models, utils
+from sqldesk import models, rq_redis_connection, utils
 from sqldesk.models import Event, db
+from sqldesk.tasks import Job
+from sqldesk.tasks.catalog import harvest_catalog, harvest_job_id
 from sqldesk.tasks.queries.maintenance import cleanup_events, cleanup_query_results
 from tests import BaseTestCase
 
@@ -575,6 +577,126 @@ class TestMeasureReview(BaseTestCase):
         self.assertEqual(400, rv.status_code)
         db.session.expire_all()
         self.assertEqual(models.MEASURE_PROPOSED, models.CatalogMeasure.query.get(measure.id).status)
+
+
+class TestCatalogHarvest(BaseTestCase):
+    """
+    Harvesting from the Catalog page rather than waiting for the schedule --
+    and, for a data source just added, harvesting only what has nothing in
+    the catalog yet instead of re-reading every other source as well.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.admin = self.factory.create_admin()
+
+    def _catalogued(self, source):
+        db.session.add(
+            models.CatalogTable(
+                org=self.factory.org, data_source_id=source.id, name="orders", harvested_at=db.func.now()
+            )
+        )
+        db.session.commit()
+
+    def _forget_jobs(self, *sources):
+        """RQ's Redis is not flushed between tests, and ids restart with the database."""
+        for source in sources:
+            self.addCleanup(self._delete_job, harvest_job_id(source.id))
+
+    def _delete_job(self, job_id):
+        try:
+            Job.fetch(job_id, connection=rq_redis_connection).delete()
+        except NoSuchJobError:
+            pass
+
+    def _harvest(self, body, user=None):
+        return self.make_request("post", "/api/admin/catalog/harvest", data=body, user=user or self.admin, org=False)
+
+    def test_it_needs_a_super_admin(self):
+        self.assertEqual(403, self._harvest({}, user=self.factory.user).status_code)
+        self.assertEqual(
+            403, self.make_request("get", "/api/admin/catalog/sources", user=self.factory.user, org=False).status_code
+        )
+
+    def test_only_unharvested_leaves_sources_with_a_catalog_alone(self):
+        old = self.factory.data_source
+        self._catalogued(old)
+        new = self.factory.create_data_source(name="Just added")
+
+        with mock.patch.object(harvest_catalog, "delay") as delay:
+            rv = self._harvest({"only": "unharvested"})
+
+        self.assertEqual(200, rv.status_code)
+        self.assertEqual([new.id], rv.json["queued"])
+        self.assertEqual([new.id], [call.args[0] for call in delay.call_args_list])
+
+    def test_left_out_it_harvests_every_source(self):
+        self._catalogued(self.factory.data_source)
+        new = self.factory.create_data_source(name="Just added")
+
+        with mock.patch.object(harvest_catalog, "delay"):
+            rv = self._harvest({})
+
+        self.assertEqual(sorted([self.factory.data_source.id, new.id]), sorted(rv.json["queued"]))
+
+    def test_one_source_can_be_asked_for(self):
+        other = self.factory.create_data_source(name="Other")
+
+        with mock.patch.object(harvest_catalog, "delay"):
+            rv = self._harvest({"data_source_id": other.id})
+
+        self.assertEqual([other.id], rv.json["queued"])
+
+    def test_another_organizations_source_is_not_found(self):
+        theirs = self.factory.create_data_source(name="Theirs", org=self.factory.create_org())
+
+        with mock.patch.object(harvest_catalog, "delay") as delay:
+            rv = self._harvest({"data_source_id": theirs.id})
+
+        self.assertEqual(404, rv.status_code)
+        self.assertFalse(delay.called)
+
+    def test_a_paused_source_says_why_it_was_skipped(self):
+        self.factory.data_source.pause("maintenance")
+
+        with mock.patch.object(harvest_catalog, "delay") as delay:
+            rv = self._harvest({"data_source_id": self.factory.data_source.id})
+
+        self.assertEqual([], rv.json["queued"])
+        self.assertEqual("paused", rv.json["skipped"][0]["reason"])
+        self.assertFalse(delay.called)
+
+    def test_an_unknown_only_is_refused(self):
+        self.assertEqual(400, self._harvest({"only": "stale"}).status_code)
+
+    def test_clicking_twice_queues_it_once(self):
+        # A real job, not a mock: what is under test is that the job queued
+        # the first time is found the second.
+        source = self.factory.data_source
+        self._forget_jobs(source)
+
+        first = self._harvest({"data_source_id": source.id})
+        second = self._harvest({"data_source_id": source.id})
+
+        self.assertEqual([source.id], first.json["queued"])
+        self.assertEqual([], second.json["queued"])
+        self.assertEqual("already queued", second.json["skipped"][0]["reason"])
+
+    def test_the_sources_say_what_is_held_and_what_is_waiting(self):
+        held = self.factory.data_source
+        self._catalogued(held)
+        waiting = self.factory.create_data_source(name="Waiting")
+        self._forget_jobs(waiting)
+        self._harvest({"data_source_id": waiting.id})
+
+        rv = self.make_request("get", "/api/admin/catalog/sources", user=self.admin, org=False)
+
+        by_id = {source["id"]: source for source in rv.json["sources"]}
+        self.assertEqual(1, by_id[held.id]["tables"])
+        self.assertIsNotNone(by_id[held.id]["harvested_at"])
+        self.assertIsNone(by_id[held.id]["state"])
+        self.assertEqual(0, by_id[waiting.id]["tables"])
+        self.assertEqual("queued", by_id[waiting.id]["state"])
 
 
 class TestCatalogDownload(BaseTestCase):

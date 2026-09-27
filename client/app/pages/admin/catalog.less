@@ -36,6 +36,15 @@
     margin-top: 4px;
   }
 
+  .catalog-harvest-disabled {
+    display: inline-block;
+    cursor: not-allowed;
+
+    .ant-btn[disabled] {
+      pointer-events: none;
+    }
+  }
+
   .catalog-download {
     // The anchor wraps the button, so it must not add link underlines of
     // its own around it.

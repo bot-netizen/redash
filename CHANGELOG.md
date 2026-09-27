@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.6.0-rc.3 (not released yet)
+
+Fixes found testing rc.2.
+
+**Harvest from the Catalog page.** Admins no longer need `manage ai harvest`
+or the schedule. **Harvest new data sources** fills the catalog for sources
+that have nothing in it yet, without re-reading every other one: what a data
+source added this morning needs. A new **Data sources** tab shows each
+source's tables, when it was last harvested and whether a harvest is waiting
+or running, with a Harvest button per source. The scheduled harvest and the
+buttons use the same queue entry per source, so a harvest already waiting is
+never queued twice.
+
+**Dashboard panels no longer show the query's description.** Queries are
+described mostly for MCP; on a panel the description sat between the title
+and the chart. A visualization's own description still shows.
+
+**"Too big to export" is a dialog.** A dashboard past the one-page limit
+says so where you are looking, instead of a spinner and a notice in the
+corner.
+
+**The help "?" opens the docs in a new tab** instead of squeezing the whole
+site into a side drawer.
+
+**Docs.** Deploying has a section on moving a Docker Compose install to
+minikube. Blog posts are Markdown files in `blog/`, built when the site is
+published, and the site now publishes itself from release branches.
+
 ## 0.6.0-rc.2
 
 The second release candidate: an audit of rc.1 before anyone depends on it.

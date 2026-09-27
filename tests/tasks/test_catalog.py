@@ -1,7 +1,15 @@
 from unittest import mock
 
-from sqldesk import settings
-from sqldesk.tasks.catalog import harvest_catalog, harvest_catalogs
+from rq.exceptions import NoSuchJobError
+
+from sqldesk import rq_redis_connection, settings
+from sqldesk.tasks import Job
+from sqldesk.tasks.catalog import (
+    enqueue_harvest,
+    harvest_catalog,
+    harvest_catalogs,
+    harvest_job_id,
+)
 from sqldesk.tasks.schedule import periodic_job_definitions
 from tests import BaseTestCase
 
@@ -65,3 +73,33 @@ class TestHarvestFanOut(BaseTestCase):
             harvest_catalog(123456789)
 
         self.assertFalse(harvest.called)
+
+
+class TestHarvestIsQueuedOnce(BaseTestCase):
+    """
+    The schedule and the Catalog page's button queue through the same door,
+    so a scheduled run arriving while an admin's harvest waits does not put
+    a second one behind it.
+    """
+
+    def tearDown(self):
+        try:
+            Job.fetch(harvest_job_id(self.factory.data_source.id), connection=rq_redis_connection).delete()
+        except NoSuchJobError:
+            pass
+        super().tearDown()
+
+    def test_a_waiting_harvest_is_not_queued_again(self):
+        source = self.factory.data_source
+
+        self.assertIsNone(enqueue_harvest(source))
+        self.assertEqual("already queued", enqueue_harvest(source))
+
+    def test_the_schedule_skips_a_source_already_waiting(self):
+        source = self.factory.data_source
+        enqueue_harvest(source)
+
+        with mock.patch.object(settings, "FEATURE_AI", True), mock.patch.object(harvest_catalog, "delay") as delay:
+            harvest_catalogs()
+
+        self.assertNotIn(source.id, [call.args[0] for call in delay.call_args_list])
