@@ -173,6 +173,96 @@ the server's node so they can mount it. With a <code>ReadWriteMany</code> storag
 <code>uploads.accessMode=ReadWriteMany</code> and they schedule anywhere.</p>
 <p>For a real cluster, put an Ingress in front and terminate TLS there — an API key travelling to
 <code>/mcp</code> over plain HTTP is a credential in the clear.</p>
+<p>Already running on Compose? <a href="#compose-to-minikube">Moving from Docker Compose to minikube</a>
+brings the existing instance across instead of starting an empty one.</p>
+
+<h2 id="compose-to-minikube">Moving from Docker Compose to minikube</h2>
+<p>Everything comes across: people, queries, dashboards, alerts, uploaded files and the credentials saved on
+data sources. The Compose install's own data is never changed, so it stays your way back until you delete it.
+Run all of this on the machine running Compose, from the folder with its <code>compose.prod.yaml</code> and
+<code>.env</code>. It assumes SQLDesk 0.3 or later; upgrade anything older on Compose first. Move to the same
+release or a newer one, never an older one: migrations only run forward.</p>
+
+<h3>1. Back up, while Compose is still running</h3>
+<pre><code># The database. -T stops the terminal mangling a binary file.
+docker compose -f compose.prod.yaml exec -T postgres pg_dump -U sqldesk -d sqldesk -Fc &gt; sqldesk.dump
+
+# Uploaded files. If it says there is no uploads directory, skip it.
+docker compose -f compose.prod.yaml exec -T server tar -C /app -czf - uploads &gt; uploads.tgz
+
+# The two secrets, as the running server has them.
+docker compose -f compose.prod.yaml exec -T server python -c \
+  "from sqldesk import settings as s; print('cookieSecret:', s.SECRET_KEY); print('secretKey:', s.DATASOURCE_SECRET_KEY)"
+
+# Stop it. No -v: its volumes are your way back.
+docker compose -f compose.prod.yaml down</code></pre>
+<p>Keep all three private: the dump and the archive are the whole instance, and the secrets unlock every
+stored credential. Stopping Compose before minikube starts matters too, because two schedulers would run
+every scheduled query and send every alert twice. If <code>secretKey</code> prints empty, stop here: the
+chart treats an empty value as "generate one", and no saved credential would decrypt.</p>
+
+<h3>2. Start minikube and get the chart</h3>
+<pre><code>minikube start --cpus 4 --memory 6g
+git clone https://github.com/bot-netizen/sqldesk.git</code></pre>
+<p>Give Docker Desktop at least 8&nbsp;GB of memory first; with less, pods get restarted under load. The clone
+is the latest release, because <code>main</code> only moves at a release. For another one, add
+<code>--branch</code> and its tag from <a href="releases.html">Releases</a>.</p>
+
+<h3>3. Write a values file</h3>
+<pre><code># sqldesk-values.yaml -- private, it holds the secrets
+secrets:
+  cookieSecret: "&lt;cookieSecret from step 1&gt;"
+  secretKey: "&lt;secretKey from step 1&gt;"
+host: http://localhost:8080
+migrations:
+  enabled: false   # until the backup is in; step 5 turns it on</code></pre>
+<p>Carry over what else you set in <code>.env</code>. <code>mcp.enabled: true</code> if you use MCP; anything
+the chart has no value for, such as mail, goes under <code>extraEnv:</code> as <code>NAME: value</code>.</p>
+
+<h3>4. Install, then restore into the empty database</h3>
+<pre><code>helm install sqldesk ./sqldesk/charts/sqldesk -f sqldesk-values.yaml --timeout 15m
+
+# Everything but the databases stops, so nothing touches Postgres during the restore.
+kubectl scale --replicas=0 $(kubectl get deploy -l app.kubernetes.io/instance=sqldesk -o name | grep -v -e postgres -e redis)
+kubectl rollout status deploy/sqldesk-postgres --timeout=10m
+
+kubectl exec -i deploy/sqldesk-postgres -- pg_restore -U sqldesk -d sqldesk --no-owner &lt; sqldesk.dump</code></pre>
+<p>Pods erroring between the install and the scale are expected, since there are no tables yet. Migrations are
+off for the install because on a first install the job creates the current schema, and a backup cannot be
+restored over it.</p>
+
+<h3>5. Migrate, and bring everything back</h3>
+<pre><code>helm upgrade sqldesk ./sqldesk/charts/sqldesk -f sqldesk-values.yaml --set migrations.enabled=true --timeout 15m
+kubectl logs -l app.kubernetes.io/component=migrate --tail=40</code></pre>
+<p>The job finds tables already there, so it skips creating them and migrates the restored database to the
+chart's release. The upgrade then puts every deployment back at its replica count. Set
+<code>migrations.enabled: true</code> in the values file as well, or the next upgrade turns migrations off
+again.</p>
+
+<h3>6. Uploads, and open it</h3>
+<pre><code>kubectl rollout status deploy/sqldesk-server --timeout=10m
+kubectl exec -i deploy/sqldesk-server -- tar -C /app/uploads --strip-components=1 -xzf - &lt; uploads.tgz
+kubectl port-forward svc/sqldesk 8080:5000</code></pre>
+<p>Sign in with an existing account. If MCP is on, <code>kubectl exec deploy/sqldesk-server -- /app/manage.py
+ai harvest</code> fills the catalog now rather than at the first scheduled harvest.</p>
+
+<h3>After the move</h3>
+<ul>
+  <li><strong>A "create your organization" page</strong> means the database is empty: the restore did not land.
+    Do not fill it in. Repeat step 4, read what <code>pg_restore</code> prints, then step 5.</li>
+  <li><strong>A data source that cannot connect</strong> probably points at <code>localhost</code> or a Compose
+    service name, which inside minikube mean the pod itself. A database on the same machine is
+    <code>host.minikube.internal</code>.</li>
+  <li><strong><code>InvalidToken</code></strong> when a data source connects means <code>secretKey</code> is not
+    the key its credentials were encrypted with. Correct it in the values file and run step 5's upgrade again.</li>
+  <li><strong>Going back:</strong> <code>minikube stop</code>, then
+    <code>docker compose -f compose.prod.yaml up -d</code>. Compose returns as it was at step 1; nothing done
+    on minikube since is in it.</li>
+  <li><strong>Later upgrades:</strong> pull the new release into the clone and run
+    <code>helm upgrade sqldesk ./sqldesk/charts/sqldesk -f sqldesk-values.yaml --timeout 15m</code>. Always pass
+    the values file; <code>--reuse-values</code> on its own carries the old chart's defaults forward.</li>
+  <li><code>minikube stop</code> and reboots keep the data. <code>minikube delete</code> erases it.</li>
+</ul>
 
 <h2 id="scaling">Scaling</h2>
 <ul>
