@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.0-rc.3 (not released yet)
+## 0.6.0-rc.3
 
 Fixes found testing rc.2.
 
@@ -36,6 +36,13 @@ site into a side drawer.
 **Docs.** Deploying has a section on moving a Docker Compose install to
 minikube. Blog posts are Markdown files in `blog/`, built when the site is
 published, and the site now publishes itself from release branches.
+
+**Upgrading from rc.2.** Nothing in the database or the chart's settings
+changed, so this is a new image and nothing else. On Kubernetes, check out
+the `v0.6.0-rc.3` tag and `helm upgrade` with the same values as before; the
+migration job runs and finds nothing to do. With Compose, set
+`SQLDESK_IMAGE=ghcr.io/bot-netizen/sqldesk:0.6.0-rc.3`, `pull`, then
+`up -d`.
 
 ## 0.6.0-rc.2
 
