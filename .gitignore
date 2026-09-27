@@ -32,3 +32,6 @@ client/cypress/videos
 # Local dev/test artifacts
 /test_orders.parquet
 /uploads/
+
+# Built from blog/*.md by docs/tools/blog.py
+/docs/blog/

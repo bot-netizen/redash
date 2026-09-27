@@ -1,9 +1,12 @@
 name: Docs site
 
+# The site follows whichever branch last published it: a release branch
+# while its release candidates are out, main once the release is made. A
+# post committed to blog/ on either goes live with that push.
 on:
   push:
-    branches: [main]
-    paths: ["docs/**", ".github/workflows/pages.yml"]
+    branches: [main, "release/**"]
+    paths: ["docs/**", "blog/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 # Only one deployment at a time, and let a run in progress finish rather than
@@ -27,6 +30,17 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: actions/configure-pages@v5
+
+      # Posts are Markdown in blog/. This turns them into docs/blog/, and
+      # fails the deploy -- naming the file -- if any of them cannot be built.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Build the blog
+        run: |
+          python -m pip install markdown-it-py==4.2.0 pyyaml==6.0.3
+          python docs/tools/blog.py
 
       # The pages, not the working papers: the plans and the tool that
       # regenerates the navigation live in docs/ too, and uploading the
