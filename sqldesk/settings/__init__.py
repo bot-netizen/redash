@@ -128,12 +128,11 @@ HSTS_INCLUDE_SUBDOMAINS = parse_boolean(os.environ.get("SQLDESK_HSTS_INCLUDE_SUB
 # individual CSP directives, see https://github.com/GoogleCloudPlatform/flask-talisman#example-7
 # for more information.
 #
-# `frame-src` names the documentation site because the help drawer (the "?"
-# beside a field) shows a docs page in an iframe. Upstream allowed its own
-# site the same way; losing it in the rename left every drawer blank.
+# No frame-src beyond the default: the help "?" opens the docs in a new tab
+# rather than framing them, so nothing outside SQLDesk is ever framed.
 CONTENT_SECURITY_POLICY = os.environ.get(
     "SQLDESK_CONTENT_SECURITY_POLICY",
-    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; font-src 'self' data:; img-src 'self' http: https: data: blob:; object-src 'none'; frame-ancestors 'none'; frame-src 'self' https://bot-netizen.github.io;",
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; font-src 'self' data:; img-src 'self' http: https: data: blob:; object-src 'none'; frame-ancestors 'none';",
 )
 CONTENT_SECURITY_POLICY_REPORT_URI = os.environ.get("SQLDESK_CONTENT_SECURITY_POLICY_REPORT_URI", "")
 CONTENT_SECURITY_POLICY_REPORT_ONLY = parse_boolean(

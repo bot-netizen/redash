@@ -1,13 +1,9 @@
-import { startsWith, get, some, mapValues } from "lodash";
+import { get, mapValues } from "lodash";
 import React from "react";
 import PropTypes from "prop-types";
 import cx from "classnames";
 import Tooltip from "@/components/Tooltip";
-import Drawer from "antd/lib/drawer";
 import Link from "@/components/Link";
-import PlainButton from "@/components/PlainButton";
-import CloseOutlinedIcon from "@ant-design/icons/CloseOutlined";
-import BigMessage from "@/components/BigMessage";
 import DynamicComponent, { registerComponent } from "@/components/DynamicComponent";
 
 import "./HelpTrigger.less";
@@ -19,8 +15,6 @@ import "./HelpTrigger.less";
 // all twenty-five of them answered 404.
 const DOMAIN = "https://bot-netizen.github.io/sqldesk";
 const GUIDE = "/guide";
-const IFRAME_TIMEOUT = 20000;
-const IFRAME_URL_UPDATE_MESSAGE = "iframe_url";
 
 export const TYPES = mapValues(
   {
@@ -80,6 +74,7 @@ const HelpTriggerPropTypes = {
   title: PropTypes.node,
   className: PropTypes.string,
   showTooltip: PropTypes.bool,
+  // Kept so existing callers still validate; every trigger is a link now.
   renderAsLink: PropTypes.bool,
   children: PropTypes.node,
 };
@@ -90,197 +85,56 @@ const HelpTriggerDefaultProps = {
   title: null,
   className: null,
   showTooltip: true,
-  renderAsLink: false,
+  renderAsLink: true,
   children: <i className="fa fa-question-circle" aria-hidden="true" />,
 };
 
-export function helpTriggerWithTypes(types, allowedDomains = [], drawerClassName = null) {
-  return class HelpTrigger extends React.Component {
-    static propTypes = {
-      ...HelpTriggerPropTypes,
-      type: PropTypes.oneOf(Object.keys(types)),
-    };
+/*
+  A "?" that opens the page it names in a new tab.
 
-    static defaultProps = HelpTriggerDefaultProps;
-
-    iframeRef = React.createRef();
-
-    iframeLoadingTimeout = null;
-
-    state = {
-      visible: false,
-      loading: false,
-      error: false,
-      currentUrl: null,
-    };
-
-    componentDidMount() {
-      window.addEventListener("message", this.onPostMessageReceived, false);
+  It used to open a drawer with the page in an iframe. The docs are a whole
+  site -- header, navigation, a phone layout below 800px -- and a 400px
+  drawer is a phone, so the site's own menu was drawn over the text it was
+  meant to explain. A tab shows the page as it was designed, keeps the
+  reader's place in SQLDesk, and needs no frame-src in the application's
+  security policy.
+*/
+export function helpTriggerWithTypes(types) {
+  function HelpTriggerLink({ type, href, title, className, showTooltip, children }) {
+    const entry = get(types, type);
+    const url = entry ? entry[0] : href;
+    if (!url) {
+      return null;
     }
+    const tooltip = entry ? entry[1] : title;
 
-    componentWillUnmount() {
-      window.removeEventListener("message", this.onPostMessageReceived);
-      clearTimeout(this.iframeLoadingTimeout);
-    }
+    return (
+      <Tooltip
+        title={
+          showTooltip ? (
+            <>
+              {tooltip} <i className="fa fa-external-link" style={{ marginLeft: 5 }} aria-hidden="true" />
+              <span className="sr-only">(opens in a new tab)</span>
+            </>
+          ) : null
+        }
+      >
+        <Link href={url} className={cx("help-trigger", className)} rel="noopener noreferrer" target="_blank">
+          {children}
+        </Link>
+      </Tooltip>
+    );
+  }
 
-    loadIframe = (url) => {
-      clearTimeout(this.iframeLoadingTimeout);
-      this.setState({ loading: true, error: false });
-
-      this.iframeRef.current.src = url;
-      this.iframeLoadingTimeout = setTimeout(() => {
-        this.setState({ error: url, loading: false });
-      }, IFRAME_TIMEOUT); // safety
-    };
-
-    onIframeLoaded = () => {
-      this.setState({ loading: false });
-      clearTimeout(this.iframeLoadingTimeout);
-    };
-
-    onPostMessageReceived = (event) => {
-      if (!some(allowedDomains, (domain) => startsWith(event.origin, domain))) {
-        return;
-      }
-
-      const { type, message: currentUrl } = event.data || {};
-      if (type !== IFRAME_URL_UPDATE_MESSAGE) {
-        return;
-      }
-
-      this.setState({ currentUrl });
-    };
-
-    getUrl = () => {
-      const helpTriggerType = get(types, this.props.type);
-      return helpTriggerType ? helpTriggerType[0] : this.props.href;
-    };
-
-    openDrawer = (e) => {
-      // keep "open in new tab" behavior
-      if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
-        e.preventDefault();
-        this.setState({ visible: true });
-        // wait for drawer animation to complete so there's no animation jank
-        setTimeout(() => this.loadIframe(this.getUrl()), 300);
-      }
-    };
-
-    closeDrawer = (event) => {
-      if (event) {
-        event.preventDefault();
-      }
-      this.setState({ visible: false });
-      this.setState({ visible: false, currentUrl: null });
-    };
-
-    render() {
-      const targetUrl = this.getUrl();
-      if (!targetUrl) {
-        return null;
-      }
-
-      const tooltip = get(types, `${this.props.type}[1]`, this.props.title);
-      const className = cx("help-trigger", this.props.className);
-      const url = this.state.currentUrl;
-      const isAllowedDomain = some(allowedDomains, (domain) => startsWith(url || targetUrl, domain));
-      const shouldRenderAsLink = this.props.renderAsLink || !isAllowedDomain;
-
-      return (
-        <React.Fragment>
-          <Tooltip
-            title={
-              this.props.showTooltip ? (
-                <>
-                  {tooltip}
-                  {shouldRenderAsLink && (
-                    <>
-                      {" "}
-                      <i className="fa fa-external-link" style={{ marginLeft: 5 }} aria-hidden="true" />
-                      <span className="sr-only">(opens in a new tab)</span>
-                    </>
-                  )}
-                </>
-              ) : null
-            }
-          >
-            <Link
-              href={url || this.getUrl()}
-              className={className}
-              rel="noopener noreferrer"
-              target="_blank"
-              onClick={shouldRenderAsLink ? () => {} : this.openDrawer}
-            >
-              {this.props.children}
-            </Link>
-          </Tooltip>
-          <Drawer
-            placement="right"
-            closable={false}
-            onClose={this.closeDrawer}
-            visible={this.state.visible}
-            className={cx("help-drawer", drawerClassName)}
-            destroyOnClose
-            width={400}
-          >
-            <div className="drawer-wrapper">
-              <div className="drawer-menu">
-                {url && (
-                  <Tooltip title="Open page in a new window" placement="left">
-                    {/* eslint-disable-next-line react/jsx-no-target-blank */}
-                    <Link href={url} target="_blank">
-                      <i className="fa fa-external-link" aria-hidden="true" />
-                      <span className="sr-only">(opens in a new tab)</span>
-                    </Link>
-                  </Tooltip>
-                )}
-                <Tooltip title="Close" placement="bottom">
-                  <PlainButton onClick={this.closeDrawer}>
-                    <CloseOutlinedIcon />
-                  </PlainButton>
-                </Tooltip>
-              </div>
-
-              {/* iframe */}
-              {!this.state.error && (
-                <iframe
-                  ref={this.iframeRef}
-                  title="Usage Help"
-                  src="about:blank"
-                  className={cx({ ready: !this.state.loading })}
-                  onLoad={this.onIframeLoaded}
-                />
-              )}
-
-              {/* loading indicator */}
-              {this.state.loading && (
-                <BigMessage icon="fa-spinner fa-2x fa-pulse" message="Loading..." className="help-message" />
-              )}
-
-              {/* error message */}
-              {this.state.error && (
-                <BigMessage icon="fa-exclamation-circle" className="help-message">
-                  Something went wrong.
-                  <br />
-                  {/* eslint-disable-next-line react/jsx-no-target-blank */}
-                  <Link href={this.state.error} target="_blank" rel="noopener">
-                    Click here
-                  </Link>{" "}
-                  to open the page in a new window.
-                </BigMessage>
-              )}
-            </div>
-
-            {/* extra content */}
-            <DynamicComponent name="HelpDrawerExtraContent" onLeave={this.closeDrawer} openPageUrl={this.loadIframe} />
-          </Drawer>
-        </React.Fragment>
-      );
-    }
+  HelpTriggerLink.propTypes = {
+    ...HelpTriggerPropTypes,
+    type: PropTypes.oneOf(Object.keys(types)),
   };
+  HelpTriggerLink.defaultProps = HelpTriggerDefaultProps;
+  return HelpTriggerLink;
 }
 
-registerComponent("HelpTrigger", helpTriggerWithTypes(TYPES, [DOMAIN]));
+registerComponent("HelpTrigger", helpTriggerWithTypes(TYPES));
 
 export default function HelpTrigger(props) {
   return <DynamicComponent {...props} name="HelpTrigger" />;
