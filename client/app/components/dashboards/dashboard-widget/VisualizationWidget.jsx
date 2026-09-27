@@ -125,14 +125,13 @@ export function VisualizationWidgetHeader({
         <div className="th-title">
           <p>
             <QueryLink query={widget.getQuery()} visualization={widget.visualization} readOnly={!canViewQuery} />
-            <VisualizationDescription description={widget.visualization.description} />
           </p>
           {/*
-            No query description here. Queries are described mostly for MCP,
-            where a model needs the context, and on a panel it put a paragraph
-            between the title and the chart. The visualization's own
-            description, written for the chart, stays on the title line.
+            The chart's own description, written for the chart. Not the
+            query's: queries are described mostly for MCP, and on a panel
+            that put a paragraph between the title and the chart.
           */}
+          <VisualizationDescription description={widget.visualization.description} />
         </div>
         {filtersInline && (
           <div className="widget-filters hidden-print" data-test="WidgetFilters">

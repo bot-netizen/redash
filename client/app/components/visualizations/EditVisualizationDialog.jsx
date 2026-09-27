@@ -219,7 +219,7 @@ function EditVisualizationDialog({ dialog, visualization, query, queryResult }) 
               className="w-100"
               autoSize={{ minRows: 2, maxRows: 4 }}
               maxLength={4096}
-              placeholder="What this chart is of, shown on a tooltip beside its name."
+              placeholder="What this chart shows. It appears under the chart's name on dashboards, and MCP reads it."
               value={description}
               onChange={(event) => setDescription(event.target.value)}
             />

@@ -1,35 +1,45 @@
 import React from "react";
 import { mount } from "enzyme";
+import Tooltip from "@/components/Tooltip";
 import VisualizationDescription from "./VisualizationDescription";
 
 /*
-  The two things worth pinning: nothing is drawn when there is nothing to say
-  (a widget header is crowded enough), and the words are in the document
-  rather than only in a tooltip -- which is where the table's column headers
-  leave them, unreachable to anyone not using a mouse.
+  What is worth pinning: nothing is drawn when there is nothing to say (a
+  panel's header is crowded enough), the words are on the panel rather than
+  behind a hover, and the hover is there only when the words are cut.
 */
 
 describe("a visualization's description", () => {
+  afterEach(() => jest.restoreAllMocks());
+
   test("is not drawn at all when there is none", () => {
-    expect(mount(<VisualizationDescription />).find("button")).toHaveLength(0);
-    expect(mount(<VisualizationDescription description="" />).find("button")).toHaveLength(0);
+    expect(mount(<VisualizationDescription />).find(".visualization-description")).toHaveLength(0);
+    expect(mount(<VisualizationDescription description="" />).find(".visualization-description")).toHaveLength(0);
   });
 
   test("nor when it is only whitespace", () => {
-    expect(mount(<VisualizationDescription description="   " />).find("button")).toHaveLength(0);
+    expect(mount(<VisualizationDescription description="   " />).find(".visualization-description")).toHaveLength(0);
   });
 
-  test("is readable without a mouse", () => {
+  test("is on the panel as text, not behind a hover", () => {
     const wrapper = mount(<VisualizationDescription description="Weeks since the account opened." />);
 
-    // In the document, not only in the tooltip the icon raises on hover.
-    expect(wrapper.find(".sr-only").text()).toBe("Weeks since the account opened.");
-    // And focusable, so a tooltip trigger of "focus" has something to fire on.
-    expect(wrapper.find("button")).toHaveLength(1);
+    expect(wrapper.find(".visualization-description").text()).toBe("Weeks since the account opened.");
+    expect(wrapper.find(Tooltip).prop("title")).toBeNull();
+  });
+
+  test("offers the whole of it on hover when two lines cut it", () => {
+    jest.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockReturnValue(60);
+    jest.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(38);
+
+    const wrapper = mount(<VisualizationDescription description="A long account of what this counts." />);
+    wrapper.update();
+
+    expect(wrapper.find(Tooltip).prop("title")).toBe("A long account of what this counts.");
   });
 
   test("is trimmed, so a stray newline is not a description", () => {
     const wrapper = mount(<VisualizationDescription description="  Counts, not sums.  " />);
-    expect(wrapper.find(".sr-only").text()).toBe("Counts, not sums.");
+    expect(wrapper.find(".visualization-description").text()).toBe("Counts, not sums.");
   });
 });

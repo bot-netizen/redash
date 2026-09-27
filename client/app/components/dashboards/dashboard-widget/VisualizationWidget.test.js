@@ -65,6 +65,18 @@ describe("VisualizationWidget", () => {
     expect(header.html()).not.toContain("Written for a model to read.");
   });
 
+  test("a panel shows its chart's own description", () => {
+    const widget = {
+      ...fakeWidget(),
+      getLocalParameters: () => [],
+      visualization: { id: 2, query: { id: 3 }, description: "Completed orders only." },
+    };
+    const wrapper = shallow(<VisualizationWidget widget={widget} getDashboard={() => ({})} />);
+    const header = shallow(wrapper.find(Widget).prop("header"));
+
+    expect(header.html()).toContain("Completed orders only.");
+  });
+
   test("a live dashboard's widget offers no parameters to change", () => {
     const wrapper = shallow(<VisualizationWidget widget={fakeWidget()} getDashboard={() => ({})} isLive />);
     expect(wrapper.find(Widget).prop("header").props.parameters).toEqual([]);

@@ -1,47 +1,54 @@
-import React from "react";
+import React, { useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import cx from "classnames";
 import { trim } from "lodash";
 import Tooltip from "@/components/Tooltip";
-import PlainButton from "@/components/PlainButton";
+import resizeObserver from "@/services/resizeObserver";
 
 import "./VisualizationDescription.less";
 
 /*
-  What a visualization is of, when its name does not say it.
+  What a visualization is of, under its name on a dashboard panel.
 
-  `Visualization.description` has been a column, serialized by the API and
-  accepted on save, since before the fork -- and has never been editable or
-  shown anywhere. A chart called "By week" on a dashboard beside four others
-  needs somewhere to say which weeks, and which of the query's columns it is
-  counting.
+  Written for the chart -- which weeks, which column is counted, "completed
+  orders only, refunds excluded" -- so it is the description a panel should
+  carry. The query's own description is written mostly for MCP and is not
+  shown here.
 
-  A mark rather than a line of text, because a widget's header is already
-  the name, the query's own description and the parameters, and the point of
-  a dashboard is the charts. The table's column headers do the same thing --
-  except that they leave the text unreachable to anyone not using a mouse,
-  since a tooltip on an `aria-hidden` icon is nothing at all. Here the words
-  are in the document, and the mark is a real button, so it can be reached by
-  keyboard and tapped on a phone, where hovering is not a thing that happens.
+  A line of text rather than the "i" mark it used to be. A mark hides the
+  words from anyone not hovering, which is everyone on a phone, on a wall
+  screen, and in an exported picture or PDF.
 
-  A ring rather than Font Awesome's filled disc. At the size a header wants
-  it, a solid circle is a dark blot that pulls the eye off the name it is
-  attached to; a hairline ring says the same thing and sits still.
+  Two lines at most, because the point of a panel is its chart. Longer text
+  is clamped only visually: the rest is on hover when it is cut, and all of
+  it stays in the document for a screen reader.
 */
 export default function VisualizationDescription({ description, className }) {
   const text = trim(description || "");
+  const ref = useRef(null);
+  const [clipped, setClipped] = useState(false);
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) {
+      return undefined;
+    }
+    const measure = () => setClipped(element.scrollHeight > element.clientHeight + 1);
+    measure();
+    // Resizing a panel in edit mode can cut the text or stop cutting it. The
+    // application's one shared watcher, like the charts beside it.
+    return resizeObserver(element, measure);
+  }, [text]);
+
   if (!text) {
     return null;
   }
 
   return (
-    <Tooltip placement="top" title={text}>
-      <PlainButton className={cx("visualization-description", className)} data-test="VisualizationDescription">
-        <span className="visualization-description-mark" aria-hidden="true">
-          i
-        </span>
-        <span className="sr-only">{text}</span>
-      </PlainButton>
+    <Tooltip placement="topLeft" title={clipped ? text : null}>
+      <div ref={ref} className={cx("visualization-description", className)} data-test="VisualizationDescription">
+        {text}
+      </div>
     </Tooltip>
   );
 }

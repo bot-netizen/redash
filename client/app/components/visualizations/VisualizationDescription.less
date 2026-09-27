@@ -1,46 +1,18 @@
-// Two classes, because `PlainButton` resets itself with `all: unset` and the
-// two rules would otherwise be equally specific -- which of them won would
-// depend on the order webpack happened to emit them in.
-.plain-button.visualization-description {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 5px;
+// Under the panel's title, quieter than it. `white-space` is set because a
+// title row may be told not to wrap, and a clamp needs lines to clamp.
+.visualization-description {
+  margin-top: 2px;
   color: var(--color-text-muted, #6f6b66);
-  cursor: pointer;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.45;
+  white-space: normal;
+  overflow-wrap: anywhere;
 
-  // Drawn rather than set in a font: Font Awesome 4 has only a filled disc,
-  // and filled is exactly what this should not be beside a title.
-  .visualization-description-mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-    width: 15px;
-    height: 15px;
-    border: 1.3px solid currentColor;
-    border-radius: 50%;
-    font-size: 10px;
-    font-style: italic;
-    font-weight: 600;
-    line-height: 1;
-
-    // Lifted rather than nudged with `vertical-align`, which would push the
-    // whole line box down with it and make the header taller. Three pixels
-    // puts the ring's centre on the capitals' centre: a 15px ring sitting on
-    // the baseline is centred well below text whose capitals only reach
-    // about two thirds of the way up.
-    position: relative;
-    top: -3px;
-  }
-
-  &:hover,
-  &:focus {
-    color: var(--color-text, #1c1b1a);
-  }
-
-  &:focus-visible {
-    outline: 2px solid var(--color-action, #0a7c93);
-    outline-offset: 2px;
-    border-radius: 2px;
-  }
+  // Two lines at most. Export copies these properties too, so a picture or
+  // PDF of the dashboard is cut in the same place as the screen.
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
 }
