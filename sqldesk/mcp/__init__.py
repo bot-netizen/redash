@@ -503,7 +503,7 @@ def _one_line(text, limit):
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-def _chart_summary(visualization_type, name, description, options):
+def _chart_summary(visualization_type, name, description, options, source=None):
     """
     One chart in a line: its name, what kind, which columns it plots, and
     what its author said it shows. The description is the part worth having
@@ -531,6 +531,8 @@ def _chart_summary(visualization_type, name, description, options):
         plotted = []
 
     line = "{} ({})".format(name or "untitled", "; ".join([kind] + plotted))
+    if source:
+        line += ", from " + source
     if (description or "").strip():
         line += ": " + _one_line(description, 200)
     return line
@@ -710,11 +712,8 @@ def tool_find_dashboards(user, org, arguments):
             )
         )
         for chart_id, chart_type, chart_name, about, query_id, query_name in listed[dashboard.id][:MAX_CHARTS]:
-            lines.append(
-                "  - {}, from query #{} {}".format(
-                    _chart_summary(chart_type, chart_name, about, options.get(chart_id)), query_id, query_name
-                )
-            )
+            source = "query #{} {}".format(query_id, query_name)
+            lines.append("  - " + _chart_summary(chart_type, chart_name, about, options.get(chart_id), source))
         if len(listed[dashboard.id]) > MAX_CHARTS:
             lines.append("  - and {} more".format(len(listed[dashboard.id]) - MAX_CHARTS))
         lines.append("")
