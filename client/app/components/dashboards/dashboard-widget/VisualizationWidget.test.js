@@ -46,6 +46,25 @@ describe("VisualizationWidget", () => {
     expect(footer.props.onRefresh).toBe(onRefresh);
   });
 
+  test("a panel does not show its query's description", () => {
+    // Queries are described mostly for MCP, where a model needs the context.
+    // On a panel it was a paragraph between the title and the chart.
+    const widget = {
+      ...fakeWidget(),
+      getLocalParameters: () => [],
+      getQuery: () => ({
+        id: 3,
+        name: "Query",
+        description: "Written for a model to read.",
+        getUrl: () => "/queries/3",
+      }),
+    };
+    const wrapper = shallow(<VisualizationWidget widget={widget} getDashboard={() => ({})} />);
+    const header = shallow(wrapper.find(Widget).prop("header"));
+
+    expect(header.html()).not.toContain("Written for a model to read.");
+  });
+
   test("a live dashboard's widget offers no parameters to change", () => {
     const wrapper = shallow(<VisualizationWidget widget={fakeWidget()} getDashboard={() => ({})} isLive />);
     expect(wrapper.find(Widget).prop("header").props.parameters).toEqual([]);

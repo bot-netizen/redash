@@ -1,10 +1,8 @@
 import React, { useState } from "react";
 import PropTypes from "prop-types";
 import { compact, isEmpty, invoke, map } from "lodash";
-import toHtml from "@/lib/markdown";
 import cx from "classnames";
 import Menu from "antd/lib/menu";
-import HtmlContent from "@sqldesk/viz/lib/components/HtmlContent";
 import { currentUser } from "@/services/auth";
 import recordEvent from "@/services/recordEvent";
 import { formatDateTime } from "@/lib/utils";
@@ -129,11 +127,12 @@ export function VisualizationWidgetHeader({
             <QueryLink query={widget.getQuery()} visualization={widget.visualization} readOnly={!canViewQuery} />
             <VisualizationDescription description={widget.visualization.description} />
           </p>
-          {!isEmpty(widget.getQuery().description) && (
-            <HtmlContent className="text-muted markdown query--description">
-              {toHtml(widget.getQuery().description || "")}
-            </HtmlContent>
-          )}
+          {/*
+            No query description here. Queries are described mostly for MCP,
+            where a model needs the context, and on a panel it put a paragraph
+            between the title and the chart. The visualization's own
+            description, written for the chart, stays on the title line.
+          */}
         </div>
         {filtersInline && (
           <div className="widget-filters hidden-print" data-test="WidgetFilters">

@@ -226,22 +226,9 @@
       }
 
       // The title's own line, with nothing under it. The 10px a paragraph
-      // carries by default was the gap to a description most widgets do not
-      // have, and it was the largest single piece of a widget's chrome.
+      // carries by default was the largest single piece of a widget's
+      // chrome, and nothing sits under the title any more.
       > p {
-        margin-bottom: 0;
-      }
-    }
-
-    .query--description {
-      // The gap to the title lives here now, where it exists only when the
-      // description does.
-      margin-top: 6px;
-      font-size: 14px;
-      line-height: 1.5;
-      font-style: italic;
-
-      p {
         margin-bottom: 0;
       }
     }
