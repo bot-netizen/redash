@@ -115,9 +115,10 @@ TOOLS = [
         "name": "find_queries",
         "title": "Queries somebody has already written",
         "description": (
-            "Search saved queries by name and description. Before writing SQL, look for the question "
-            "already answered -- a saved query carries its author's understanding of the data, which "
-            "no amount of schema does."
+            "Search saved queries by name and description, and by their charts' names and descriptions. "
+            "Before writing SQL, look for the question already answered -- a saved query carries its "
+            "author's understanding of the data, which no amount of schema does. Each result lists its "
+            "charts: what kind, which columns they plot, and what their author said they show."
         ),
         "inputSchema": {
             "type": "object",
@@ -129,8 +130,10 @@ TOOLS = [
         "name": "find_dashboards",
         "title": "Dashboards somebody has already built",
         "description": (
-            "Search dashboards by name and the text on them. Often the answer is a page that already "
-            "exists, and the useful reply is its address rather than a new query."
+            "Search dashboards by name, the text on them, and their charts. Often the answer is a page "
+            "that already exists, and the useful reply is its address rather than a new query. Each "
+            "result lists the charts on it that you can see: what kind, which columns they plot, which "
+            "query they come from, and what their author said they show."
         ),
         "inputSchema": {
             "type": "object",
@@ -480,6 +483,64 @@ def tool_check_sql(user, org, arguments):
     return _text("\n".join(lines).strip())
 
 
+#: A chart's columns by what they do, in the order a person reads them. The
+#: names are the editor's own labels, so the words match what its author saw.
+CHART_ROLES = (
+    ("x", "x"),
+    ("y", "y"),
+    ("series", "grouped by"),
+    ("size", "size"),
+    ("zVal", "colour"),
+    ("yError", "error"),
+)
+
+#: One page of a dashboard, the most anybody reads at once -- export's limit.
+MAX_CHARTS = 12
+
+
+def _one_line(text, limit):
+    text = " ".join((text or "").split())
+    return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
+
+
+def _chart_summary(visualization_type, name, description, options):
+    """
+    One chart in a line: its name, what kind, which columns it plots, and
+    what its author said it shows. The description is the part worth having
+    -- "completed orders only, refunds excluded" is written nowhere else --
+    and the columns say how to reproduce it without guessing.
+    """
+    options = options or {}
+    if visualization_type == "CHART":
+        kind = "{} chart".format(options["globalSeriesType"]) if options.get("globalSeriesType") else "chart"
+        mapping = options.get("columnMapping") or {}
+        plotted = [
+            "{}: {}".format(said, ", ".join(column for column, assigned in mapping.items() if assigned == role))
+            for role, said in CHART_ROLES
+            if role in mapping.values()
+        ]
+    elif visualization_type == "COUNTER":
+        kind = "counter"
+        plotted = [
+            "{}: {}".format(said, options[key])
+            for key, said in (("counterColName", "value"), ("targetColName", "target"))
+            if options.get(key)
+        ]
+    else:
+        kind = (visualization_type or "visualization").lower().replace("_", " ")
+        plotted = []
+
+    line = "{} ({})".format(name or "untitled", "; ".join([kind] + plotted))
+    if (description or "").strip():
+        line += ": " + _one_line(description, 200)
+    return line
+
+
+def _worth_listing(visualization_type, description):
+    """Every query has a plain table. Unless somebody described it, it says nothing."""
+    return visualization_type != "TABLE" or bool((description or "").strip())
+
+
 def _existing_work_matches(text, terms):
     """Every term somewhere in the name or the description."""
     haystack = (text or "").lower()
@@ -506,9 +567,17 @@ def tool_find_queries(user, org, arguments):
 
     # Matched by the database rather than over the latest few hundred in
     # Python: a query written two years ago is often exactly the answer.
+    # A chart's name and description count: "churn by cohort" is often
+    # written on the chart and nowhere on the query behind it.
     matches = [
-        or_(models.Query.name.ilike("%{}%".format(term)), models.Query.description.ilike("%{}%".format(term)))
-        for term in _terms(question)
+        or_(
+            models.Query.name.ilike(like),
+            models.Query.description.ilike(like),
+            models.Query.visualizations.any(
+                or_(models.Visualization.name.ilike(like), models.Visualization.description.ilike(like))
+            ),
+        )
+        for like in ("%{}%".format(term) for term in _terms(question))
     ]
     found = (
         models.Query.query.filter(
@@ -526,6 +595,13 @@ def tool_find_queries(user, org, arguments):
     if not found:
         return _text("No saved query matches that. Nobody has written it down, or it is worded differently.")
 
+    charts = {}
+    for visualization in models.Visualization.query.filter(
+        models.Visualization.query_id.in_([query.id for query in found])
+    ).order_by(models.Visualization.id):
+        if _worth_listing(visualization.type, visualization.description):
+            charts.setdefault(visualization.query_id, []).append(visualization)
+
     lines = []
     for query in found:
         lines.append("#{} {}".format(query.id, query.name))
@@ -537,6 +613,13 @@ def tool_find_queries(user, org, arguments):
                 query.updated_at.date() if query.updated_at else "?",
             )
         )
+        for visualization in charts.get(query.id, [])[:MAX_CHARTS]:
+            lines.append(
+                "  - "
+                + _chart_summary(
+                    visualization.type, visualization.name, visualization.description, visualization.options
+                )
+            )
         lines.append("")
     return _text("\n".join(lines).strip())
 
@@ -560,20 +643,41 @@ def tool_find_dashboards(user, org, arguments):
         .all()
     )
 
-    # The words on a dashboard are in its textboxes and its widgets'
-    # queries, which is where its subject is actually written down. Read in
-    # one query for all of them, not three per widget.
+    # The words on a dashboard are in its textboxes, its charts and the
+    # queries behind them, which is where its subject is actually written
+    # down. Read in one query for all of them, not three per widget.
+    #
+    # A chart on a data source this user cannot read is left out entirely:
+    # the dashboard shows them a locked panel with nothing on it, and neither
+    # its words nor its query's name may make the dashboard match here.
+    readable = {source.id for source in _readable_sources(user, org)}
     words = {dashboard.id: [dashboard.name] for dashboard in dashboards}
     widgets = {dashboard.id: 0 for dashboard in dashboards}
+    charts = {dashboard.id: [] for dashboard in dashboards}
     if dashboards:
-        for dashboard_id, text, query_name in (
-            models.db.session.query(models.Widget.dashboard_id, models.Widget.text, models.Query.name)
+        for dashboard_id, text, query_id, query_name, source_id, chart_id, chart_type, chart_name, about in (
+            models.db.session.query(
+                models.Widget.dashboard_id,
+                models.Widget.text,
+                models.Query.id,
+                models.Query.name,
+                models.Query.data_source_id,
+                models.Visualization.id,
+                models.Visualization.type,
+                models.Visualization.name,
+                models.Visualization.description,
+            )
             .outerjoin(models.Visualization, models.Widget.visualization_id == models.Visualization.id)
             .outerjoin(models.Query, models.Visualization.query_id == models.Query.id)
             .filter(models.Widget.dashboard_id.in_(list(words)))
+            .order_by(models.Widget.id)
         ):
-            words[dashboard_id].append(query_name or text or "")
             widgets[dashboard_id] += 1
+            if chart_id is None:
+                words[dashboard_id].append(text or "")
+            elif source_id in readable:
+                words[dashboard_id].extend([query_name or "", chart_name or "", about or ""])
+                charts[dashboard_id].append((chart_id, chart_type, chart_name, about, query_id, query_name))
 
     found = [
         dashboard
@@ -584,6 +688,19 @@ def tool_find_dashboards(user, org, arguments):
     if not found:
         return _text("No dashboard matches that.")
 
+    # Settings only for the charts about to be described: a chart's options
+    # run to kilobytes, and the search above looked at two hundred dashboards.
+    listed = {
+        dashboard.id: [chart for chart in charts[dashboard.id] if _worth_listing(chart[1], chart[3])]
+        for dashboard in found
+    }
+    shown = [chart for dashboard in found for chart in listed[dashboard.id][:MAX_CHARTS]]
+    options = dict(
+        models.db.session.query(models.Visualization.id, models.Visualization.options).filter(
+            models.Visualization.id.in_([chart[0] for chart in shown] or [0])
+        )
+    )
+
     lines = []
     for dashboard in found:
         lines.append("{} — /dashboards/{}".format(dashboard.name, dashboard.id))
@@ -592,6 +709,14 @@ def tool_find_dashboards(user, org, arguments):
                 widgets[dashboard.id], dashboard.updated_at.date() if dashboard.updated_at else "?"
             )
         )
+        for chart_id, chart_type, chart_name, about, query_id, query_name in listed[dashboard.id][:MAX_CHARTS]:
+            lines.append(
+                "  - {}, from query #{} {}".format(
+                    _chart_summary(chart_type, chart_name, about, options.get(chart_id)), query_id, query_name
+                )
+            )
+        if len(listed[dashboard.id]) > MAX_CHARTS:
+            lines.append("  - and {} more".format(len(listed[dashboard.id]) - MAX_CHARTS))
         lines.append("")
     return _text("\n".join(lines).strip())
 

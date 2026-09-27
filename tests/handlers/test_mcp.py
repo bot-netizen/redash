@@ -334,6 +334,89 @@ class TestFindingExistingWork(McpTestCase):
         self.assertIn("Finance", found)
         self.assertIn("/dashboards/{}".format(dashboard.id), found, "the address is the useful part")
 
+    # Charts. A chart's description is written for the chart -- "completed
+    # orders only, refunds excluded" -- and is written nowhere else, and its
+    # settings say which columns it plots.
+
+    def _weekly(self, **chart):
+        query = self.factory.create_query(
+            name="Weekly numbers", description="", data_source=self.factory.data_source, is_draft=False
+        )
+        options = {"globalSeriesType": "line", "columnMapping": {"week": "x", "amount": "y", "region": "series"}}
+        args = {"query_rel": query, "type": "CHART", "name": "Orders by week", "options": options}
+        args.update(chart)
+        return query, self.factory.create_visualization(**args)
+
+    def test_a_query_lists_its_charts_and_what_they_plot(self):
+        self._weekly(description="Completed orders only; refunds excluded.")
+        models.db.session.commit()
+
+        found = self.text("find_queries", {"question": "weekly"})
+
+        self.assertIn("Orders by week (line chart; x: week; y: amount; grouped by: region)", found)
+        self.assertIn("Completed orders only; refunds excluded.", found)
+
+    def test_a_query_is_found_by_its_charts_description(self):
+        self._weekly(description="Churn by signup cohort")
+        models.db.session.commit()
+
+        self.assertIn("Weekly numbers", self.text("find_queries", {"question": "churn cohort"}))
+
+    def test_a_plain_table_nobody_described_is_not_listed(self):
+        query, _ = self._weekly()
+        self.factory.create_visualization(query_rel=query, type="TABLE", name="Table", options={})
+        models.db.session.commit()
+
+        self.assertNotIn("Table (table)", self.text("find_queries", {"question": "weekly"}))
+
+    def test_a_counter_says_which_column_it_counts(self):
+        self._weekly(type="COUNTER", name="Orders today", options={"counterColName": "orders"})
+        models.db.session.commit()
+
+        self.assertIn("Orders today (counter; value: orders)", self.text("find_queries", {"question": "weekly"}))
+
+    def test_a_dashboard_lists_its_charts_and_their_queries(self):
+        query, chart = self._weekly(description="Completed orders only.")
+        dashboard = self.factory.create_dashboard(name="Sales", is_draft=False)
+        self.factory.create_widget(dashboard=dashboard, visualization=chart)
+        models.db.session.commit()
+
+        found = self.text("find_dashboards", {"question": "sales"})
+
+        self.assertIn("Orders by week (line chart; x: week; y: amount; grouped by: region)", found)
+        self.assertIn("Completed orders only.", found)
+        self.assertIn("from query #{} Weekly numbers".format(query.id), found)
+
+    def test_a_dashboard_is_found_by_its_charts_description(self):
+        _, chart = self._weekly(description="Churn by signup cohort")
+        dashboard = self.factory.create_dashboard(name="Board", is_draft=False)
+        self.factory.create_widget(dashboard=dashboard, visualization=chart)
+        models.db.session.commit()
+
+        self.assertIn("Board", self.text("find_dashboards", {"question": "churn"}))
+
+    def test_a_chart_you_cannot_read_says_nothing(self):
+        # The dashboard itself is visible, but one panel sits on a data
+        # source this user has no access to. On the page it is a locked
+        # panel; here it must not be listed, nor make the dashboard match.
+        outsiders = self.factory.create_group(name="Outsiders")
+        models.db.session.add(outsiders)
+        locked = self.factory.create_data_source(name="locked", group=outsiders)
+        secret = self.factory.create_query(name="Payroll", description="", data_source=locked, is_draft=False)
+        chart = self.factory.create_visualization(
+            query_rel=secret, type="CHART", name="Salaries by team", description="Payroll by team"
+        )
+        dashboard = self.factory.create_dashboard(name="Mixed", is_draft=False)
+        self.factory.create_widget(dashboard=dashboard, visualization=chart)
+        models.db.session.add(models.Widget(dashboard=dashboard, width=1, text="Company overview", options={}))
+        models.db.session.commit()
+
+        self.assertIn("No dashboard matches", self.text("find_dashboards", {"question": "payroll"}))
+        found = self.text("find_dashboards", {"question": "company overview"})
+        self.assertIn("Mixed", found)
+        self.assertNotIn("Salaries", found)
+        self.assertNotIn("Payroll", found)
+
 
 class TestExplainAndRun(McpTestCase):
     def call(self, name, arguments):
