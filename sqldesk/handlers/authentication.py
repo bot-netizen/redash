@@ -8,10 +8,14 @@ from sqlalchemy.orm.exc import NoResultFound
 from sqldesk import __version__, limiter, models, settings
 from sqldesk.authentication import current_org, get_login_url, get_next_path
 from sqldesk.authentication.account import (
+    INVITE,
+    RESET,
+    VERIFY,
+    TokenUsed,
     send_password_reset_email,
     send_user_disabled_email,
     send_verify_email,
-    validate_token,
+    user_for_token,
 )
 from sqldesk.handlers import routes
 from sqldesk.handlers.base import json_response, org_scoped_rule
@@ -30,24 +34,25 @@ def get_google_auth_url(next_path):
 
 def render_token_login_page(template, org_slug, token, invite):
     error_message = None
+    # The token itself stays out of the log: a log line is not the place for
+    # a credential, however briefly valid.
     try:
-        user_id = validate_token(token)
-        org = current_org._get_current_object()
-        user = models.User.get_by_id_and_org(user_id, org)
+        user = user_for_token(token, INVITE if invite else RESET, current_org._get_current_object())
     except NoResultFound:
-        logger.exception(
-            "Bad user id in token. Token=%s , User id= %s, Org=%s",
-            token,
-            user_id,
-            org_slug,
-        )
+        logger.warning("Token for a user not in this organization. org=%s", org_slug)
         error_message = "Your invite link is invalid. Bad user id in token. Please ask for a new one."
     except SignatureExpired:
-        logger.exception("Token signature has expired. Token: %s, org=%s", token, org_slug)
+        logger.info("Expired token. org=%s", org_slug)
         error_message = "Your invite link has expired. Please ask for a new one."
+    except TokenUsed:
+        logger.info("Token already used, or overtaken by a newer link. org=%s", org_slug)
+        error_message = "This link has already been used, or a newer one was sent. Please ask for a new one."
     except BadSignature:
-        logger.exception("Bad signature for the token: %s, org=%s", token, org_slug)
+        logger.warning("Bad token signature. org=%s", org_slug)
         error_message = "Your invite link is invalid. Bad signature. Please double-check the token."
+
+    if not error_message and user.is_disabled:
+        error_message = "This account is disabled. Please ask an administrator to enable it."
 
     if error_message:
         return (
@@ -119,11 +124,9 @@ def reset(token, org_slug=None):
 @routes.route(org_scoped_rule("/verify/<token>"), methods=["GET"])
 def verify(token, org_slug=None):
     try:
-        user_id = validate_token(token)
-        org = current_org._get_current_object()
-        user = models.User.get_by_id_and_org(user_id, org)
+        user = user_for_token(token, VERIFY, current_org._get_current_object())
     except (BadSignature, NoResultFound):
-        logger.exception("Failed to verify email verification token: %s, org=%s", token, org_slug)
+        logger.warning("Bad email verification token. org=%s", org_slug)
         return (
             render_template(
                 "error.html",

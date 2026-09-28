@@ -1,44 +1,86 @@
+import hashlib
 import logging
 
 from flask import render_template
-from itsdangerous import URLSafeTimedSerializer
+from itsdangerous import BadSignature, URLSafeTimedSerializer
 
 from sqldesk import settings
 from sqldesk.tasks import send_mail
 from sqldesk.utils import base_url
 
 logger = logging.getLogger(__name__)
-serializer = URLSafeTimedSerializer(settings.SECRET_KEY)
+
+#: The three links that carry a signed user id, each good for its own page only.
+INVITE = "invite"
+RESET = "reset"
+VERIFY = "verify"
+
+# One serializer per purpose. The salt is what keeps a link to its own page:
+# without it the same token opened /invite, /reset and /verify alike, so an
+# invite that /invite refused as already accepted was still a working
+# password reset for a week.
+_serializers = {
+    purpose: URLSafeTimedSerializer(settings.SECRET_KEY, salt="sqldesk-" + purpose)
+    for purpose in (INVITE, RESET, VERIFY)
+}
+
+
+class TokenUsed(BadSignature):
+    """The password this link was issued for has changed: it was used, or overtaken by a newer link."""
+
+
+def _password_fingerprint(user):
+    return hashlib.sha256((user.password_hash or "").encode()).hexdigest()[:16]
+
+
+def token_for(user, purpose):
+    """
+    A signed link to `purpose` for this user.
+
+    Invite and reset links carry a fingerprint of the password as it is now,
+    so setting a password through one kills it -- and every other link of its
+    kind still in somebody's mailbox. A link is single-use without the server
+    having to remember which it has seen.
+    """
+    payload = {"id": user.id}
+    if purpose != VERIFY:
+        payload["pw"] = _password_fingerprint(user)
+    return _serializers[purpose].dumps(payload)
 
 
 def invite_token(user):
-    return serializer.dumps(str(user.id))
+    return token_for(user, INVITE)
+
+
+def reset_token(user):
+    return token_for(user, RESET)
 
 
 def verify_link_for_user(user):
-    token = invite_token(user)
-    verify_url = "{}/verify/{}".format(base_url(user.org), token)
-
-    return verify_url
+    return "{}/verify/{}".format(base_url(user.org), token_for(user, VERIFY))
 
 
 def invite_link_for_user(user):
-    token = invite_token(user)
-    invite_url = "{}/invite/{}".format(base_url(user.org), token)
-
-    return invite_url
+    return "{}/invite/{}".format(base_url(user.org), invite_token(user))
 
 
 def reset_link_for_user(user):
-    token = invite_token(user)
-    invite_url = "{}/reset/{}".format(base_url(user.org), token)
-
-    return invite_url
+    return "{}/reset/{}".format(base_url(user.org), reset_token(user))
 
 
-def validate_token(token):
-    max_token_age = settings.INVITATION_TOKEN_MAX_AGE
-    return serializer.loads(token, max_age=max_token_age)
+def user_for_token(token, purpose, org):
+    """
+    The user a link is for, when the link is good for `purpose`, unexpired,
+    unused, and for a user of this organization. Raises `SignatureExpired`,
+    `TokenUsed`, `BadSignature` or `NoResultFound`.
+    """
+    from sqldesk import models
+
+    payload = _serializers[purpose].loads(token, max_age=settings.INVITATION_TOKEN_MAX_AGE)
+    user = models.User.get_by_id_and_org(payload["id"], org)
+    if purpose != VERIFY and payload.get("pw") != _password_fingerprint(user):
+        raise TokenUsed("the password this link was issued for has changed")
+    return user
 
 
 def send_verify_email(user, org):

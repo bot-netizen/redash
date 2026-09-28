@@ -197,6 +197,10 @@ def jwt_token_load_user_from_request(request):
     except models.NoResultFound:
         user = create_and_login_user(current_org, payload["email"], payload["email"])
 
+    # Disabled here means disabled, whatever the identity provider still says.
+    if user is not None and user.is_disabled:
+        return None
+
     return user
 
 
