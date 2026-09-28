@@ -73,7 +73,8 @@ localhost. Set it to the address people actually use.
 
 Alert emails can carry pictures: the renderer runs as
 {{ include "sqldesk.fullname" . }}-screenshots, and an alert's edit page has an
-"Attach" row for the dashboards and queries to include.
+"Attach" row for the dashboards and queries to include. It renders SQLDesk's
+own pages only, for the worker only.
 {{- end }}
 
 {{- if and .Values.uploads.enabled (eq .Values.uploads.accessMode "ReadWriteOnce") }}

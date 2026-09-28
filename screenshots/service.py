@@ -17,6 +17,7 @@ to use, and it gives back an image. Everything that decides *what* to draw
 lives in sqldesk/screenshots.py, on the other side of this boundary.
 """
 
+import hmac
 import logging
 import os
 from urllib.parse import urlsplit
@@ -38,6 +39,25 @@ VIEWPORT = {
 
 #: Above this, stop waiting and say so.
 MAX_TIMEOUT_SECONDS = int(os.environ.get("SCREENSHOT_MAX_TIMEOUT", "120"))
+
+# Two things keep this from being a browser anyone on the network can point
+# anywhere -- at a cloud metadata address, an internal admin page, or SQLDesk
+# itself with a header of their choosing. The caller shows a token, and the
+# page has to be SQLDesk's own address. Both are set by the chart and the
+# compose file; unset, nothing is checked, which is right only on a network
+# with nothing else on it.
+TOKEN = os.environ.get("SCREENSHOT_TOKEN", "")
+ALLOWED_ORIGIN = os.environ.get("SCREENSHOT_ALLOWED_ORIGIN", "")
+
+
+def _refusal(url):
+    """Why this URL will not be rendered, or None."""
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        return "Only http and https pages are rendered."
+    if ALLOWED_ORIGIN and _origin(url) != _origin(ALLOWED_ORIGIN):
+        return "That address is not the SQLDesk this renderer serves."
+    return None
 
 
 def _origin(url):
@@ -102,10 +122,16 @@ def _render(url, headers, wait_for, timeout_seconds, full_page):
 
 @app.post("/screenshot")
 def screenshot():
+    if TOKEN and not hmac.compare_digest(request.headers.get("X-Screenshot-Token", ""), TOKEN):
+        return jsonify({"error": "A token is required."}), 401
+
     body = request.get_json(silent=True) or {}
     url = body.get("url")
-    if not url:
+    if not url or not isinstance(url, str):
         return jsonify({"error": "No url given."}), 400
+    refusal = _refusal(url)
+    if refusal:
+        return jsonify({"error": refusal}), 400
 
     try:
         image = _render(

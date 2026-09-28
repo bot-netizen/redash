@@ -55,6 +55,19 @@ class TestCapture(BaseTestCase):
         self.assertIn(f"/embed/query/{query.id}/visualization/", body["url"])
         self.assertIn("screenshot=1", body["url"])
 
+    def test_shows_the_renderer_its_token(self):
+        # The renderer fetches pages for whoever asks; the token is how it
+        # knows the worker is asking.
+        query = self._query()
+        self.factory.create_visualization(query_rel=query, type="CHART")
+        db.session.commit()
+
+        with _on(SCREENSHOT_TOKEN="only-the-worker-knows"), mock.patch("sqldesk.screenshots.requests.post") as post:
+            post.return_value = mock.Mock(content=b"PNG", raise_for_status=mock.Mock())
+            screenshots.capture(screenshots.QUERY, query)
+
+        self.assertEqual("only-the-worker-knows", post.call_args[1]["headers"]["X-Screenshot-Token"])
+
     def test_sends_the_key_as_a_header_not_in_the_url(self):
         # Two services would otherwise write a working credential into their
         # logs.

@@ -103,7 +103,12 @@ COMPOSE_PROFILES=rendering      # mcp,rendering for both</code></pre>
 <pre><code>helm upgrade --install sqldesk ./charts/sqldesk --set rendering.enabled=true</code></pre>
 <p>The chart sets the three variables itself. The renderer reaches SQLDesk on the internal network rather
 than your public address, so redirect to HTTPS at your proxy and leave <code>SQLDESK_ENFORCE_HTTPS</code>
-off &mdash; with it on, the renderer is redirected to an address it cannot reach and every picture fails.</p>
+off &mdash; with it on, the renderer is redirected to an address it cannot reach and every picture fails.
+Cookies are still marked <code>Secure</code>: that follows from <code>SQLDESK_HOST</code> starting with
+<code>https://</code>, not from the redirect.</p>
+<p>The renderer is a browser, so it renders only SQLDesk's own address, and only for a caller that shows a
+token. The chart generates the token; with Compose, set <code>SQLDESK_SCREENSHOT_TOKEN</code> in
+<code>.env</code> (the renderer checks it whenever it is set).</p>
 <div class="note">
   <p><strong>Put <code>COMPOSE_PROFILES</code> in <code>.env</code> rather than passing <code>--profile</code>.</strong>
   A later <code>pull</code> or <code>up</code> without the flag would leave the add-on behind on the old
@@ -147,6 +152,10 @@ docker compose -f compose.prod.yaml up -d</code></pre>
 an error. Open the address and the first page makes your organization and your administrator account.</p>
 <p>Pin the image in <code>.env</code> as <code>SQLDESK_IMAGE=</code>. Without it the compose file falls back
 to the release it was written for.</p>
+<p>The port is published on the machine itself (<code>127.0.0.1</code>) until you put a proxy in front or set
+<code>SQLDESK_BIND=0.0.0.0</code>. Tell SQLDesk how many proxies stand in front of it with
+<code>SQLDESK_PROXIES_COUNT</code>: 0 when it is reached directly, 1 behind nginx or Caddy. The number decides
+which address the login throttle and the audit log see.</p>
 
 <h2 id="upgrading">Upgrading</h2>
 <pre><code># .env: SQLDESK_IMAGE=ghcr.io/bot-netizen/sqldesk:0.6.0
@@ -172,7 +181,11 @@ gives a different random port each time, so <code>host</code> cannot be set to m
 the server's node so they can mount it. With a <code>ReadWriteMany</code> storage class, set
 <code>uploads.accessMode=ReadWriteMany</code> and they schedule anywhere.</p>
 <p>For a real cluster, put an Ingress in front and terminate TLS there — an API key travelling to
-<code>/mcp</code> over plain HTTP is a credential in the clear.</p>
+<code>/mcp</code> over plain HTTP is a credential in the clear — and set <code>service.type</code> to
+<code>ClusterIP</code>; <code>NodePort</code> is for minikube.</p>
+<p>The bundled Redis takes a generated password, and a NetworkPolicy keeps Postgres, Redis and the renderer
+reachable from this release's pods only. The policy needs a network plugin that enforces it (Calico, Cilium,
+the managed clouds' own); elsewhere it is accepted and does nothing, which is why the password is there too.</p>
 <p>Already running on Compose? <a href="#compose-to-minikube">Moving from Docker Compose to minikube</a>
 brings the existing instance across instead of starting an empty one.</p>
 

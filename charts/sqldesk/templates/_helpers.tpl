@@ -65,11 +65,23 @@ Secret and did not match.
 {{- end -}}
 {{- end -}}
 
+{{/*
+The bundled Redis takes a password only when the chart manages the Secret
+that holds it; with `secrets.existingSecret` there is nowhere the chart can
+put one, and a password Redis has that the application does not know is a
+first install that cannot start.
+*/}}
+{{- define "sqldesk.redisManaged" -}}
+{{- if and .Values.redis.enabled (not .Values.redis.external) (not .Values.secrets.existingSecret) -}}true{{- end -}}
+{{- end -}}
+
 {{- define "sqldesk.redisUrl" -}}
-{{- if .Values.redis.external -}}
-{{- .Values.redis.external -}}
+{{- if .ctx.Values.redis.external -}}
+{{- .ctx.Values.redis.external -}}
+{{- else if include "sqldesk.redisManaged" .ctx -}}
+{{- printf "redis://:%s@%s-redis:6379/0" .password (include "sqldesk.fullname" .ctx) -}}
 {{- else -}}
-{{- printf "redis://%s-redis:6379/0" (include "sqldesk.fullname" .) -}}
+{{- printf "redis://%s-redis:6379/0" (include "sqldesk.fullname" .ctx) -}}
 {{- end -}}
 {{- end -}}
 
@@ -88,8 +100,16 @@ reached only one of them is the kind of difference nobody finds quickly.
     secretKeyRef:
       name: {{ include "sqldesk.secretName" . }}
       key: database-url
+{{- if include "sqldesk.redisManaged" . }}
 - name: SQLDESK_REDIS_URL
-  value: {{ include "sqldesk.redisUrl" . | quote }}
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "sqldesk.secretName" . }}
+      key: redis-url
+{{- else }}
+- name: SQLDESK_REDIS_URL
+  value: {{ include "sqldesk.redisUrl" (dict "ctx" . "password" "") | quote }}
+{{- end }}
 - name: SQLDESK_COOKIE_SECRET
   valueFrom:
     secretKeyRef:
@@ -138,6 +158,14 @@ reached only one of them is the kind of difference nobody finds quickly.
 # address, which may be behind SSO the renderer cannot get through.
 - name: SQLDESK_INTERNAL_BASE_URL
   value: {{ printf "http://%s:%v" (include "sqldesk.fullname" .) .Values.service.port | quote }}
+# Shown to the renderer with every request, so only the worker can ask it
+# to fetch a page.
+- name: SQLDESK_SCREENSHOT_TOKEN
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "sqldesk.secretName" . }}
+      key: screenshot-token
+      optional: true
 {{- end }}
 {{- range $key, $value := .Values.extraEnv }}
 - name: {{ $key }}

@@ -39,7 +39,10 @@ ingress:
 secrets:
   cookieSecret: ""
   secretKey: ""
-  # Name an existing Secret instead, if it is managed elsewhere.
+  # Name an existing Secret instead, if it is managed elsewhere. It holds
+  # cookie-secret, secret-key, database-url and postgres-password; with it
+  # the bundled Redis runs without a password (see `redis`), and
+  # screenshot-token is read from it if present.
   existingSecret: ""
 
 server:
@@ -116,6 +119,9 @@ rendering:
     repository: ghcr.io/bot-netizen/sqldesk-screenshots
     # Defaults to the chart's appVersion.
     tag: ""
+  # What the worker shows the renderer, so nothing else in the cluster can
+  # ask it to fetch a page. Generated and kept when left empty.
+  token: ""
   replicas: 1
   resources:
     requests: { cpu: 200m, memory: 512Mi }
@@ -146,7 +152,20 @@ redis:
   image: redis:7-alpine
   # Queues, locks and a schema cache. Nothing here needs to survive a
   # restart, which is why there is no volume.
+  #
+  # A worker takes whatever a queue holds, so anything that can reach Redis
+  # can run code on the worker. The bundled Redis therefore takes a
+  # password -- generated and kept, like the secrets above -- whenever the
+  # chart manages the Secret, and the network policy below keeps everything
+  # but this release's pods away from it.
+  password: ""
   external: ""
+
+# Only this release's pods may talk to its Postgres, Redis and renderer.
+# Needs a network plugin that enforces NetworkPolicy (Calico, Cilium, the
+# managed clouds' own); where none does, the policy is accepted and ignored.
+networkPolicy:
+  enabled: true
 
 # Runs `manage db upgrade` before the new version takes traffic, as a Helm
 # hook. Also creates the tables on a first install.

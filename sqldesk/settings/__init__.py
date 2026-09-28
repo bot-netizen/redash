@@ -515,6 +515,8 @@ FEATURE_ALERT_SCREENSHOTS = parse_boolean(os.environ.get("SQLDESK_FEATURE_ALERT_
 # none, which turns the feature off however the flag above is set.
 SCREENSHOT_URL = os.environ.get("SQLDESK_SCREENSHOT_URL", "")
 SCREENSHOT_TIMEOUT = int(os.environ.get("SQLDESK_SCREENSHOT_TIMEOUT", "60"))
+# Shown to the renderer with every request; the renderer refuses anyone else.
+SCREENSHOT_TOKEN = os.environ.get("SQLDESK_SCREENSHOT_TOKEN", "")
 # How the renderer reaches this application. The worker and the renderer are
 # other containers, so "localhost" is not it.
 INTERNAL_BASE_URL = os.environ.get("SQLDESK_INTERNAL_BASE_URL", "http://server:5000")

@@ -4,6 +4,9 @@
 # Its own Deployment and its own image, so the SQLDesk image carries no
 # browser. It holds no credentials and keeps no state; the worker hands it a
 # URL and a key scoped to one query, and it sends that key to SQLDesk only.
+# It renders only SQLDesk's own address, and only for a caller that shows
+# the token the chart generated: a browser that fetched any page for anyone
+# on the cluster network would be a way to reach what that network can.
 apiVersion: v1
 kind: Service
 metadata:
@@ -41,6 +44,15 @@ spec:
         - name: screenshots
           image: {{ printf "%s:%s" .Values.rendering.image.repository (.Values.rendering.image.tag | default .Chart.AppVersion) }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: SCREENSHOT_ALLOWED_ORIGIN
+              value: {{ printf "http://%s:%v" (include "sqldesk.fullname" .) .Values.service.port | quote }}
+            - name: SCREENSHOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sqldesk.secretName" . }}
+                  key: screenshot-token
+                  optional: true
           ports:
             - name: http
               containerPort: 3000

@@ -87,6 +87,11 @@ def _first_visualization(query):
     return (drawn or visualizations or [None])[0]
 
 
+def _renderer_headers():
+    """The token the renderer expects, when one is set."""
+    return {"X-Screenshot-Token": settings.SCREENSHOT_TOKEN} if settings.SCREENSHOT_TOKEN else {}
+
+
 def capture(kind, obj):
     """
     A PNG of one dashboard or query, or None.
@@ -112,6 +117,7 @@ def capture(kind, obj):
     try:
         response = requests.post(
             f"{settings.SCREENSHOT_URL.rstrip('/')}/screenshot",
+            headers=_renderer_headers(),
             json={
                 "url": url,
                 # The key goes in a header, not the URL: two services would

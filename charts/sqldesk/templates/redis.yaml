@@ -34,6 +34,17 @@ spec:
       containers:
         - name: redis
           image: {{ .Values.redis.image }}
+          {{- if include "sqldesk.redisManaged" . }}
+          # A queue is a place to put work for the worker to run, so Redis
+          # answers only with the password the chart generated.
+          args: ["--requirepass", "$(REDIS_PASSWORD)"]
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "sqldesk.secretName" . }}
+                  key: redis-password
+          {{- end }}
           ports:
             - name: redis
               containerPort: 6379
@@ -41,7 +52,11 @@ spec:
           # cache; losing it costs in-flight jobs and nothing else.
           readinessProbe:
             exec:
+              {{- if include "sqldesk.redisManaged" . }}
+              command: ["sh", "-c", "redis-cli --no-auth-warning -a \"$REDIS_PASSWORD\" ping"]
+              {{- else }}
               command: ["redis-cli", "ping"]
+              {{- end }}
             initialDelaySeconds: 3
             periodSeconds: 5
 {{- end }}

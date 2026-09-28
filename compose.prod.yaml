@@ -75,13 +75,22 @@ x-sqldesk-environment: &sqldesk-environment
   # are none to break here, and the application has sent the token all
   # along. API-key calls, MCP included, are not affected.
   SQLDESK_ENFORCE_CSRF: ${SQLDESK_ENFORCE_CSRF:-true}
+  # How many proxies stand between the internet and this container. There is
+  # none in this file, so 0: with 1, a client reaching the port directly can
+  # name its own address in X-Forwarded-For and dodge the login throttle.
+  # Behind nginx or Caddy, set 1.
+  SQLDESK_PROXIES_COUNT: ${SQLDESK_PROXIES_COUNT:-0}
+  SQLDESK_SCREENSHOT_TOKEN: ${SQLDESK_SCREENSHOT_TOKEN:-}
 
 services:
   server:
     <<: *sqldesk-service
     command: server
+    # On this machine only, unless SQLDESK_BIND says otherwise: published on
+    # every interface, an instance is on the office network -- or the
+    # internet -- over plain HTTP before anyone has set it up.
     ports:
-      - "${SQLDESK_PORT:-5000}:5000"
+      - "${SQLDESK_BIND:-127.0.0.1}:${SQLDESK_PORT:-5000}:5000"
     environment:
       <<: *sqldesk-environment
       SQLDESK_WEB_WORKERS: ${SQLDESK_WEB_WORKERS:-4}
@@ -167,6 +176,10 @@ services:
     # Chromium wants more than Docker's default 64MB of shared memory, and
     # runs out of it as a blank page rather than as an error.
     shm_size: 1gb
+    environment:
+      # Renders SQLDesk's own pages only, for a caller showing the token.
+      SCREENSHOT_ALLOWED_ORIGIN: ${SQLDESK_INTERNAL_BASE_URL:-http://server:5000}
+      SCREENSHOT_TOKEN: ${SQLDESK_SCREENSHOT_TOKEN:-}
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3000/ping')"]
       interval: 10s

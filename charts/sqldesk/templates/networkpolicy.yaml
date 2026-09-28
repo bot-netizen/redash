@@ -1,0 +1,31 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /*
+  Postgres holds every query result, Redis holds the queues a worker runs
+  whatever it finds on, and the renderer fetches pages. None of them is for
+  anything but this release's own pods, and by default any pod in the
+  cluster could reach all three.
+*/ -}}
+{{- range $component := list "postgres" "redis" "screenshots" }}
+{{- $on := index (dict "postgres" $.Values.postgres.enabled "redis" $.Values.redis.enabled "screenshots" $.Values.rendering.enabled) $component }}
+{{- if $on }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "sqldesk.fullname" $ }}-{{ $component }}
+  labels:
+    {{- include "sqldesk.labels" $ | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "sqldesk.selectorLabels" $ | nindent 6 }}
+      app.kubernetes.io/component: {{ $component }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "sqldesk.selectorLabels" $ | nindent 14 }}
+{{- end }}
+{{- end }}
+{{- end }}
