@@ -15,6 +15,7 @@ identified. Those are the rows worth having.
 """
 
 import logging
+import re
 import time
 import uuid
 
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 UNAUTHORIZED = -32001
 SESSION_HEADER = "Mcp-Session-Id"
+SESSION_ID = re.compile(r"[0-9a-f]{32}")
 #: Long enough to be worth reading, short enough not to be a copy of the
 #: request. A caller can put anything in an argument.
 DETAIL_LIMIT = 500
@@ -62,7 +64,7 @@ def _record(org, user, session_id, client, method, tool, outcome, detail=None, s
             models.McpEvent(
                 org=org,
                 user=user if user is not None and not user.is_api_user() else None,
-                session_id=session_id,
+                session_id=(session_id or None) and str(session_id)[:64],
                 client=(client or None) and str(client)[:255],
                 method=(method or "")[:64],
                 tool=(tool or None) and str(tool)[:64],
@@ -167,7 +169,12 @@ def mcp_endpoint():
 
     started = time.time()
     org = current_org._get_current_object()
+    # Only an id this server issued. Anything else went into a 64-character
+    # column as given; longer, the audit row failed to save, and the request
+    # went ahead without one.
     session_id = request.headers.get(SESSION_HEADER)
+    if session_id and not SESSION_ID.fullmatch(session_id):
+        session_id = None
     user = _user_from_request(org)
 
     if user is None:
@@ -238,7 +245,11 @@ def _answer(messages, org, user, session_id):
             replies.append(_error(INTERNAL_ERROR, "That request could not be handled.", message_id))
             continue
 
-        outcome = "error" if isinstance(result, dict) and result.get("isError") else "ok"
+        if result is None and "id" not in message:
+            # A notification: acknowledged, never run. The row said "ok".
+            outcome = "ignored"
+        else:
+            outcome = "error" if isinstance(result, dict) and result.get("isError") else "ok"
         _record(
             org, user, session_id, _client_name(message), method, tool, outcome, _summary(message), message_started
         )
@@ -267,7 +278,9 @@ class McpAuditResource(BaseResource):
         """
         import datetime
 
-        limit = min(int(request.args.get("limit", self.DEFAULT_LIMIT)), self.MAX_LIMIT)
+        limit = min(
+            max(request.args.get("limit", self.DEFAULT_LIMIT, type=int) or self.DEFAULT_LIMIT, 1), self.MAX_LIMIT
+        )
         events = (
             models.McpEvent.query.filter(models.McpEvent.org == self.current_org)
             .order_by(models.McpEvent.created_at.desc())

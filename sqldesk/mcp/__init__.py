@@ -30,12 +30,12 @@ import sqlglot
 from sqlalchemy import or_
 from sqlalchemy.orm import load_only
 from sqlglot import exp
+from sqlglot.tokens import TokenType
 
 from sqldesk import __version__, models, settings
 from sqldesk.ai.catalog.retrieve import context_for
 from sqldesk.ai.optimizer import analyze, dialect_for
 from sqldesk.permissions import has_access, not_view_only, view_only
-from sqldesk.query_runner import BaseSQLQueryRunner
 
 #: The editor's own ceiling, reused rather than invented. A model exploring
 #: should not be able to ask for more than a person clicking Execute can.
@@ -328,6 +328,111 @@ WRITES = (
 READ_WORDS = {"select", "with", "show", "describe", "desc", "values"}
 _LEADING_NOISE = re.compile(r"^(?:\s+|--[^\n]*(?:\n|$)|/\*.*?\*/|\()*", re.S)
 
+#: Sources whose query language cannot write, or that reach an API which only
+#: reads. Their queries go through unparsed.
+READ_ONLY_LANGUAGES = {
+    "mongodb",
+    "elasticsearch",
+    "elasticsearch2",
+    "elasticsearch2_OpenDistroSQLElasticSearch",
+    "elasticsearch2_XPackSQLElasticSearch",
+    "aws_es",
+    "kibana",
+    "url",
+    "json",
+    "prometheus",
+    "graphite",
+    "google_spreadsheets",
+    "csv",
+    "excel",
+    "jirajql",
+    "results",
+    "cloudwatch",
+    "cloudwatch_insights",
+    "salesforce",
+    "google_analytics4",
+    "axibasetsd",
+}
+#: Sources whose language this cannot read for writes -- a program, or a
+#: query language with its own grammar. Refused; the editor is the place.
+UNCHECKABLE_LANGUAGES = {
+    "python",
+    "insecure_script",
+    "arangodb",
+    "azure_kusto",
+    "dgraph",
+    "sparql_endpoint",
+    "corporate_memory",
+    "influxdbv2",
+}
+#: Keywords that only ever start or mark a write, wherever they appear. The
+#: tokens are checked before the tree is, because a parse can succeed and
+#: still hide one: T-SQL needs no semicolon, so `SELECT 1 DELETE FROM t` read
+#: as one SELECT with an alias, and SQL Server ran both.
+WRITE_TOKENS = {
+    name
+    for name in (
+        "DELETE",
+        "INSERT",
+        "UPDATE",
+        "MERGE",
+        "DROP",
+        "CREATE",
+        "ALTER",
+        "TRUNCATE",
+        "GRANT",
+        "REVOKE",
+        "EXECUTE",
+        "COPY",
+        "LOAD",
+        "INTO",
+        "SET",
+        "PUT",
+        "KILL",
+        "LOCK",
+        "ATTACH",
+        "DETACH",
+        "INSTALL",
+        "BEGIN",
+        "COMMIT",
+        "ROLLBACK",
+        "ANALYZE",
+        "REFRESH",
+        "USE",
+        "COMMAND",
+    )
+    if hasattr(TokenType, name)
+}
+#: T-SQL statements sqlglot reads as plain words, none of which a read needs.
+TSQL_STATEMENTS = {
+    "waitfor",
+    "shutdown",
+    "backup",
+    "restore",
+    "dbcc",
+    "deny",
+    "bulk",
+    "reconfigure",
+    "checkpoint",
+    "raiserror",
+    "throw",
+    "goto",
+}
+
+
+def _write_keyword(sql, dialect):
+    """The first write keyword in the SQL's tokens, or None. Strings and quoted names are not keywords."""
+    try:
+        tokens = sqlglot.tokenize(sql, read=dialect)
+    except Exception:
+        return "something the tokenizer could not read"
+    for token in tokens:
+        if token.token_type.name in WRITE_TOKENS:
+            return token.text.upper()
+        if dialect == "tsql" and token.token_type == TokenType.VAR and token.text.lower() in TSQL_STATEMENTS:
+            return token.text.upper()
+    return None
+
 
 def _why_not_a_read(sql, source):
     """
@@ -339,16 +444,31 @@ def _why_not_a_read(sql, source):
     accident: a DELETE it took for a SELECT, a second statement after a
     semicolon, an `EXPLAIN ANALYZE` that runs what it was asked only to plan.
     """
-    runner = source.query_runner
-    if not isinstance(runner, BaseSQLQueryRunner):
-        # Mongo, Elasticsearch, a URL: runners that only read, in a language
-        # that is not SQL. The exception is the one that runs a program.
-        return "This data source runs Python, which a model may not." if source.type == "python" else None
+    # Decided by the language, not by which Python class the runner has:
+    # Athena and Presto are SQL engines on the plain base class, and went
+    # through unchecked.
+    if source.type in ("python", "insecure_script"):
+        return "This data source runs Python, which a model may not."
+    if source.type in UNCHECKABLE_LANGUAGES:
+        return "This data source's queries cannot be checked for writes here; run them from the editor."
+    if source.type in READ_ONLY_LANGUAGES:
+        return None
 
+    dialect = dialect_for(source.type)
     try:
-        statements = [tree for tree in sqlglot.parse(sql, read=dialect_for(source.type)) if tree is not None]
+        statements = [tree for tree in sqlglot.parse(sql, read=dialect) if tree is not None]
     except Exception:
         statements = None
+
+    if statements is not None and len(statements) != 1:
+        return "One statement at a time."
+
+    # The tokens before the tree: a parse can succeed and still hide a write
+    # (T-SQL's `SELECT 1 DELETE FROM t`), or fail on one the first word
+    # would have let through (MySQL's `SELECT ... INTO OUTFILE`).
+    keyword = _write_keyword(sql, dialect)
+    if keyword:
+        return "That statement contains {}; only reads can be run from here.".format(keyword)
 
     if statements is None:
         # Some engines speak SQL the parser cannot read, and refusing all of
@@ -363,8 +483,6 @@ def _why_not_a_read(sql, source):
             return "One statement at a time."
         return None
 
-    if len(statements) != 1:
-        return "One statement at a time."
     tree = statements[0]
     if isinstance(tree, exp.Command):
         if str(tree.this).lower() in ("show", "describe", "desc"):
@@ -382,10 +500,17 @@ def _why_not_a_read(sql, source):
     return None
 
 
+#: A question is a sentence or a few, not a document: each word becomes a
+#: search on the catalog.
+MAX_QUESTION = 2000
+
+
 def tool_find_context(user, org, arguments):
     question = (arguments or {}).get("question", "")
-    if not question.strip():
+    if not isinstance(question, str) or not question.strip():
         raise McpError(INVALID_PARAMS, "`question` is required.")
+    if len(question) > MAX_QUESTION:
+        raise McpError(INVALID_PARAMS, "`question` is over {} characters.".format(MAX_QUESTION))
     source = _resolve_source(user, org, (arguments or {}).get("data_source"))
 
     # Scoped to what this user can read even when no source is named: the

@@ -14,8 +14,13 @@ from sqldesk.models import CatalogColumn, CatalogRelationship, CatalogTable, db
 DEFAULT_LIMIT = 8
 
 
+#: One ILIKE per word, on two tables: past a dozen the words are noise and
+#: the query is a way to keep a web worker busy.
+MAX_TERMS = 12
+
+
 def _terms(question):
-    return [word.strip().lower() for word in (question or "").split() if len(word.strip()) > 2]
+    return [word.strip().lower() for word in (question or "").split() if len(word.strip()) > 2][:MAX_TERMS]
 
 
 def find_tables(org, question, data_source=None, limit=DEFAULT_LIMIT, data_source_ids=None):

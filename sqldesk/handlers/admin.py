@@ -322,7 +322,10 @@ def describe_catalog_table(table_id):
     if table is None:
         abort(404)
 
-    description = (request.get_json(force=True) or {}).get("description")
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict):
+        abort(400, message="A JSON object is expected.")
+    description = body.get("description")
     description = (description or "").strip() or None
     table.description = description
     # Cleared by a person is still a decision by a person -- but with nothing
@@ -401,7 +404,9 @@ def review_catalog_measure(measure_id):
     if measure is None:
         abort(404)
 
-    body = request.get_json(force=True) or {}
+    body = request.get_json(force=True, silent=True)
+    if not isinstance(body, dict):
+        abort(400, message="A JSON object is expected.")
     if "status" in body:
         if body["status"] not in models.MEASURE_STATUSES:
             abort(400, message="status must be one of {}.".format(", ".join(models.MEASURE_STATUSES)))

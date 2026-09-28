@@ -418,6 +418,41 @@ class TestFindingExistingWork(McpTestCase):
         self.assertNotIn("Payroll", found)
 
 
+class TestTheAuditCannotBeSwitchedOff(McpTestCase):
+    def test_a_long_session_header_does_not_lose_the_row(self):
+        # The column holds 64 characters. A longer header made the insert
+        # fail -- silently, with the request going ahead -- so a client could
+        # turn its own audit trail off with one header.
+        headers = {"Authorization": "Bearer {}".format(self.factory.user.api_key), "Mcp-Session-Id": "a" * 65}
+        response = self.client.post(
+            "/mcp", data=json.dumps(rpc("tools/list")), headers=headers, content_type="application/json"
+        )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual(1, models.McpEvent.query.count())
+        self.assertIsNone(models.McpEvent.query.first().session_id)
+
+    def test_a_notification_is_recorded_as_ignored_not_ok(self):
+        # A message without an id is a notification: acknowledged, never run.
+        self.post(
+            rpc(
+                "tools/call",
+                {"name": "run_query", "arguments": {"sql": "DROP TABLE x", "data_source": "pg"}},
+                message_id=None,
+            )
+        )
+
+        outcomes = [event.outcome for event in models.McpEvent.query.all()]
+        self.assertIn("ignored", outcomes)
+        self.assertNotIn("ok", outcomes)
+
+    def test_a_question_is_a_sentence_not_a_document(self):
+        body = json.loads(
+            self.post(rpc("tools/call", {"name": "find_context", "arguments": {"question": "word " * 1000}})).data
+        )
+        self.assertEqual(-32602, body["error"]["code"])
+
+
 class TestExplainAndRun(McpTestCase):
     def call(self, name, arguments):
         return json.loads(self.post(rpc("tools/call", {"name": name, "arguments": arguments})).data)
@@ -712,6 +747,54 @@ class TestOnlyReadsRunFromHere(McpTestCase):
 
     def test_a_write_is_refused(self):
         self.assertIn("DELETE", self.assertRefused("run_query", "DELETE FROM orders"))
+
+    def _as(self, source_type):
+        self.factory.data_source.type = source_type
+        models.db.session.commit()
+
+    def test_sql_engines_on_the_plain_runner_class_are_checked_too(self):
+        # Athena and Presto are SQL engines built on the plain base class,
+        # which the guard used to take for "not SQL" and wave through.
+        for source_type, sql in (
+            ("athena", "DROP TABLE analytics.orders"),
+            ("presto", "INSERT INTO t SELECT 1"),
+            ("Cassandra", "DROP KEYSPACE k"),
+            ("couchbase", "DELETE FROM bucket"),
+        ):
+            self._as(source_type)
+            self.assertRefused("run_query", sql)
+
+    def test_a_language_the_guard_cannot_read_is_refused(self):
+        self._as("azure_kusto")
+        self.assertIn("editor", self.assertRefused("run_query", ".drop table T"))
+
+    def test_a_read_only_api_goes_through_unparsed(self):
+        self._as("mongodb")
+        body = self.call("run_query", '{"collection": "orders", "query": {}}')
+        self.assertFalse(body["result"].get("isError"), body)
+        self.ran.assert_called_once()
+
+    def test_a_second_statement_needs_no_semicolon_on_sql_server(self):
+        # T-SQL runs a batch: sqlglot read `SELECT 1 DELETE FROM t` as one
+        # SELECT with an alias, and SQL Server ran both.
+        self._as("mssql")
+        self.assertIn("DELETE", self.assertRefused("run_query", "SELECT 1 DELETE FROM dbo.orders"))
+        self.assertIn("EXEC", self.assertRefused("run_query", "SELECT 1 EXEC xp_cmdshell 'dir'"))
+        self.assertIn("WAITFOR", self.assertRefused("run_query", "SELECT 1 WAITFOR DELAY '00:10:00'"))
+
+    def test_a_write_the_parser_cannot_read_is_still_refused(self):
+        # MySQL's INTO OUTFILE writes a file on the database host; sqlglot
+        # fails to parse it, and the first word is SELECT.
+        self._as("mysql")
+        self.assertIn("INTO", self.assertRefused("run_query", "SELECT * FROM t INTO OUTFILE '/tmp/x'"))
+
+    def test_words_that_only_look_like_writes_run(self):
+        body = self.call(
+            "run_query",
+            """SELECT update_time, delete_flag, 'delete' AS kind, "insert" FROM updates WHERE created > now()""",
+        )
+        self.assertFalse(body["result"].get("isError"), body)
+        self.ran.assert_called_once()
 
     def test_a_second_statement_is_refused(self):
         self.assertIn("One statement", self.assertRefused("run_query", "SELECT 1; DROP TABLE orders"))
