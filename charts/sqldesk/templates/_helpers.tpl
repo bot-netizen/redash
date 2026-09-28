@@ -106,6 +106,12 @@ reached only one of them is the kind of difference nobody finds quickly.
     secretKeyRef:
       name: {{ include "sqldesk.secretName" . }}
       key: redis-url
+      # The migration job is a pre-upgrade hook, so it starts before Helm has
+      # applied the Secret this key lives in: on the upgrade that first adds
+      # a Redis password the key does not exist yet, and a container that
+      # demands it never starts -- taking the whole upgrade down with it.
+      # Migrations do not need Redis, and nothing else runs before the Secret.
+      optional: true
 {{- else }}
 - name: SQLDESK_REDIS_URL
   value: {{ include "sqldesk.redisUrl" (dict "ctx" . "password" "") | quote }}

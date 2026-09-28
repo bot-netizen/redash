@@ -2,6 +2,7 @@ import logging
 
 import requests
 import semver
+from redis.exceptions import RedisError
 
 from sqldesk import __version__ as current_version
 from sqldesk import redis_connection, settings
@@ -94,9 +95,26 @@ def run_version_check():
 
 
 def reset_new_version_status():
-    latest_version = get_latest_version()
-    if latest_version:
-        _compare_and_update(latest_version)
+    """
+    Refresh the cached "a newer version exists" flag as the app starts.
+
+    Every failure here is swallowed, because this runs inside `create_app`:
+    a Redis that is unreachable -- restarting, or refusing the password for
+    the moment either side of a rolling upgrade -- must not be the reason
+    the server will not start, or that `manage.py db upgrade` cannot run a
+    migration that has nothing to do with Redis. The flag is a badge in the
+    corner of a page; nothing depends on it.
+    """
+    try:
+        latest_version = get_latest_version()
+        if latest_version:
+            _compare_and_update(latest_version)
+    except RedisError:
+        logging.warning("Could not read the cached version status; Redis did not answer.")
+    except ValueError:
+        # A cached value that is not a version number. Better to start than
+        # to insist on knowing whether an upgrade exists.
+        logging.warning("The cached version status is not a version number; ignoring it.")
 
 
 def get_latest_version():

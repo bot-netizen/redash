@@ -1,5 +1,84 @@
 # Changelog
 
+## 0.6.0-rc.4
+
+A security review of everything reachable from outside: five passes over
+authentication, the REST API, the query runners, MCP, and the browser. Most
+of what follows needed a signed-in account or a foothold on the cluster
+network; none of it was reachable anonymously from the internet.
+
+**Read this before upgrading.** Invite, reset and verification links sent
+before this release stop working -- send them again. The bundled Redis in
+the Helm chart gains a password, so it restarts once during the upgrade. A
+query's API key, and a dashboard's public link, are now shown only to the
+people who may regenerate or revoke them.
+
+**One link, one purpose, one use.** Invite, reset and verification links
+were the same signed token, so an invite already accepted -- which `/invite`
+refused -- still worked as a password reset for a week, and a reset link
+stayed valid after it had been used. Each kind of link is now separate,
+carries a fingerprint of the password it was issued for, and dies the moment
+a password is set. Disabled accounts are refused, and the link no longer
+reaches the log.
+
+**Nobody reaches past what they can see.** An alert could be pointed at any
+query by id, and then mailed that query's rows. A query's owner and
+organization came from the client, and its stored result could be any result
+in the organization -- which its dropdown then served. A view-only owner, or
+anyone granted editing on a query alone, could rewrite its SQL through the
+API and run it; the editor never allowed that. Dropdown queries were checked
+as a group, so one readable query vouched for a locked one. Forking a
+dashboard copied panels the copier could not read into a dashboard they
+owned and could share. Any member could archive any dashboard. A dashboard's
+public link handed out the SQL, author and API key of every query on it.
+Public links kept working after an organization switched them off, and
+worked in any organization.
+
+**MCP refuses writes on every engine.** The read-only guard decided by the
+runner's Python class, so Athena, Presto, Cassandra and Couchbase were
+waved through unparsed and a `DROP TABLE` ran. It decides by the source's
+language now, and reads the statement's tokens before parsing it -- which
+also stops SQL Server's `SELECT 1 DELETE FROM t`, where no semicolon is
+needed and both statements run, and MySQL's `SELECT ... INTO OUTFILE`,
+which writes a file on the database host. A language the guard cannot read
+is refused rather than assumed harmless. A client could also switch off its
+own audit trail with an over-long session header, and a notification was
+recorded as a tool that ran.
+
+**A query result's text stays text.** Values from a query reached the page as
+markup in the map's default popup and in every chart's tooltip. A link or
+image column built from a cell holding `javascript:` made a link that ran it.
+A dashboard textbox could carry a form: "Session expired, sign in", posting
+what anyone typed to another site, on SQLDesk's own address and visible to
+anonymous viewers of a public dashboard. Forms may now only post to SQLDesk,
+nothing can move the page's base, and cookies carry `SameSite`. They are also
+marked `Secure` whenever `SQLDESK_HOST` is `https` -- including TLS
+terminated at a proxy, where the session had been travelling in the clear
+over any plain link to the same host.
+
+**The databases are not the cluster's.** The chart's Redis had no password
+and no network policy, and anything that can put work on a queue can run it
+on a worker. It takes a generated password now, and a NetworkPolicy admits
+only this release's own pods to Postgres, Redis and the renderer. The
+renderer would fetch any page for anyone who could reach it; it renders
+SQLDesk's own address only, for a caller holding a token. Compose publishes
+its port on the machine itself unless `SQLDESK_BIND` says otherwise, and
+tells SQLDesk how many proxies stand in front of it, which decides whether
+the login throttle can be side-stepped.
+
+**Two fixes worth calling out on their own.** Refreshing a data source's
+schema has been broken since 0.5.0: the job carried no owner, so the page
+that polls it was answered "unknown job" and the schema never appeared.
+And `create_app` read Redis at startup for the "new version" badge, so an
+unreachable Redis stopped the server, every `manage.py` command, and the
+database migration -- a migration that has nothing to do with Redis.
+
+Also: date parameters, which a view-only user may set because they are
+"safe", accepted `2020-01-01' --` and truncated the query's own conditions.
+A crafted client event broke the admin events page for good. Embedded
+dashboards were never actually frameable, because the policy that allows it
+was appended after the one that forbids it.
+
 ## 0.6.0-rc.3
 
 Fixes found testing rc.2.
