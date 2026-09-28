@@ -23,6 +23,7 @@ import logging
 import requests
 
 from sqldesk import models, settings
+from sqldesk.permissions import has_access, view_only
 
 logger = logging.getLogger(__name__)
 
@@ -149,6 +150,20 @@ def _load(kind, object_id, org):
     return None
 
 
+def _owner_may_see(kind, obj, owner):
+    """
+    Access is checked when an attachment is saved; it is checked again here
+    because access changes, and a picture rendered with the query's own key
+    would otherwise outlive the owner's right to look at it.
+    """
+    if kind == QUERY:
+        return has_access(obj, owner, view_only)
+    return (
+        owner.has_permission("admin")
+        or models.Dashboard.all(obj.org, owner.group_ids, owner.id).filter(models.Dashboard.id == obj.id).count() > 0
+    )
+
+
 def for_alert(alert):
     """
     Every picture an alert asks for.
@@ -170,7 +185,7 @@ def for_alert(alert):
     for attachment in attachments[: settings.MAX_ALERT_ATTACHMENTS]:
         kind = attachment.get("type")
         obj = _load(kind, attachment.get("id"), org)
-        if obj is None:
+        if obj is None or not _owner_may_see(kind, obj, alert.user):
             continue
 
         image = capture(kind, obj)

@@ -43,6 +43,53 @@ class TestAlertResourcePost(BaseTestCase):
         rv = self.make_request("post", "/api/alerts/{}".format(alert.id), data={"name": "Testing"})
         self.assertEqual(rv.status_code, 200)
 
+    def test_cannot_point_the_alert_at_a_query_it_may_not_read(self):
+        # Re-pointing an alert made its checks and its emails carry that
+        # query's rows, with no look at whether the owner could read it.
+        alert = self.factory.create_alert()
+        locked = self.factory.create_data_source(group=self.factory.create_group())
+        secret = self.factory.create_query(data_source=locked)
+        db.session.commit()
+
+        rv = self.make_request("post", "/api/alerts/{}".format(alert.id), data={"query_id": secret.id})
+
+        self.assertEqual(rv.status_code, 403)
+        self.assertNotEqual(secret.id, Alert.query.get(alert.id).query_id)
+
+    def test_cannot_point_the_alert_at_another_organizations_query(self):
+        alert = self.factory.create_alert()
+        elsewhere = self.factory.create_org()
+        theirs = self.factory.create_query(org=elsewhere, data_source=self.factory.create_data_source(org=elsewhere))
+        db.session.commit()
+
+        rv = self.make_request("post", "/api/alerts/{}".format(alert.id), data={"query_id": theirs.id})
+
+        self.assertEqual(rv.status_code, 404)
+
+    def test_can_point_the_alert_at_a_query_it_may_read(self):
+        alert = self.factory.create_alert()
+        other = self.factory.create_query()
+        db.session.commit()
+
+        rv = self.make_request("post", "/api/alerts/{}".format(alert.id), data={"query_id": other.id})
+
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(other.id, Alert.query.get(alert.id).query_id)
+
+    def test_cannot_attach_a_picture_of_a_query_it_may_not_read(self):
+        alert = self.factory.create_alert()
+        locked = self.factory.create_data_source(group=self.factory.create_group())
+        secret = self.factory.create_query(data_source=locked)
+        db.session.commit()
+
+        rv = self.make_request(
+            "post",
+            "/api/alerts/{}".format(alert.id),
+            data={"options": {"attachments": [{"type": "query", "id": secret.id}]}},
+        )
+
+        self.assertEqual(rv.status_code, 403)
+
 
 class TestAlertEvaluateResource(BaseTestCase):
     @patch("sqldesk.handlers.alerts.notify_subscriptions")
@@ -205,6 +252,23 @@ class TestAlertSubscriptionListResourceGet(BaseTestCase):
 
 
 class TestAlertSubscriptionresourceDelete(BaseTestCase):
+    def test_a_subscription_is_reached_only_through_its_own_alert(self):
+        # The subscription id alone found it, whatever alert -- or
+        # organization -- the path named.
+        subscription = self.factory.create_alert_subscription()
+        other_alert = self.factory.create_alert()
+        admin = self.factory.create_admin()
+        db.session.commit()
+
+        wrong_alert = "/api/alerts/{}/subscriptions/{}".format(other_alert.id, subscription.id)
+        self.assertEqual(404, self.make_request("delete", wrong_alert, user=admin).status_code)
+
+        elsewhere = self.factory.create_org()
+        outsider = self.factory.create_admin(org=elsewhere)
+        right_alert = "/api/alerts/{}/subscriptions/{}".format(subscription.alert_id, subscription.id)
+        self.assertEqual(404, self.make_request("delete", right_alert, user=outsider, org=elsewhere).status_code)
+        self.assertIsNotNone(AlertSubscription.query.get(subscription.id))
+
     def test_only_subscriber_or_admin_can_unsubscribe(self):
         subscription = self.factory.create_alert_subscription()
         alert = subscription.alert

@@ -1,4 +1,5 @@
 from flask import request
+from flask_restful import abort
 from funcy import project
 
 from sqldesk import models, utils
@@ -20,6 +21,30 @@ from sqldesk.tasks.alerts import (
 )
 
 
+def require_access_to_attachments(options, user, org):
+    """
+    The pictures an alert attaches are of queries and dashboards, rendered
+    with the query's own key -- so attaching one is reading it, and takes the
+    same access as opening it.
+    """
+    for attachment in (options or {}).get("attachments") or []:
+        kind, object_id = attachment.get("type"), attachment.get("id")
+        if kind == "query":
+            query = get_object_or_404(models.Query.get_by_id_and_org, object_id, org)
+            require_access(query, user, view_only)
+        elif kind == "dashboard":
+            dashboard = get_object_or_404(models.Dashboard.get_by_id_and_org, object_id, org)
+            if not user.has_permission("admin") and not can_see_dashboard(dashboard, user, org):
+                abort(403, message="You cannot see that dashboard.")
+        else:
+            abort(400, message="An attachment is a query or a dashboard.")
+
+
+def can_see_dashboard(dashboard, user, org):
+    """Visible by the dashboard list's own rule, which is the rule everywhere else."""
+    return models.Dashboard.all(org, user.group_ids, user.id).filter(models.Dashboard.id == dashboard.id).count() > 0
+
+
 class AlertResource(BaseResource):
     def get(self, alert_id):
         alert = get_object_or_404(models.Alert.get_by_id_and_org, alert_id, self.current_org)
@@ -32,6 +57,16 @@ class AlertResource(BaseResource):
         params = project(req, ("options", "name", "query_id", "rearm"))
         alert = get_object_or_404(models.Alert.get_by_id_and_org, alert_id, self.current_org)
         require_admin_or_owner(alert.user.id)
+
+        if "query_id" in params:
+            # Pointing the alert at another query is the same decision as
+            # creating it on that query: the alert's checks and its emails
+            # then carry that query's rows.
+            query = get_object_or_404(models.Query.get_by_id_and_org, params.pop("query_id"), self.current_org)
+            require_access(query, self.current_user, view_only)
+            params["query_rel"] = query
+        if "options" in params:
+            require_access_to_attachments(params["options"], self.current_user, self.current_org)
 
         self.update_model(alert, params)
         models.db.session.commit()
@@ -87,8 +122,9 @@ class AlertListResource(BaseResource):
         req = request.get_json(True)
         require_fields(req, ("options", "name", "query_id"))
 
-        query = models.Query.get_by_id_and_org(req["query_id"], self.current_org)
+        query = get_object_or_404(models.Query.get_by_id_and_org, req["query_id"], self.current_org)
         require_access(query, self.current_user, view_only)
+        require_access_to_attachments(req["options"], self.current_user, self.current_org)
 
         alert = models.Alert(
             name=req["name"],
@@ -150,7 +186,12 @@ class AlertSubscriptionListResource(BaseResource):
 
 class AlertSubscriptionResource(BaseResource):
     def delete(self, alert_id, subscriber_id):
-        subscription = models.AlertSubscription.query.get_or_404(subscriber_id)
+        alert = get_object_or_404(models.Alert.get_by_id_and_org, alert_id, self.current_org)
+        subscription = models.AlertSubscription.query.filter(
+            models.AlertSubscription.id == subscriber_id, models.AlertSubscription.alert_id == alert.id
+        ).first()
+        if subscription is None:
+            abort(404)
         require_admin_or_owner(subscription.user.id)
         models.db.session.delete(subscription)
         models.db.session.commit()

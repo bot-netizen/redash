@@ -1504,13 +1504,15 @@ class Dashboard(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model
     def get_by_slug_and_org(cls, slug, org):
         return cls.query.filter(cls.slug == slug, cls.org == org).one()
 
-    def fork(self, user):
+    def fork(self, user, keep=lambda widget: True):
         forked_list = ["org", "layout", "dashboard_filters_enabled", "tags"]
 
         kwargs = {a: getattr(self, a) for a in forked_list}
         forked_dashboard = Dashboard(name="Copy of (#{}) {}".format(self.id, self.name), user=user, **kwargs)
 
         for w in self.widgets:
+            if not keep(w):
+                continue
             forked_w = w.copy(forked_dashboard.id)
             fw = Widget(**forked_w)
             db.session.add(fw)
@@ -1902,8 +1904,12 @@ class ApiKey(TimestampMixin, GFKBase, db.Model):
     __table_args__ = (db.Index("api_keys_object_type_object_id", "object_type", "object_id"),)
 
     @classmethod
-    def get_by_api_key(cls, api_key):
-        return cls.query.filter(cls.api_key == api_key, cls.active.is_(True)).one()
+    def get_by_api_key(cls, api_key, org=None):
+        """A token is good in the organization that issued it, and no other."""
+        found = cls.query.filter(cls.api_key == api_key, cls.active.is_(True))
+        if org is not None:
+            found = found.filter(cls.org == org)
+        return found.one()
 
     @classmethod
     def get_by_object(cls, object):

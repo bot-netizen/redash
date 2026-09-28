@@ -188,7 +188,7 @@ class DataSourceSchemaResource(BaseResource):
             if cached_schema is not None:
                 return {"schema": cached_schema}
 
-        job = get_schema.delay(data_source.id, refresh)
+        job = get_schema.delay(data_source.id, refresh, meta=self.job_meta())
 
         return serialize_job(job)
 

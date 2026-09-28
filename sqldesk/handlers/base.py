@@ -25,6 +25,14 @@ class BaseResource(Resource):
         super(BaseResource, self).__init__(*args, **kwargs)
         self._user = None
 
+    def job_meta(self):
+        """
+        Whose job a request starts. `/api/jobs/<id>` answers only the job's
+        own organization and user, so a job enqueued without this could be
+        started but never polled -- which is what happened to schema refreshes.
+        """
+        return {"org_id": self.current_org.id, "user_id": self.current_user.id}
+
     def dispatch_request(self, *args, **kwargs):
         kwargs.pop("org_slug", None)
 

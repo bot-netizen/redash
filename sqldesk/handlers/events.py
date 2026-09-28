@@ -1,6 +1,7 @@
 import geolite2
 import maxminddb
 from flask import request
+from flask_restful import abort
 from user_agents import parse as parse_ua
 
 from sqldesk.handlers.base import BaseResource, paginate
@@ -22,7 +23,7 @@ def get_location(ip):
 def event_details(event):
     details = {}
     if event.object_type == "data_source" and event.action == "execute_query":
-        details["query"] = event.additional_properties["query"]
+        details["query"] = (event.additional_properties or {}).get("query")
         details["data_source"] = event.object_id
     elif event.object_type == "page" and event.action == "view":
         details["page"] = event.object_id
@@ -59,8 +60,11 @@ def serialize_event(event):
 class EventsResource(BaseResource):
     def post(self):
         events_list = request.get_json(force=True)
+        if not isinstance(events_list, list):
+            abort(400, message="A list of events is expected.")
         for event in events_list:
-            self.record_event(event)
+            if isinstance(event, dict):
+                self.record_event(event)
 
     @require_admin
     def get(self):

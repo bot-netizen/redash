@@ -49,7 +49,7 @@ def public_dashboard(token, org_slug=None):
     if current_user.is_api_user():
         dashboard = current_user.object
     else:
-        api_key = get_object_or_404(models.ApiKey.get_by_api_key, token)
+        api_key = get_object_or_404(models.ApiKey.get_by_api_key, token, current_org._get_current_object())
         dashboard = api_key.object
 
     record_event(

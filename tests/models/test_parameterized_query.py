@@ -118,6 +118,23 @@ class TestParameterizedQuery(TestCase):
         with pytest.raises(InvalidParameterError):
             query.apply({"bar": "baz"})
 
+    def test_raises_on_sql_hidden_in_a_date_parameter(self):
+        # The parser accepts `2020-01-01' --` as a date. Rendered into the
+        # SQL it closed the string and commented out the rest of the WHERE
+        # clause -- from a "safe" parameter a view-only user may set.
+        query = ParameterizedQuery("foo {{bar}}", [{"name": "bar", "type": "date"}])
+
+        for value in ["2020-01-01' --", "2020-01-01'; --", "2020-01-01 or 1=1", "2020-01-01\n--"]:
+            with self.assertRaises(InvalidParameterError, msg=value):
+                query.apply({"bar": value})
+
+    def test_accepts_every_shape_the_date_pickers_send(self):
+        query = ParameterizedQuery("foo {{bar}}", [{"name": "bar", "type": "datetime-with-seconds"}])
+
+        for value in ["2020-01-01", "2020-01-01 10:30", "2020-01-01 10:30:15", "2020-01-01T10:30:15Z"]:
+            query.apply({"bar": value})
+            self.assertEqual("foo {}".format(value), query.text)
+
     def test_raises_on_none_for_date_parameters(self):
         schema = [{"name": "bar", "type": "date"}]
         query = ParameterizedQuery("foo", schema)

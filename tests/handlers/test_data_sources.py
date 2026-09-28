@@ -5,6 +5,20 @@ from tests import BaseTestCase
 
 
 class TestDataSourceGetSchema(BaseTestCase):
+    def test_a_refresh_job_can_be_polled_by_the_person_who_started_it(self):
+        # The job carried no owner, and `/api/jobs/<id>` answers only the
+        # owner -- so a refresh started but could never be followed, and the
+        # schema browser showed nothing until the scheduled refresh ran.
+        admin = self.factory.create_admin()
+        rv = self.make_request(
+            "get", "/api/data_sources/{}/schema?refresh=1".format(self.factory.data_source.id), user=admin
+        )
+
+        self.assertEqual(200, rv.status_code)
+        self.assertIn("job", rv.json)
+        polled = self.make_request("get", "/api/jobs/{}".format(rv.json["job"]["id"]), user=admin)
+        self.assertEqual(200, polled.status_code)
+
     def test_fails_if_user_doesnt_belong_to_org(self):
         other_user = self.factory.create_user(org=self.factory.create_org())
         response = self.make_request(

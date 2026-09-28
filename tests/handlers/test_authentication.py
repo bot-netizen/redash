@@ -180,6 +180,53 @@ class TestLogin(BaseTestCase):
         self.assertEqual(response.status_code, 429)
 
 
+class TestPublicTokens(BaseTestCase):
+    def _shared(self):
+        query = self.factory.create_query()
+        dashboard = self.factory.create_dashboard()
+        self.factory.create_widget(
+            dashboard=dashboard, visualization=self.factory.create_visualization(query_rel=query)
+        )
+        token = self.factory.create_api_key(object=dashboard)
+        db.session.commit()
+        return query, token
+
+    def test_a_token_stops_working_when_public_links_are_switched_off(self):
+        # The pages checked the setting; the API a token holder actually
+        # calls did not, so every link kept working.
+        query, token = self._shared()
+        self.factory.org.set_setting("disable_public_urls", True)
+        db.session.commit()
+
+        rv = self.client.get(
+            "/api/queries/{}".format(query.id), headers={"Authorization": "Key {}".format(token.api_key)}
+        )
+
+        self.assertNotEqual(200, rv.status_code)
+
+    def test_a_token_is_good_only_in_the_organization_that_made_it(self):
+        query, token = self._shared()
+        elsewhere = self.factory.create_org()
+        db.session.commit()
+
+        rv = self.client.get(
+            "/{}/api/queries/{}".format(elsewhere.slug, query.id),
+            headers={"Authorization": "Key {}".format(token.api_key)},
+        )
+
+        self.assertNotEqual(200, rv.status_code)
+
+    def test_a_token_reads_the_chart_while_public_links_are_on(self):
+        query, token = self._shared()
+
+        rv = self.client.get(
+            "/{}/api/queries/{}".format(self.factory.org.slug, query.id),
+            headers={"Authorization": "Key {}".format(token.api_key)},
+        )
+
+        self.assertEqual(200, rv.status_code)
+
+
 class TestSession(BaseTestCase):
     # really simple test just to trigger this route
     def test_get(self):

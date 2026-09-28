@@ -53,7 +53,9 @@ class DatabricksDatabaseListResource(BaseResource):
             if cached_databases is not None:
                 return cached_databases
 
-        job = get_databricks_databases.delay(data_source.id, redis_key=_databases_key(data_source_id))
+        job = get_databricks_databases.delay(
+            data_source.id, redis_key=_databases_key(data_source_id, meta=self.job_meta())
+        )
         return serialize_job(job)
 
 
@@ -68,11 +70,11 @@ class DatabricksSchemaResource(BaseResource):
             if cached_tables is not None:
                 return {"schema": cached_tables, "has_columns": True}
 
-            job = get_databricks_tables.delay(data_source.id, database_name)
+            job = get_databricks_tables.delay(data_source.id, database_name, meta=self.job_meta())
             return serialize_job(job)
 
         job = get_database_tables_with_columns.delay(
-            data_source.id, database_name, redis_key=_tables_key(data_source_id, database_name)
+            data_source.id, database_name, redis_key=_tables_key(data_source_id, database_name, meta=self.job_meta())
         )
         return serialize_job(job)
 
@@ -81,5 +83,5 @@ class DatabricksTableColumnListResource(BaseResource):
     def get(self, data_source_id, database_name, table_name):
         data_source = _get_databricks_data_source(data_source_id, user=self.current_user, org=self.current_org)
 
-        job = get_databricks_table_columns.delay(data_source.id, database_name, table_name)
+        job = get_databricks_table_columns.delay(data_source.id, database_name, table_name, meta=self.job_meta())
         return serialize_job(job)

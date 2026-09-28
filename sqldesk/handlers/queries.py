@@ -194,21 +194,68 @@ class BaseQueryListResource(BaseResource):
         return response
 
 
+#: Fields the client never gets to set: who owns a query, which organization
+#: it belongs to, whether it is archived, what its hash is.
+NOT_FROM_THE_CLIENT = (
+    "id",
+    "created_at",
+    "api_key",
+    "visualizations",
+    "latest_query_data",
+    "user",
+    "user_id",
+    "last_modified_by",
+    "last_modified_by_id",
+    "org",
+    "org_id",
+    "is_archived",
+    "query_hash",
+    "schedule_failures",
+)
+
+#: The fields that decide what runs on the data source.
+RUNS_ON_THE_SOURCE = ("query", "query_text", "options", "schedule")
+
+
+def require_result_from_the_same_source(query_def, data_source_id, org):
+    """
+    The query page saves the result it just ran, so `latest_query_data_id`
+    is the client's to set -- but only to a result of the query's own data
+    source. Any result in the organization was accepted, and the dropdown
+    endpoint then served its rows to whoever could read the query.
+    """
+    result_id = query_def.get("latest_query_data_id")
+    if result_id is None:
+        return
+    result = get_object_or_404(models.QueryResult.get_by_id_and_org, result_id, org)
+    if result.data_source_id != data_source_id:
+        abort(400, message="That result is not from this query's data source.")
+
+
+def require_permission_to_schedule(user):
+    if not user.has_permission("schedule_query"):
+        abort(403, message="You do not have permission to schedule queries.")
+
+
 def require_access_to_dropdown_queries(user, query_def):
+    """
+    Each dropdown query on its own. Checked together, one query the user
+    could read made the group check pass for one they could not, whose
+    values the dropdown endpoint then served.
+    """
     parameters = query_def.get("options", {}).get("parameters", [])
     dropdown_query_ids = set([str(p["queryId"]) for p in parameters if p["type"] == "query"])
 
-    if dropdown_query_ids:
-        groups = models.Query.all_groups_for_query_ids(dropdown_query_ids)
-
-        if len(groups) < len(dropdown_query_ids):
+    for dropdown_query_id in dropdown_query_ids:
+        try:
+            dropdown_query = models.Query.get_by_id_and_org(dropdown_query_id, user.org)
+        except (models.NoResultFound, ValueError):
             abort(
                 400,
                 message="You are trying to associate a dropdown query that does not have a matching group. "
                 "Please verify the dropdown query id you are trying to associate with this query.",
             )
-
-        require_access(dict(groups), user, view_only)
+        require_access(dropdown_query, user, view_only)
 
 
 class QueryListResource(BaseQueryListResource):
@@ -252,15 +299,11 @@ class QueryListResource(BaseQueryListResource):
         require_access(data_source, self.current_user, not_view_only)
         require_access_to_dropdown_queries(self.current_user, query_def)
 
-        for field in [
-            "id",
-            "created_at",
-            "api_key",
-            "visualizations",
-            "latest_query_data",
-            "last_modified_by",
-        ]:
+        for field in NOT_FROM_THE_CLIENT:
             query_def.pop(field, None)
+        if query_def.get("schedule"):
+            require_permission_to_schedule(self.current_user)
+        require_result_from_the_same_source(query_def, data_source.id, self.current_org)
 
         query_def["query_text"] = query_def.pop("query")
         query_def["user"] = self.current_user
@@ -275,7 +318,7 @@ class QueryListResource(BaseQueryListResource):
 
         self.record_event({"action": "create", "object_id": query.id, "object_type": "query"})
 
-        return QuerySerializer(query, with_visualizations=True).serialize()
+        return QuerySerializer(query, with_visualizations=True, with_api_key=True).serialize()
 
 
 class QueryArchiveResource(BaseQueryListResource):
@@ -363,17 +406,20 @@ class QueryResource(BaseResource):
         require_object_modify_permission(query, self.current_user)
         require_access_to_dropdown_queries(self.current_user, query_def)
 
-        for field in [
-            "id",
-            "created_at",
-            "api_key",
-            "visualizations",
-            "latest_query_data",
-            "user",
-            "last_modified_by",
-            "org",
-        ]:
+        for field in NOT_FROM_THE_CLIENT:
             query_def.pop(field, None)
+
+        # Editing the text, the parameters or the schedule is deciding what
+        # runs on the data source, which the editor only lets people with full
+        # access to it do. The API let a view-only owner, or somebody granted
+        # editing rights on the query alone, do it anyway.
+        if query.data_source is not None and any(field in query_def for field in RUNS_ON_THE_SOURCE):
+            require_access(query.data_source, self.current_user, not_view_only)
+        if "schedule" in query_def and query_def["schedule"] != query.schedule:
+            require_permission_to_schedule(self.current_user)
+        require_result_from_the_same_source(
+            query_def, query_def.get("data_source_id", query.data_source_id), self.current_org
+        )
 
         if "query" in query_def:
             query_def["query_text"] = query_def.pop("query")
@@ -401,7 +447,7 @@ class QueryResource(BaseResource):
         except StaleDataError:
             abort(409)
 
-        return QuerySerializer(query, with_visualizations=True).serialize()
+        return QuerySerializer(query, with_visualizations=True, with_api_key=True).serialize()
 
     @require_permission("view_query")
     def get(self, query_id):
@@ -415,7 +461,21 @@ class QueryResource(BaseResource):
         q = get_object_or_404(models.Query.get_by_id_and_org, query_id, self.current_org)
         require_access(q, self.current_user, view_only)
 
-        result = QuerySerializer(q, with_visualizations=True).serialize()
+        result = QuerySerializer(q, with_visualizations=True, with_api_key=True).serialize()
+        if self.current_user.is_api_user():
+            # A dashboard's public token, or the query's own key, gets what the
+            # public dashboard shows: the chart, not the SQL or the author.
+            # A dashboard token does not get the query's own key either; the
+            # query's key is handed back only to the caller already holding it,
+            # because the embed page builds its download links from it.
+            for field in ("query", "user", "last_modified_by", "schedule"):
+                result.pop(field, None)
+            if self.current_user.id != q.api_key:
+                result.pop("api_key", None)
+        elif not can_modify(q, self.current_user):
+            # The key is a credential that outlives group membership; it goes
+            # to the people who may also regenerate it.
+            result.pop("api_key", None)
         result["can_edit"] = can_modify(q, self.current_user)
 
         self.record_event({"action": "view", "object_id": query_id, "object_type": "query"})
@@ -472,7 +532,7 @@ class QueryForkResource(BaseResource):
 
         self.record_event({"action": "fork", "object_id": query_id, "object_type": "query"})
 
-        return QuerySerializer(forked_query, with_visualizations=True).serialize()
+        return QuerySerializer(forked_query, with_visualizations=True, with_api_key=True).serialize()
 
 
 class QueryRefreshResource(BaseResource):

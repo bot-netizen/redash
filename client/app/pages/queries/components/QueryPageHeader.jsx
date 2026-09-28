@@ -123,7 +123,9 @@ export default function QueryPageHeader({
         },
         {
           showAPIKey: {
-            isAvailable: !clientConfig.disablePublicUrls && !queryFlags.isNew,
+            // The key is a credential that outlives group membership, so the
+            // server hands it only to people who may also regenerate it.
+            isAvailable: !clientConfig.disablePublicUrls && !queryFlags.isNew && queryFlags.canEdit,
             title: "Show API Key",
             onClick: openApiKeyDialog,
           },

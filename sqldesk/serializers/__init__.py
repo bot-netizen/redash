@@ -102,6 +102,7 @@ def serialize_query(
     with_visualizations=False,
     with_user=True,
     with_last_modified_by=True,
+    with_api_key=False,
 ):
     d = {
         "id": query.id,
@@ -111,7 +112,6 @@ def serialize_query(
         "query": query.query_text,
         "query_hash": query.query_hash,
         "schedule": query.schedule,
-        "api_key": query.api_key,
         "is_archived": query.is_archived,
         "is_draft": query.is_draft,
         "updated_at": query.updated_at,
@@ -122,6 +122,9 @@ def serialize_query(
         "tags": query.tags or [],
         "is_safe": query.parameterized.is_safe,
     }
+
+    if with_api_key:
+        d["api_key"] = query.api_key
 
     if with_user:
         d["user"] = query.user.to_dict()

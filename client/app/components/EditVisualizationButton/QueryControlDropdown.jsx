@@ -24,7 +24,9 @@ export default function QueryControlDropdown(props) {
           </PlainButton>
         </Menu.Item>
       )}
-      {!clientConfig.disablePublicUrls && !props.query.isNew() && (
+      {/* The embed link carries the query's key, which the server hands only
+          to people who may also regenerate it. */}
+      {!clientConfig.disablePublicUrls && !props.query.isNew() && props.query.api_key && (
         <Menu.Item>
           <PlainButton
             onClick={() => props.showEmbedDialog(props.query, props.selectedTab)}

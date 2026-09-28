@@ -1,5 +1,5 @@
 import logging
-from functools import partial
+from functools import partial, wraps
 
 from rq import get_current_job
 from rq.decorators import job as rq_job
@@ -18,6 +18,52 @@ class StatsdRecordingJobDecorator(rq_job):  # noqa
     """
 
     queue_class = SQLDeskQueue
+
+    def __call__(self, f):
+        f = super().__call__(f)
+        plain_delay = f.delay
+
+        @wraps(f)
+        def delay(*args, **kwargs):
+            """
+            RQ's own `delay`, plus `meta=`: whose job this is, stamped at
+            enqueue time. `/api/jobs/<id>` answers only the job's own
+            organization and user, and stamping after the fact races the
+            worker, which saves its own copy of the meta when the job ends.
+            """
+            meta = kwargs.pop("meta", None)
+            if not meta:
+                return plain_delay(*args, **kwargs)
+
+            queue = (
+                self.queue_class(name=self.queue, connection=self.connection)
+                if isinstance(self.queue, str)
+                else self.queue
+            )
+            depends_on = kwargs.pop("depends_on", None) or self.depends_on
+            job_id = kwargs.pop("job_id", None)
+            at_front = kwargs.pop("at_front", False) or self.at_front
+            return queue.enqueue_call(
+                f,
+                args=args,
+                kwargs=kwargs,
+                timeout=self.timeout,
+                result_ttl=self.result_ttl,
+                ttl=self.ttl,
+                depends_on=depends_on,
+                job_id=job_id,
+                at_front=at_front,
+                meta={**(self.meta or {}), **meta},
+                description=self.description,
+                failure_ttl=self.failure_ttl,
+                retry=self.retry,
+                on_failure=self.on_failure,
+                on_success=self.on_success,
+                on_stopped=self.on_stopped,
+            )
+
+        f.delay = delay
+        return f
 
 
 job = partial(

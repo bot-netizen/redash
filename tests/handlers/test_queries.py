@@ -6,6 +6,46 @@ from tests import BaseTestCase
 
 
 class TestQueryResourceGet(BaseTestCase):
+    def test_the_api_key_goes_only_to_people_who_may_regenerate_it(self):
+        # The key is a credential that outlives group membership.
+        query = self.factory.create_query()
+        viewer = self.factory.create_user()
+        db.session.commit()
+
+        self.assertIn("api_key", self.make_request("get", "/api/queries/{}".format(query.id)).json)
+        self.assertNotIn("api_key", self.make_request("get", "/api/queries/{}".format(query.id), user=viewer).json)
+
+    def test_a_public_token_gets_the_chart_not_the_sql(self):
+        # A dashboard's public link let anyone holding it read every query on
+        # the dashboard in full: the SQL, the author's e-mail and the query's
+        # own API key.
+        query = self.factory.create_query(query_text="select secret from salaries")
+        dashboard = self.factory.create_dashboard()
+        self.factory.create_widget(
+            dashboard=dashboard, visualization=self.factory.create_visualization(query_rel=query)
+        )
+        token = self.factory.create_api_key(object=dashboard)
+        db.session.commit()
+
+        rv = self.client.get(
+            "/{}/api/queries/{}".format(self.factory.org.slug, query.id),
+            headers={"Authorization": "Key {}".format(token.api_key)},
+        )
+
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(query.name, rv.json["name"])
+        for field in ("query", "api_key", "user", "last_modified_by", "schedule"):
+            self.assertNotIn(field, rv.json)
+
+        # The query's own key keeps its key: the embed page it serves builds
+        # its download links from it.
+        own = self.client.get(
+            "/{}/api/queries/{}".format(self.factory.org.slug, query.id),
+            headers={"Authorization": "Key {}".format(query.api_key)},
+        )
+        self.assertEqual(query.api_key, own.json["api_key"])
+        self.assertNotIn("query", own.json)
+
     def test_get_query(self):
         query = self.factory.create_query()
 
@@ -75,6 +115,110 @@ class TestQueryResourceGet(BaseTestCase):
 
 
 class TestQueryResourcePost(BaseTestCase):
+    def test_the_client_cannot_choose_the_owner_the_organization_or_the_result(self):
+        # `user_id` handed a query to somebody else; `org_id` moved it to
+        # another organization.
+        query = self.factory.create_query()
+        someone = self.factory.create_user()
+        elsewhere = self.factory.create_org()
+        db.session.commit()
+
+        rv = self.make_request(
+            "post",
+            "/api/queries/{}".format(query.id),
+            data={"name": "renamed", "user_id": someone.id, "org_id": elsewhere.id, "is_archived": True},
+        )
+
+        self.assertEqual(rv.status_code, 200)
+        saved = models.Query.query.get(query.id)
+        self.assertEqual("renamed", saved.name)
+        self.assertEqual(self.factory.user.id, saved.user_id)
+        self.assertEqual(self.factory.org.id, saved.org_id)
+        self.assertFalse(saved.is_archived)
+
+    def test_the_saved_result_must_be_one_of_the_querys_own(self):
+        # The query page saves the result it just ran. Any result in the
+        # organization was accepted, and the dropdown endpoint then served
+        # its rows to whoever could read the query.
+        query = self.factory.create_query()
+        other_source = self.factory.create_data_source(group=self.factory.org.default_group)
+        other_result = self.factory.create_query_result(data_source=other_source)
+        db.session.commit()
+
+        rv = self.make_request(
+            "post", "/api/queries/{}".format(query.id), data={"latest_query_data_id": other_result.id}
+        )
+
+        self.assertEqual(rv.status_code, 400)
+        self.assertNotEqual(other_result.id, models.Query.query.get(query.id).latest_query_data_id)
+
+    def test_editing_the_text_needs_full_access_to_the_data_source(self):
+        # A view-only owner could rewrite the SQL through the API, then run
+        # it: the editor hides the text box for them, the API did not.
+        viewers = self.factory.create_group()
+        db.session.add(viewers)
+        source = self.factory.create_data_source(group=viewers, view_only=True)
+        viewer = self.factory.create_user(group_ids=[viewers.id, self.factory.default_group.id])
+        query = self.factory.create_query(data_source=source, user=viewer)
+        db.session.commit()
+
+        rv = self.make_request(
+            "post", "/api/queries/{}".format(query.id), data={"query": "select * from salaries"}, user=viewer
+        )
+
+        self.assertEqual(rv.status_code, 403)
+        self.assertNotEqual("select * from salaries", models.Query.query.get(query.id).query_text)
+
+    def test_renaming_does_not_need_full_access_to_the_data_source(self):
+        viewers = self.factory.create_group()
+        db.session.add(viewers)
+        source = self.factory.create_data_source(group=viewers, view_only=True)
+        viewer = self.factory.create_user(group_ids=[viewers.id, self.factory.default_group.id])
+        query = self.factory.create_query(data_source=source, user=viewer)
+        db.session.commit()
+
+        rv = self.make_request("post", "/api/queries/{}".format(query.id), data={"name": "clearer"}, user=viewer)
+
+        self.assertEqual(rv.status_code, 200)
+
+    def test_scheduling_needs_the_schedule_permission(self):
+        unscheduled = self.factory.create_group(permissions=["view_query", "edit_query", "execute_query"])
+        db.session.add(unscheduled)
+        source = self.factory.create_data_source(group=unscheduled)
+        member = self.factory.create_user(group_ids=[unscheduled.id])
+        query = self.factory.create_query(data_source=source, user=member)
+        db.session.commit()
+
+        rv = self.make_request(
+            "post",
+            "/api/queries/{}".format(query.id),
+            data={"schedule": {"interval": 3600, "time": None, "day_of_week": None, "until": None}},
+            user=member,
+        )
+
+        self.assertEqual(rv.status_code, 403)
+        self.assertIsNone(models.Query.query.get(query.id).schedule)
+
+    def test_one_readable_dropdown_query_does_not_vouch_for_another(self):
+        # Checked together, the readable one's group made the check pass for
+        # the locked one, whose values the dropdown endpoint then served.
+        locked = self.factory.create_query(
+            data_source=self.factory.create_data_source(group=self.factory.create_group())
+        )
+        readable = self.factory.create_query()
+        mine = self.factory.create_query()
+        db.session.commit()
+
+        options = {
+            "parameters": [
+                {"name": "a", "type": "query", "queryId": readable.id},
+                {"name": "b", "type": "query", "queryId": locked.id},
+            ]
+        }
+        rv = self.make_request("post", "/api/queries/{}".format(mine.id), data={"options": options})
+
+        self.assertEqual(rv.status_code, 403)
+
     def test_accepts_a_crontab_schedule(self):
         admin = self.factory.create_admin()
         query = self.factory.create_query()
@@ -119,7 +263,7 @@ class TestQueryResourcePost(BaseTestCase):
         query = self.factory.create_query()
 
         new_ds = self.factory.create_data_source()
-        new_qr = self.factory.create_query_result()
+        new_qr = self.factory.create_query_result(data_source=new_ds)
 
         data = {
             "name": "Testing",

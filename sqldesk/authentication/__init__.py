@@ -120,12 +120,22 @@ def get_user_from_api_key(api_key, query_id):
             user = None
     except models.NoResultFound:
         try:
-            api_key = models.ApiKey.get_by_api_key(api_key)
-            user = models.ApiUser(api_key, api_key.org, [])
+            # A public token works only in the organization that made it, and
+            # not at all once that organization has switched public links
+            # off: the pages checked the setting, the API the token actually
+            # calls did not.
+            api_key = models.ApiKey.get_by_api_key(api_key, org)
+            if not api_key.org.get_setting("disable_public_urls"):
+                user = models.ApiUser(api_key, api_key.org, [])
         except models.NoResultFound:
-            if query_id:
-                query = models.Query.get_by_id_and_org(query_id, org)
-                if query and query.api_key == api_key:
+            query = None
+            if query_id and org is not None:
+                try:
+                    query = models.Query.get_by_id_and_org(query_id, org)
+                except models.NoResultFound:
+                    query = None
+            if query is not None:
+                if query.api_key == api_key:
                     user = models.ApiUser(
                         api_key,
                         query.org,

@@ -46,6 +46,19 @@ class TestDashboardListGetResource(BaseTestCase):
 
 
 class TestDashboardResourceGet(BaseTestCase):
+    def test_the_public_link_goes_only_to_people_who_may_revoke_it(self):
+        # The link is a credential for every query on the dashboard.
+        d = self.factory.create_dashboard(user=self.factory.create_user())
+        self.factory.create_api_key(object=d)
+        db.session.commit()
+
+        as_viewer = self.make_request("get", "/api/dashboards/{}".format(d.id)).json
+        as_admin = self.make_request("get", "/api/dashboards/{}".format(d.id), user=self.factory.create_admin()).json
+
+        self.assertNotIn("api_key", as_viewer)
+        self.assertNotIn("public_url", as_viewer)
+        self.assertIn("api_key", as_admin)
+
     def test_get_dashboard(self):
         d1 = self.factory.create_dashboard()
         rv = self.make_request("get", "/api/dashboards/{0}".format(d1.id))
@@ -159,6 +172,26 @@ class TestDashboardForkResourcePost(BaseTestCase):
 
         self.assertEqual(rv.status_code, 200)
 
+    def test_a_copy_carries_only_the_panels_the_copier_may_read(self):
+        # The copy is the copier's to share, and a public link reads every
+        # query on the dashboard it is for -- so a locked panel must not
+        # come along.
+        locked = self.factory.create_data_source(group=self.factory.create_group())
+        secret = self.factory.create_query(data_source=locked)
+        dashboard = self.factory.create_dashboard(user=self.factory.create_user())
+        self.factory.create_widget(
+            dashboard=dashboard, visualization=self.factory.create_visualization(query_rel=secret)
+        )
+        self.factory.create_widget(dashboard=dashboard, visualization=self.factory.create_visualization())
+        db.session.commit()
+
+        rv = self.make_request("post", "/api/dashboards/{}/fork".format(dashboard.id))
+
+        self.assertEqual(rv.status_code, 200)
+        copied = [w["visualization"]["query"]["id"] for w in rv.json["widgets"] if w.get("visualization")]
+        self.assertNotIn(secret.id, copied)
+        self.assertEqual(1, len(copied))
+
 
 class TestDashboardResourceDelete(BaseTestCase):
     def test_delete_dashboard(self):
@@ -169,6 +202,18 @@ class TestDashboardResourceDelete(BaseTestCase):
 
         d = Dashboard.get_by_id_and_org(d.id, d.org)
         self.assertTrue(d.is_archived)
+
+    def test_only_its_owner_or_an_admin_archives_it(self):
+        d = self.factory.create_dashboard(user=self.factory.create_user())
+        db.session.commit()
+
+        rv = self.make_request("delete", "/api/dashboards/{0}".format(d.id))
+
+        self.assertEqual(rv.status_code, 403)
+        self.assertFalse(Dashboard.get_by_id_and_org(d.id, d.org).is_archived)
+
+    def test_a_missing_dashboard_is_not_found(self):
+        self.assertEqual(404, self.make_request("delete", "/api/dashboards/999999").status_code)
 
 
 class TestDashboardShareResourcePost(BaseTestCase):

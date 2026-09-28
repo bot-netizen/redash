@@ -13,9 +13,11 @@ from sqldesk.handlers.base import (
 from sqldesk.handlers.base import order_results as _order_results
 from sqldesk.permissions import (
     can_modify,
+    has_access,
     require_admin_or_owner,
     require_object_modify_permission,
     require_permission,
+    view_only,
 )
 from sqldesk.security import csp_allows_embeding
 from sqldesk.serializers import DashboardSerializer, public_dashboard
@@ -183,7 +185,9 @@ class DashboardResource(BaseResource):
         dashboard = get_object_or_404(fn, dashboard_id, self.current_org)
         response = DashboardSerializer(dashboard, with_widgets=True, user=self.current_user).serialize()
 
-        api_key = models.ApiKey.get_by_object(dashboard)
+        # The public link is a credential for every query on the dashboard,
+        # so it goes to the people who may create and revoke it.
+        api_key = models.ApiKey.get_by_object(dashboard) if can_modify(dashboard, self.current_user) else None
         if api_key:
             response["public_url"] = url_for(
                 "sqldesk.public_dashboard",
@@ -261,7 +265,8 @@ class DashboardResource(BaseResource):
 
         Responds with the archived :ref:`dashboard <dashboard-response-label>`.
         """
-        dashboard = models.Dashboard.get_by_id_and_org(dashboard_id, self.current_org)
+        dashboard = get_object_or_404(models.Dashboard.get_by_id_and_org, dashboard_id, self.current_org)
+        require_object_modify_permission(dashboard, self.current_user)
         dashboard.is_archived = True
         dashboard.record_changes(changed_by=self.current_user)
         models.db.session.add(dashboard)
@@ -287,7 +292,7 @@ class PublicDashboardResource(BaseResource):
             abort(400, message="Public URLs are disabled.")
 
         if not isinstance(self.current_user, models.ApiUser):
-            api_key = get_object_or_404(models.ApiKey.get_by_api_key, token)
+            api_key = get_object_or_404(models.ApiKey.get_by_api_key, token, self.current_org)
             dashboard = api_key.object
         else:
             dashboard = self.current_user.object
@@ -400,7 +405,7 @@ class PublicDashboardLiveWatchResource(BaseResource):
             abort(400, message="Public URLs are disabled.")
 
         if not isinstance(self.current_user, models.ApiUser):
-            api_key = get_object_or_404(models.ApiKey.get_by_api_key, token)
+            api_key = get_object_or_404(models.ApiKey.get_by_api_key, token, self.current_org)
             dashboard = api_key.object
         else:
             dashboard = self.current_user.object
@@ -557,11 +562,18 @@ class DashboardFavoriteListResource(BaseResource):
 class DashboardForkResource(BaseResource):
     @require_permission("edit_dashboard")
     def post(self, dashboard_id):
-        dashboard = models.Dashboard.get_by_id_and_org(dashboard_id, self.current_org)
+        dashboard = get_object_or_404(models.Dashboard.get_by_id_and_org, dashboard_id, self.current_org)
 
-        fork_dashboard = dashboard.fork(self.current_user)
+        # A panel this user cannot read is a locked panel to them; the copy
+        # they own must not carry it -- least of all into a public link, which
+        # reads every query on the dashboard it is for.
+        def may_copy(widget):
+            visualization = widget.visualization
+            return visualization is None or has_access(visualization.query_rel, self.current_user, view_only)
+
+        fork_dashboard = dashboard.fork(self.current_user, keep=may_copy)
         models.db.session.commit()
 
         self.record_event({"action": "fork", "object_id": dashboard_id, "object_type": "dashboard"})
 
-        return DashboardSerializer(fork_dashboard, with_widgets=True).serialize()
+        return DashboardSerializer(fork_dashboard, with_widgets=True, user=self.current_user).serialize()

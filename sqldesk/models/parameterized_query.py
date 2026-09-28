@@ -99,7 +99,21 @@ def _is_regex_pattern(value, regex):
         return False
 
 
+#: What a date or date-time looks like when a person picks one: the day, and
+#: optionally a time, a fraction and a zone. Nothing else.
+_DATE_SHAPE = re.compile(r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d{1,6})?)?)?(Z|[+-]\d{2}:?\d{2})?$")
+
+
 def _is_date(string):
+    """
+    A date the parser reads *and* that is nothing but a date. The parser is
+    lenient: it read `2020-01-01' --` as a date, which -- rendered into the
+    SQL as it stands -- closed the string and commented out the rest of the
+    WHERE clause. A date parameter is "safe" for view-only users precisely
+    because it cannot carry SQL, so it must not be able to.
+    """
+    if not isinstance(string, str) or not _DATE_SHAPE.match(string.strip()):
+        return False
     parse(string)
     return True
 
