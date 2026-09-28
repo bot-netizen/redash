@@ -90,7 +90,12 @@ ENFORCE_FILE_SAVE = parse_boolean(os.environ.get("SQLDESK_ENFORCE_FILE_SAVE", "t
 ENFORCE_PRIVATE_ADDRESS_BLOCK = parse_boolean(os.environ.get("SQLDESK_ENFORCE_PRIVATE_IP_BLOCK", "true"))
 
 # Whether to use secure cookies by default.
-COOKIES_SECURE = parse_boolean(os.environ.get("SQLDESK_COOKIES_SECURE", str(ENFORCE_HTTPS)))
+# Secure whenever the address people use is https, which includes TLS
+# terminated at a proxy: the session cookie must not travel over a plain
+# http:// link to the same host. `SQLDESK_ENFORCE_HTTPS` is only for when
+# SQLDesk itself does the redirect.
+_HOST_IS_HTTPS = os.environ.get("SQLDESK_HOST", "").strip().lower().startswith("https://")
+COOKIES_SECURE = parse_boolean(os.environ.get("SQLDESK_COOKIES_SECURE", str(ENFORCE_HTTPS or _HOST_IS_HTTPS)))
 # Whether the session cookie is set to secure.
 SESSION_COOKIE_SECURE = parse_boolean(os.environ.get("SQLDESK_SESSION_COOKIE_SECURE") or str(COOKIES_SECURE))
 # Whether the session cookie is set HttpOnly.
@@ -132,7 +137,7 @@ HSTS_INCLUDE_SUBDOMAINS = parse_boolean(os.environ.get("SQLDESK_HSTS_INCLUDE_SUB
 # rather than framing them, so nothing outside SQLDesk is ever framed.
 CONTENT_SECURITY_POLICY = os.environ.get(
     "SQLDESK_CONTENT_SECURITY_POLICY",
-    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; font-src 'self' data:; img-src 'self' http: https: data: blob:; object-src 'none'; frame-ancestors 'none';",
+    "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-eval'; font-src 'self' data:; img-src 'self' http: https: data: blob:; object-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'self';",
 )
 CONTENT_SECURITY_POLICY_REPORT_URI = os.environ.get("SQLDESK_CONTENT_SECURITY_POLICY_REPORT_URI", "")
 CONTENT_SECURITY_POLICY_REPORT_ONLY = parse_boolean(

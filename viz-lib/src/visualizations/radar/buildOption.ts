@@ -1,3 +1,4 @@
+import escapeHtml from "@/lib/escapeHtml";
 import { formatValue, toNumber, uiColor } from "../shared/valueOptions";
 import { AllColorPaletteArrays, resolveColorScheme, DEFAULT_COLOR_SCHEME } from "../ColorPalette";
 import { ColumnLike, hasColumn } from "../shared/rows";
@@ -96,8 +97,8 @@ export default function buildOption(
       confine: true,
       formatter: (params: any) => {
         const values = params.value || [];
-        const lines = spokes.map((spoke, i) => `${spoke.name}: <b>${format(values[i])}</b>`);
-        return `${params.name}<br/>${lines.join("<br/>")}`;
+        const lines = spokes.map((spoke, i) => `${escapeHtml(spoke.name)}: <b>${format(values[i])}</b>`);
+        return `${escapeHtml(params.name)}<br/>${lines.join("<br/>")}`;
       },
     },
     legend: options.showLegend

@@ -3,6 +3,7 @@ import React from "react";
 import { useDebouncedCallback } from "use-debounce";
 import { Section, Input, Checkbox, ContextHelp } from "@/components/visualizations/editor";
 import { formatSimpleTemplate } from "@/lib/value-format";
+import { isSafeHref } from "@/lib/safeUrl";
 
 type Props = {
   column: {
@@ -83,7 +84,7 @@ export default function initLinkColumn(column: any) {
     row = extend({ "@": row[column.name] }, row);
 
     const href = trim(formatSimpleTemplate(column.linkUrlTemplate, row));
-    if (href === "") {
+    if (href === "" || !isSafeHref(href)) {
       return {};
     }
 

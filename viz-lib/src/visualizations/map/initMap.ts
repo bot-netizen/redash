@@ -17,6 +17,7 @@ import "leaflet-fullscreen";
 import "leaflet-fullscreen/dist/leaflet.fullscreen.css";
 import { formatSimpleTemplate } from "@/lib/value-format";
 import sanitize from "@/services/sanitize";
+import { defaultPopupHtml, defaultTooltipHtml } from "./popups";
 import resizeObserver from "@/services/resizeObserver";
 import chooseTextColorForBackground from "@/lib/chooseTextColorForBackground";
 
@@ -133,9 +134,7 @@ function createMarkersLayer(options: any, { color, points }: any) {
       if (options.tooltip.template !== "") {
         marker.bindTooltip(sanitize(formatSimpleTemplate(options.tooltip.template, rowCopy)));
       } else {
-        marker.bindTooltip(`
-          <strong>${lat}, ${lon}</strong>
-        `);
+        marker.bindTooltip(defaultTooltipHtml(lat, lon));
       }
     }
 
@@ -143,12 +142,7 @@ function createMarkersLayer(options: any, { color, points }: any) {
       if (options.popup.template !== "") {
         marker.bindPopup(sanitize(formatSimpleTemplate(options.popup.template, rowCopy)));
       } else {
-        marker.bindPopup(`
-          <ul style="list-style-type: none; padding-left: 0">
-            <li><strong>${lat}, ${lon}</strong>
-            ${map(row, (v, k) => `<li>${k}: ${v}</li>`).join("")}
-          </ul>
-        `);
+        marker.bindPopup(defaultPopupHtml(row, lat, lon));
       }
     }
     result.addLayer(marker);

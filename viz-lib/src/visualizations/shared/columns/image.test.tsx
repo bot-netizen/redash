@@ -22,6 +22,15 @@ function mount(column: any, done: any) {
 }
 
 describe("Visualizations -> Table -> Columns -> Image", () => {
+  describe("prepareData", () => {
+    test("a cell holding a script scheme makes no image", () => {
+      const Image = Column({ name: "a", imageUrlTemplate: "{{ @ }}" });
+      const prepare = (row: any): any => Image.prepareData(row);
+      expect(prepare({ a: "javascript:alert(1)" })).toEqual({});
+      expect(prepare({ a: "https://example.com/x.png" }).src).toBe("https://example.com/x.png");
+    });
+  });
+
   describe("Editor", () => {
     test("Changes URL template", (done) => {
       const el = mount(

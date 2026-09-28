@@ -3,6 +3,7 @@ import React from "react";
 import { useDebouncedCallback } from "use-debounce";
 import { Section, Input, ControlLabel, ContextHelp } from "@/components/visualizations/editor";
 import { formatSimpleTemplate } from "@/lib/value-format";
+import { isSafeImageSource } from "@/lib/safeUrl";
 
 type Props = {
   column: {
@@ -95,7 +96,7 @@ export default function initImageColumn(column: any) {
     row = extend({ "@": row[column.name] }, row);
 
     const src = trim(formatSimpleTemplate(column.imageUrlTemplate, row));
-    if (src === "") {
+    if (src === "" || !isSafeImageSource(src)) {
       return {};
     }
 

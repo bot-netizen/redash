@@ -1,3 +1,4 @@
+import escapeHtml from "@/lib/escapeHtml";
 import { formatValue, uiColor } from "../shared/valueOptions";
 import { AllColorPaletteArrays, resolveColorScheme, DEFAULT_COLOR_SCHEME } from "../ColorPalette";
 import { ColumnLike, hasColumn } from "../shared/rows";
@@ -68,11 +69,11 @@ export default function buildOption(data: TreemapData, options: TreemapOptions):
       confine: true,
       formatter: (params: any) => {
         const path = (params.treePathInfo || [])
-          .map((step: any) => step.name)
+          .map((step: any) => escapeHtml(step.name))
           .filter(Boolean)
           .join(" → ");
         const share = total > 0 ? (params.value / total) * 100 : 0;
-        return `${path || params.name}<br/><b>${format(params.value)}</b> (${share.toFixed(1)}%)`;
+        return `${path || escapeHtml(params.name)}<br/><b>${format(params.value)}</b> (${share.toFixed(1)}%)`;
       },
     },
     series: [

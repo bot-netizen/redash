@@ -1,3 +1,4 @@
+import escapeHtml from "@/lib/escapeHtml";
 /**
  * Sequence sunburst: each row is a path through a set of stages, and the arcs
  * are how many journeys took each path.
@@ -163,9 +164,9 @@ export default function buildOption(data: any): BuiltSunburst {
       formatter: (params: any) => {
         const path = map(
           filter(params.treePathInfo || [], (step: any) => step.name && step.name !== "root"),
-          (step: any) => step.name
+          (step: any) => escapeHtml(step.name)
         ).join(" → ");
-        return `${path}<br/><b>${params.value}</b>`;
+        return `${path}<br/><b>${escapeHtml(params.value)}</b>`;
       },
     },
     series: [

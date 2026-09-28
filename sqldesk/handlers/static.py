@@ -6,7 +6,6 @@ from sqldesk import settings
 from sqldesk.handlers import routes
 from sqldesk.handlers.authentication import base_href
 from sqldesk.handlers.base import org_scoped_rule
-from sqldesk.security import csp_allows_embeding
 
 
 def render_index():
@@ -21,7 +20,6 @@ def render_index():
 
 @routes.route(org_scoped_rule("/dashboard/<slug>"), methods=["GET"])
 @login_required
-@csp_allows_embeding
 def dashboard(slug, org_slug=None):
     return render_index()
 

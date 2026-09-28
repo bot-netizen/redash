@@ -1,3 +1,4 @@
+import escapeHtml from "@/lib/escapeHtml";
 import { formatValue, resolveColor, uiColor } from "../shared/valueOptions";
 import { ColumnLike, hasColumn } from "../shared/rows";
 import { ECHARTS_MOTION } from "../shared/motion";
@@ -174,10 +175,10 @@ export default function buildOption(data: WaterfallData, options: WaterfallOptio
           return "";
         }
         if (bar.kind === "total") {
-          return `${bar.label}<br/><b>${format(bar.to)}</b>`;
+          return `${escapeHtml(bar.label)}<br/><b>${format(bar.to)}</b>`;
         }
         const sign = bar.delta > 0 ? "+" : "";
-        return `${bar.label}<br/><b>${sign}${format(bar.delta)}</b><br/>${format(bar.from)} → ${format(bar.to)}`;
+        return `${escapeHtml(bar.label)}<br/><b>${sign}${format(bar.delta)}</b><br/>${format(bar.from)} → ${format(bar.to)}`;
       },
     },
     xAxis: {

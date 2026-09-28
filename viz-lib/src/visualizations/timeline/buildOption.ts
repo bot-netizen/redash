@@ -1,3 +1,4 @@
+import escapeHtml from "@/lib/escapeHtml";
 import moment from "moment";
 import { findMapping, resolveColor, uiColor } from "../shared/valueOptions";
 import { AllColorPaletteArrays, resolveColorScheme, DEFAULT_COLOR_SCHEME } from "../ColorPalette";
@@ -146,8 +147,8 @@ export default function buildOption(data: TimelineData, options: TimelineOptions
         const minutes = (span.to - span.from) / 60000;
         const length = minutes >= 1 ? `${minutes.toFixed(minutes >= 10 ? 0 : 1)} min` : `${Math.round(minutes * 60)} s`;
         return [
-          span.lane ? `<b>${span.lane}</b>` : null,
-          span.state ? findMapping(span.state, options.mappings)?.text || span.state : null,
+          span.lane ? `<b>${escapeHtml(span.lane)}</b>` : null,
+          span.state ? escapeHtml(findMapping(span.state, options.mappings)?.text || span.state) : null,
           `${stamp(span.from)} → ${span.open ? "still going" : stamp(span.to)}`,
           `${length}${span.open ? " so far" : ""}`,
         ]

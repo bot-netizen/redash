@@ -1,3 +1,4 @@
+import escapeHtml from "@/lib/escapeHtml";
 import React, { useMemo } from "react";
 import echarts from "@/visualizations/echarts";
 import useEChart from "@/visualizations/echarts/useEChart";
@@ -58,7 +59,7 @@ export default function DrawnFunnel({
         formatter: (params: any) => {
           const step = steps[params.dataIndex];
           return [
-            `${stepLabel}: ${step.step}`,
+            `${escapeHtml(stepLabel)}: ${escapeHtml(step.step)}`,
             `<b>${formatValue(step.value)}</b>`,
             `${formatPercentValue(step.pctMax)} of the first step`,
             params.dataIndex > 0 ? `${formatPercentValue(step.pctPrevious)} of the one before` : null,

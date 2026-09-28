@@ -1,4 +1,5 @@
 import functools
+import re
 
 from flask import request, session
 from flask_login import current_user
@@ -16,7 +17,14 @@ def csp_allows_embeding(fn):
     def decorated(*args, **kwargs):
         return fn(*args, **kwargs)
 
-    embedable_csp = talisman.content_security_policy + "frame-ancestors *;"
+    # The base policy's own `frame-ancestors` is replaced, not followed by a
+    # second one: browsers keep the first directive of a name, so appending
+    # left every embed unframeable.
+    base = talisman.content_security_policy
+    if isinstance(base, dict):
+        embedable_csp = {**base, "frame-ancestors": "*"}
+    else:
+        embedable_csp = re.sub(r"frame-ancestors[^;]*;?", "", base).strip().rstrip(";") + "; frame-ancestors *;"
     return talisman(content_security_policy=embedable_csp, frame_options=None)(decorated)
 
 
@@ -26,10 +34,21 @@ def init_app(app):
     app.config["WTF_CSRF_SSL_STRICT"] = False
     app.config["WTF_CSRF_TIME_LIMIT"] = settings.CSRF_TIME_LIMIT
     app.config["SESSION_COOKIE_NAME"] = settings.SESSION_COOKIE_NAME
+    # Lax: a link into SQLDesk carries the session, a form posted from another
+    # site does not. CSRF checks are on in the shipped deployments; this
+    # holds where they are not.
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["REMEMBER_COOKIE_SAMESITE"] = "Lax"
+    # The largest body anything accepts is an upload; everything else is a
+    # few kilobytes, and a request the size of a film should not reach the
+    # form parser.
+    app.config["MAX_CONTENT_LENGTH"] = (settings.UPLOAD_MAX_SIZE_MB + 16) * 1024 * 1024
 
     @app.after_request
     def inject_csrf_token(response):
-        response.set_cookie("csrf_token", generate_csrf())
+        response.set_cookie(
+            "csrf_token", generate_csrf(), samesite="Lax", secure=settings.SESSION_COOKIE_SECURE, httponly=False
+        )
         return response
 
     if settings.ENFORCE_CSRF:

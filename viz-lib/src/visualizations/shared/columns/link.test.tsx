@@ -22,6 +22,16 @@ function mount(column: any, done: any) {
 }
 
 describe("Visualizations -> Table -> Columns -> Link", () => {
+  describe("prepareData", () => {
+    test("a cell holding a script scheme makes no link", () => {
+      const Link = Column({ name: "a", linkUrlTemplate: "{{ @ }}" });
+      const prepare = (row: any): any => Link.prepareData(row);
+      expect(prepare({ a: "javascript:alert(1)" })).toEqual({});
+      expect(prepare({ a: "https://example.com/x" }).href).toBe("https://example.com/x");
+      expect(prepare({ a: "/queries/1" }).href).toBe("/queries/1");
+    });
+  });
+
   describe("Editor", () => {
     test("Changes URL template", (done) => {
       const el = mount(

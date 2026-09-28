@@ -1,3 +1,4 @@
+import escapeHtml from "@/lib/escapeHtml";
 import { each, extend, filter, isNil, map, max, reduce, some, sortBy, uniq } from "lodash";
 import { AllColorPaletteArrays, resolveColorScheme } from "@/visualizations/ColorPalette";
 import { createNumberFormatter, formatSimpleTemplate } from "@/lib/value-format";
@@ -142,14 +143,7 @@ function applyPercentValues(seriesData: any[][], options: any) {
   );
 }
 
-function escapeHtml(text: string): string {
-  return text.replace(
-    /[&<>"']/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c] as string
-  );
-}
-
-function buildTooltipFormatter(options: any, horizontal: boolean) {
+export function buildTooltipFormatter(options: any, horizontal: boolean) {
   const formatNumber = createNumberFormatter(options.numberFormat);
   const formatPercent = createNumberFormatter(options.percentFormat);
   // Pair data is [x, y] upright and [y, x] on its side, so the measure is not
@@ -170,13 +164,13 @@ function buildTooltipFormatter(options: any, horizontal: boolean) {
       map(items, (item) => {
         const value = Array.isArray(item.value) ? item.value[valueIndex] : item.value;
         const context = {
-          "@@name": item.seriesName,
-          "@@x": item.axisValueLabel ?? item.name,
+          "@@name": escapeHtml(item.seriesName),
+          "@@x": escapeHtml(item.axisValueLabel ?? item.name),
           "@@y": options.series.percentValues ? formatPercent(value) : formatNumber(value),
           "@@yPercent": formatPercent(value),
         };
         const text = options.textFormat ? formatSimpleTemplate(options.textFormat, context) : null;
-        return text || `${item.marker} ${item.seriesName}: ${context["@@y"]}`;
+        return text || `${item.marker} ${context["@@name"]}: ${context["@@y"]}`;
       }).join("<br/>")
     );
   };
@@ -349,7 +343,7 @@ function buildCartesianSeries(
 }
 
 /** A box has five numbers rather than one, so it gets its own tooltip. */
-function buildBoxTooltipFormatter(options: any) {
+export function buildBoxTooltipFormatter(options: any) {
   const formatNumber = createNumberFormatter(options.numberFormat);
   const LABELS = ["Minimum", "Lower quartile", "Median", "Upper quartile", "Maximum"];
   return (params: any) => {
@@ -360,7 +354,7 @@ function buildBoxTooltipFormatter(options: any) {
     // A boxplot item's value leads with the data index, then the five numbers.
     const stats = item.value.slice(item.value.length - 5);
     const rows = map(LABELS, (label, index) => `${label}: ${formatNumber(stats[index])}`).join("<br/>");
-    return `${item.marker} ${item.seriesName} &middot; ${item.name}<br/>${rows}`;
+    return `${item.marker} ${escapeHtml(item.seriesName)} &middot; ${escapeHtml(item.name)}<br/>${rows}`;
   };
 }
 
@@ -490,7 +484,9 @@ export default function buildOption(
         trigger: "item",
         confine: true,
         formatter: (params: any) =>
-          `${xCategories[params.value[0]]} / ${yCategories[params.value[1]]}: ${params.value[2]}`,
+          `${escapeHtml(xCategories[params.value[0]])} / ${escapeHtml(yCategories[params.value[1]])}: ${escapeHtml(
+            params.value[2]
+          )}`,
       },
       visualMap: {
         min: 0,
@@ -732,10 +728,10 @@ export function buildLinkContext(option: any, params: any, options: any) {
   const pick = (value: any, index: number) => (Array.isArray(value) ? value[index] : undefined);
 
   const context: { [key: string]: any } = {
-    "@@name": params.seriesName,
+    "@@name": escapeHtml(params.seriesName),
     // A category axis gives the label; a value axis gives a number in the
     // pair. `name` is set for both, so fall back rather than choosing.
-    "@@x": pick(params.value, categoryIndex) ?? params.name,
+    "@@x": escapeHtml(pick(params.value, categoryIndex) ?? params.name),
     "@@y": Array.isArray(params.value) ? params.value[valueIndex] : params.value,
   };
 

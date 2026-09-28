@@ -1,3 +1,4 @@
+import escapeHtml from "@/lib/escapeHtml";
 import { every, filter, find, isFinite, isNaN, isNil, isNumber, isString, keys, map, mapValues, sortBy } from "lodash";
 import { ECHARTS_MOTION } from "@/visualizations/shared/motion";
 import { NO_ROWS } from "@/visualizations/shared/components/Problem";
@@ -203,8 +204,10 @@ export default function buildOption(data: any): BuiltSankey {
       confine: true,
       formatter: (params: any) =>
         params.dataType === "edge"
-          ? `${params.data.source.split(STAGE)[0]} → ${params.data.target.split(STAGE)[0]}: ${params.data.value}`
-          : `${params.data.displayName}`,
+          ? `${escapeHtml(params.data.source.split(STAGE)[0])} → ${escapeHtml(params.data.target.split(STAGE)[0])}: ${escapeHtml(
+              params.data.value
+            )}`
+          : escapeHtml(params.data.displayName),
     },
     series: [
       {
