@@ -26,7 +26,7 @@ import "./groups/GroupDataSources";
 import "./groups/GroupMembers";
 
 import "./queries-list/QueriesList";
-import "./queries/QuerySource";
+import "./queries/QuerySource.routes";
 import "./queries/QueryView";
 import "./queries/VisualizationEmbed";
 

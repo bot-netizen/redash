@@ -1,5 +1,5 @@
 import { isFunction, startsWith, trimStart, trimEnd } from "lodash";
-import React, { useState, useEffect, useRef, useContext } from "react";
+import React, { useState, useEffect, useRef, useContext, Suspense } from "react";
 import PropTypes from "prop-types";
 import UniversalRouter from "universal-router";
 import ErrorBoundary from "@sqldesk/viz/lib/components/ErrorBoundary";
@@ -7,6 +7,7 @@ import location from "@/services/location";
 import url from "@/services/url";
 
 import ErrorMessage from "./ErrorMessage";
+import LoadingState from "@/components/items-list/components/LoadingState";
 
 function generateRouteKey() {
   return Math.random().toString(32).substr(2);
@@ -115,7 +116,13 @@ export default function Router({ routes, onRouteChange }) {
   return (
     <CurrentRouteContext.Provider value={currentRoute}>
       <ErrorBoundary ref={errorHandlerRef} renderError={(error) => <ErrorMessage error={error} />}>
-        {currentRoute.render(currentRoute)}
+        {/*
+          Pages are fetched when they are first visited, so rendering one can
+          suspend. Inside the error boundary on purpose: a chunk that fails to
+          download -- a deploy mid-session, a dropped connection -- is an error
+          somebody should see, not a spinner that never stops.
+        */}
+        <Suspense fallback={<LoadingState className="" />}>{currentRoute.render(currentRoute)}</Suspense>
       </ErrorBoundary>
     </CurrentRouteContext.Provider>
   );

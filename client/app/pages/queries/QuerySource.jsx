@@ -5,14 +5,12 @@ import cx from "classnames";
 import { useDebouncedCallback } from "use-debounce";
 import useMedia from "use-media";
 import Button from "antd/lib/button";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import Resizable from "@/components/Resizable";
 import Parameters from "@/components/Parameters";
 import EditInPlace from "@/components/EditInPlace";
 import DynamicComponent from "@/components/DynamicComponent";
 import recordEvent from "@/services/recordEvent";
 import { ExecutionStatus } from "@/services/query-result";
-import routes from "@/services/routes";
 import notification from "@/services/notification";
 import * as queryFormat from "@/lib/queryFormat";
 
@@ -475,21 +473,15 @@ QuerySource.propTypes = {
   query: PropTypes.object.isRequired, // eslint-disable-line react/forbid-prop-types
 };
 
-const QuerySourcePage = wrapQueryPage(QuerySource);
+/*
+  Exported rather than registered here, and registered in QuerySource.routes
+  instead.
 
-routes.register(
-  "Queries.New",
-  routeWithUserSession({
-    path: "/queries/new",
-    render: (pageProps) => <QuerySourcePage {...pageProps} />,
-    bodyClass: "fixed-layout",
-  })
-);
-routes.register(
-  "Queries.Edit",
-  routeWithUserSession({
-    path: "/queries/:queryId/source",
-    render: (pageProps) => <QuerySourcePage {...pageProps} />,
-    bodyClass: "fixed-layout",
-  })
-);
+  A page that registers its own route has to be imported for the route to
+  exist, and pages/index.js imports every page at startup -- so this page's
+  Ace, a megabyte of SQL editor, was downloaded by everyone who opened a
+  dashboard. Keeping the route's path in a file that does not import the
+  component is what lets the component arrive when somebody actually opens
+  the editor.
+*/
+export default wrapQueryPage(QuerySource);
