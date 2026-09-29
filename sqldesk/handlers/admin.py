@@ -7,13 +7,13 @@ from flask_login import current_user, login_required
 from flask_restful import abort
 from rq.exceptions import NoSuchJobError
 
-from sqldesk import models, redis_connection, rq_redis_connection
+from sqldesk import features, models, redis_connection, rq_redis_connection
 from sqldesk.ai.catalog.semantic import catalog_documents
 from sqldesk.authentication import current_org
 from sqldesk.handlers import routes
 from sqldesk.handlers.base import json_response, record_event
 from sqldesk.monitor import get_overview, rq_status
-from sqldesk.permissions import require_super_admin
+from sqldesk.permissions import require_feature, require_super_admin
 from sqldesk.serializers import QuerySerializer
 from sqldesk.tasks import Job, Queue
 from sqldesk.tasks.catalog import enqueue_harvest, harvest_states
@@ -159,9 +159,9 @@ def run_events_cleanup():
     return json_response({"job_id": job.id})
 
 
-@routes.route("/api/admin/catalog", methods=["GET"])
+@routes.route("/api/catalog", methods=["GET"])
 @login_required
-@require_super_admin
+@require_feature(features.MANAGE_CATALOG)
 def catalog_tables():
     """
     The catalog, for reviewing and describing it.
@@ -209,7 +209,7 @@ def catalog_tables():
     )
 
 
-@routes.route("/api/admin/catalog/sources", methods=["GET"])
+@routes.route("/api/catalog/sources", methods=["GET"])
 @login_required
 @require_super_admin
 def catalog_sources():
@@ -251,7 +251,7 @@ def catalog_sources():
     )
 
 
-@routes.route("/api/admin/catalog/harvest", methods=["POST"])
+@routes.route("/api/catalog/harvest", methods=["POST"])
 @login_required
 @require_super_admin
 def harvest_catalog_now():
@@ -306,9 +306,9 @@ def harvest_catalog_now():
     return json_response({"queued": queued, "skipped": skipped})
 
 
-@routes.route("/api/admin/catalog/tables/<int:table_id>", methods=["POST"])
+@routes.route("/api/catalog/tables/<int:table_id>", methods=["POST"])
 @login_required
-@require_super_admin
+@require_feature(features.MANAGE_CATALOG)
 def describe_catalog_table(table_id):
     """
     Write a description by hand.
@@ -344,9 +344,9 @@ def describe_catalog_table(table_id):
     )
 
 
-@routes.route("/api/admin/catalog/measures", methods=["GET"])
+@routes.route("/api/catalog/measures", methods=["GET"])
 @login_required
-@require_super_admin
+@require_feature(features.MANAGE_CATALOG)
 def catalog_measures():
     """
     Metrics mined from saved SQL, most-written first.
@@ -385,9 +385,9 @@ def catalog_measures():
     )
 
 
-@routes.route("/api/admin/catalog/measures/<int:measure_id>", methods=["POST"])
+@routes.route("/api/catalog/measures/<int:measure_id>", methods=["POST"])
 @login_required
-@require_super_admin
+@require_feature(features.MANAGE_CATALOG)
 def review_catalog_measure(measure_id):
     """
     Agree a proposed metric, deny it, or write what it means.
@@ -428,9 +428,9 @@ def review_catalog_measure(measure_id):
     return json_response({"id": measure.id, "status": measure.status, "description": measure.description})
 
 
-@routes.route("/api/admin/catalog/export", methods=["GET"])
+@routes.route("/api/catalog/export", methods=["GET"])
 @login_required
-@require_super_admin
+@require_feature(features.MANAGE_CATALOG)
 def download_catalog():
     """
     The semantic layer as a zip, for people who do not have a shell.

@@ -22,7 +22,7 @@ import uuid
 from flask import jsonify, request
 from sqlalchemy.orm.exc import NoResultFound
 
-from sqldesk import models, redis_connection, settings
+from sqldesk import features, models, redis_connection, settings
 from sqldesk.authentication import current_org
 from sqldesk.handlers.base import BaseResource, routes
 from sqldesk.mcp import (
@@ -185,6 +185,21 @@ def mcp_endpoint():
         response = jsonify(_error(UNAUTHORIZED, "A SQLDesk API key is required: Authorization: Bearer <key>."))
         response.status_code = 401
         response.headers["WWW-Authenticate"] = "Bearer"
+        return response
+
+    if not features.can(user, features.USE_MCP):
+        # A working key belonging to somebody who may not use MCP. Recorded
+        # under their name, which is the difference between this and an
+        # unknown key: an administrator can see who is trying and grant it.
+        if _refusal_worth_recording():
+            _record(org, user, session_id, None, "authenticate", None, "refused", "no MCP permission", started)
+        response = jsonify(
+            _error(
+                UNAUTHORIZED,
+                "This account may not use MCP. An administrator grants it to a group under Settings -> Groups.",
+            )
+        )
+        response.status_code = 403
         return response
 
     payload = request.get_json(force=True, silent=True)

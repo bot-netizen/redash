@@ -25,6 +25,19 @@ export const currentUser = {
     return includes(this.permissions, permission);
   },
 
+  /*
+    Whether this person may use a feature an admin hands to a group, by the
+    same rule the server applies in sqldesk/features.py: the install has to
+    offer it at all, and then an admin has it or a group was granted it.
+
+    Asked here so a page can hide what the server would refuse; the server
+    is still what decides.
+    */
+  can(feature) {
+    const offered = (clientConfig.grantableFeatures || []).some((entry) => entry.name === feature);
+    return offered && (this.isAdmin || this.hasPermission(feature));
+  },
+
   get isAdmin() {
     return this.hasPermission("admin");
   },

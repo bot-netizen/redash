@@ -91,6 +91,30 @@ def require_super_admin(fn):
     return require_permission("super_admin")(fn)
 
 
+def require_feature(name):
+    """
+    A feature an administrator hands to a group -- see sqldesk/features.py.
+
+    Not `require_permission`, because a feature is refused on two counts: the
+    group was not granted it, or this install does not offer it at all. The
+    second is why a catalog endpoint stops answering when MCP is switched
+    off, rather than answering anyone who happens to still carry the row.
+    """
+
+    def decorator(fn):
+        @functools.wraps(fn)
+        def decorated(*args, **kwargs):
+            from sqldesk import features
+
+            if not features.can(current_user, name):
+                abort(403)
+            return fn(*args, **kwargs)
+
+        return decorated
+
+    return decorator
+
+
 def has_permission_or_owner(permission, object_owner_id):
     return int(object_owner_id) == current_user.id or current_user.has_permission(permission)
 

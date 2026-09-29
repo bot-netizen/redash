@@ -43,21 +43,25 @@ def _mcp_is_on():
     return settings.FEATURE_AI
 
 
+USE_MCP = "use_mcp"
+MANAGE_CATALOG = "manage_catalog"
+MANAGE_LIVE_DASHBOARDS = "manage_live_dashboards"
+
 #: Every feature, whether or not this install offers it.
 FEATURES = (
     Feature(
-        "manage_live_dashboards",
+        MANAGE_LIVE_DASHBOARDS,
         "Make dashboards live",
         "Turn a dashboard live, so it refreshes on the server for everyone watching it.",
     ),
     Feature(
-        "use_mcp",
+        USE_MCP,
         "Connect AI clients over MCP",
         "Answer questions from an AI client, as themselves and within their own data source access.",
         enabled=_mcp_is_on,
     ),
     Feature(
-        "manage_catalog",
+        MANAGE_CATALOG,
         "Curate the catalog",
         "Describe tables and agree the measures an AI client is told about.",
         enabled=_mcp_is_on,

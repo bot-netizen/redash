@@ -9,7 +9,6 @@ import Tabs from "antd/lib/tabs";
 import Tag from "antd/lib/tag";
 
 import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
-import Layout from "@/components/admin/Layout";
 import HelpTrigger from "@/components/HelpTrigger";
 import TimeAgo from "@/components/TimeAgo";
 import Tooltip from "@/components/Tooltip";
@@ -36,7 +35,7 @@ function DescriptionCell({ table, onSaved }) {
   const save = useCallback(() => {
     setSaving(true);
     axios
-      .post(`/api/admin/catalog/tables/${table.id}`, { description: value })
+      .post(`/api/catalog/tables/${table.id}`, { description: value })
       .then((saved) => {
         onSaved(table.id, saved);
         notification.success(`Described ${table.name}.`);
@@ -85,7 +84,7 @@ function Measures({ sourceId }) {
       params.push("pending=1");
     }
     axios
-      .get(`/api/admin/catalog/measures${params.length ? `?${params.join("&")}` : ""}`)
+      .get(`/api/catalog/measures${params.length ? `?${params.join("&")}` : ""}`)
       .then((data) => setMeasures(data.measures))
       .catch(() => notification.error("Could not load the measures."))
       .finally(() => setLoading(false));
@@ -97,7 +96,7 @@ function Measures({ sourceId }) {
 
   const review = useCallback((measure, status) => {
     axios
-      .post(`/api/admin/catalog/measures/${measure.id}`, { status })
+      .post(`/api/catalog/measures/${measure.id}`, { status })
       .then((saved) => {
         setMeasures((current) => current.map((m) => (m.id === saved.id ? { ...m, ...saved } : m)));
         notification.success(`${measure.name} ${SAID[saved.status]}.`);
@@ -217,7 +216,7 @@ function useHarvest(onFinished) {
   const loadSources = useCallback(
     () =>
       axios
-        .get("/api/admin/catalog/sources")
+        .get("/api/catalog/sources")
         .then((data) => setSources(data.sources))
         .catch(() => {}),
     []
@@ -252,7 +251,7 @@ function useHarvest(onFinished) {
     (body) => {
       setBusy(true);
       return axios
-        .post("/api/admin/catalog/harvest", body)
+        .post("/api/catalog/harvest", body)
         .then(({ queued, skipped }) => {
           if (queued.length) {
             notification.success(`Harvesting ${plural(queued.length, "data source")}.`);
@@ -404,7 +403,7 @@ export default function Catalog() {
       params.push("undescribed=1");
     }
     axios
-      .get(`/api/admin/catalog${params.length ? `?${params.join("&")}` : ""}`)
+      .get(`/api/catalog${params.length ? `?${params.join("&")}` : ""}`)
       .then((data) => setTables(data.tables))
       .catch(() => notification.error("Could not load the catalog."))
       .finally(() => setLoading(false));
@@ -463,7 +462,7 @@ export default function Catalog() {
   ];
 
   return (
-    <Layout activeTab="catalog">
+    <React.Fragment>
       <div className="p-15 catalog-page" data-test="AdminCatalog">
         <div className="catalog-header">
           <h3>
@@ -513,14 +512,14 @@ export default function Catalog() {
             `download` is load-bearing, not decoration. The app puts a click
             handler on the whole body and turns any anchor into a client-side
             route -- so without it the router swallowed this click, pushed
-            /<org>/api/admin/catalog/export, and drew its own "page cannot be
+            /<org>/api/catalog/export, and drew its own "page cannot be
             found" over a download that had in fact already succeeded.
             handleNavigationIntent skips anchors carrying it.
           */}
           <a
             download
             className="catalog-download"
-            href={`/api/admin/catalog/export${sourceId ? `?data_source_id=${sourceId}` : ""}`}
+            href={`/api/catalog/export${sourceId ? `?data_source_id=${sourceId}` : ""}`}
           >
             <Button size="small">Download YAML</Button>
           </a>
@@ -577,14 +576,14 @@ export default function Catalog() {
           </Tabs.TabPane>
         </Tabs>
       </div>
-    </Layout>
+    </React.Fragment>
   );
 }
 
 routes.register(
-  "Admin.Catalog",
+  "Catalog",
   routeWithUserSession({
-    path: "/admin/catalog",
+    path: "/catalog",
     title: "Catalog",
     render: (pageProps) => <Catalog {...pageProps} />,
   })

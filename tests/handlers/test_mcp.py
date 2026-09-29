@@ -20,11 +20,63 @@ class McpTestCase(BaseTestCase):
         self.feature = mock.patch("sqldesk.settings.FEATURE_AI", True)
         self.feature.start()
         self.addCleanup(self.feature.stop)
+        # Everyone in these tests may use MCP, so each one is about the tool
+        # it names rather than about the permission. Who may use MCP at all
+        # is TestWhoMayUseMcp's subject.
+        default_group = self.factory.default_group
+        default_group.permissions = list(default_group.permissions or []) + ["use_mcp"]
+        models.db.session.add(default_group)
+        models.db.session.commit()
 
     def post(self, body, api_key=None, user=None):
         user = user or self.factory.user
         headers = {"Authorization": "Bearer {}".format(api_key or user.api_key)}
         return self.client.post("/mcp", data=json.dumps(body), headers=headers, content_type="application/json")
+
+
+class TestWhoMayUseMcp(McpTestCase):
+    """
+    A working API key is not permission to use MCP. An administrator hands
+    that to a group, and until somebody does, only administrators have it --
+    which is what an upgrade leaves behind.
+    """
+
+    def _member_of(self, *permissions):
+        group = self.factory.create_group(name="Analysts", permissions=list(permissions))
+        models.db.session.add(group)
+        models.db.session.commit()
+        return self.factory.create_user(group_ids=[group.id])
+
+    def test_a_key_belonging_to_somebody_without_the_feature_is_refused(self):
+        response = self.post(rpc("tools/list"), user=self._member_of("view_query", "execute_query"))
+
+        self.assertEqual(403, response.status_code)
+        self.assertIn("administrator", json.loads(response.data)["error"]["message"])
+
+    def test_and_the_refusal_says_who_it_was(self):
+        # The difference between this and an unknown key: an administrator
+        # can see who is asking and grant it.
+        user = self._member_of("view_query")
+
+        self.post(rpc("tools/list"), user=user)
+
+        event = models.McpEvent.query.one()
+        self.assertEqual("refused", event.outcome)
+        self.assertEqual("no MCP permission", event.detail)
+        self.assertEqual(user.id, event.user_id)
+
+    def test_a_group_that_was_granted_it_may(self):
+        granted = self._member_of("view_query", "use_mcp")
+
+        response = self.post(rpc("tools/list"), user=granted)
+
+        self.assertEqual(200, response.status_code)
+        self.assertIn("tools", json.loads(response.data)["result"])
+
+    def test_an_administrator_may_without_being_granted_anything(self):
+        response = self.post(rpc("tools/list"), user=self.factory.create_admin())
+
+        self.assertEqual(200, response.status_code)
 
 
 class TestTheHandshake(McpTestCase):
@@ -645,7 +697,7 @@ class TestNoMoreThanTheApplicationGives(McpTestCase):
     def _viewer(self):
         # A group that may look at `viewonly` and nothing else, the way an
         # admin sets up people who read dashboards but do not write SQL.
-        group = self.factory.create_group(name="Viewers")
+        group = self.factory.create_group(name="Viewers", permissions=models.Group.DEFAULT_PERMISSIONS + ["use_mcp"])
         source = self.factory.create_data_source(name="viewonly", group=group, view_only=True)
         user = self.factory.create_user(group_ids=[group.id], email="viewer@example.com")
         models.db.session.commit()
@@ -934,7 +986,7 @@ class TestRunningNeedsWhatTheEditorNeeds(McpTestCase):
         return json.loads(self.post(body, user=user).data)
 
     def test_without_execute_query_nothing_runs(self):
-        group = self.factory.create_group(name="Readers", permissions=["view_query"])
+        group = self.factory.create_group(name="Readers", permissions=["view_query", "use_mcp"])
         models.db.session.add(
             models.DataSourceGroup(group=group, data_source=self.factory.data_source, view_only=False)
         )

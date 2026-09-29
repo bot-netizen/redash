@@ -9,7 +9,7 @@ jest.mock("./navigateTo", () => jest.fn());
 
   The Catalog page's "Download YAML" link depends on the `download` escape
   hatch below. Without it the router swallowed the click, pushed
-  /<org>/api/admin/catalog/export, and drew its own "page cannot be found"
+  /<org>/api/catalog/export, and drew its own "page cannot be found"
   over a download that had already succeeded -- so the page reported a
   failure for something that worked.
 */
@@ -33,7 +33,7 @@ describe("handleNavigationIntent", () => {
   });
 
   test("a download is left to the browser", () => {
-    click({ href: "/api/admin/catalog/export", download: "" });
+    click({ href: "/api/catalog/export", download: "" });
 
     expect(navigateTo).not.toHaveBeenCalled();
   });

@@ -66,6 +66,7 @@ function useNavbarActiveState() {
       ),
       dataSources: includes(["DataSources.List"], currentRoute.id),
       alerts: includes(["Alerts.List", "Alerts.New", "Alerts.View", "Alerts.Edit"], currentRoute.id),
+      catalog: currentRoute.id === "Catalog",
       admin: includes(
         ["Admin.Overview", "Admin.MCP", "Admin.SystemStatus", "Admin.Jobs", "Admin.OutdatedQueries"],
         currentRoute.id
@@ -126,11 +127,6 @@ export default function DesktopNavbar() {
       {clientConfig.aiEnabled && (
         <Menu.Item key="admin-mcp">
           <Link href="admin/mcp">MCP</Link>
-        </Menu.Item>
-      )}
-      {clientConfig.aiEnabled && (
-        <Menu.Item key="admin-catalog">
-          <Link href="admin/catalog">Catalog</Link>
         </Menu.Item>
       )}
       <Menu.Item key="admin-status">
@@ -201,6 +197,16 @@ export default function DesktopNavbar() {
         {currentUser.hasPermission("list_alerts") && (
           <NavLink href="alerts" active={activeState.alerts}>
             Alerts
+          </NavLink>
+        )}
+        {/*
+          Beside the others rather than under Admin: describing a table is
+          the work of whoever knows what it is for, and an administrator
+          hands that out per group.
+        */}
+        {currentUser.can("manage_catalog") && (
+          <NavLink href="catalog" active={activeState.catalog}>
+            Catalog
           </NavLink>
         )}
         {currentUser.hasPermission("super_admin") && (

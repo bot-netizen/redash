@@ -356,7 +356,73 @@ class TestEventsCleanup(BaseTestCase):
         self.assertEqual(Event.query.count(), 1)
 
 
-class TestCatalogReview(BaseTestCase):
+class CatalogTestCase(BaseTestCase):
+    """
+    The catalog only exists where MCP is switched on, so its endpoints answer
+    403 where it is not -- for administrators too. Every test below is about
+    what somebody may do with a catalog that exists.
+    """
+
+    def setUp(self):
+        super().setUp()
+        feature = mock.patch("sqldesk.settings.FEATURE_AI", True)
+        feature.start()
+        self.addCleanup(feature.stop)
+
+
+class TestWhoMayCurateTheCatalog(CatalogTestCase):
+    """
+    Curating is a feature an administrator hands to a group, not something
+    only a super administrator may do: the person who knows what a table is
+    for is rarely the person who runs the server.
+    """
+
+    def _curator(self):
+        group = self.factory.create_group(
+            name="Curators", permissions=models.Group.DEFAULT_PERMISSIONS + ["manage_catalog"]
+        )
+        db.session.add(group)
+        db.session.commit()
+        return self.factory.create_user(group_ids=[group.id])
+
+    def test_a_curator_who_is_not_an_admin_may_read_it(self):
+        rv = self.make_request("get", "/api/catalog", user=self._curator(), org=False)
+        self.assertEqual(200, rv.status_code)
+
+    def test_and_may_describe_a_table(self):
+        table = models.CatalogTable(org=self.factory.org, data_source_id=self.factory.data_source.id, name="orders")
+        db.session.add(table)
+        db.session.commit()
+
+        rv = self.make_request(
+            "post",
+            "/api/catalog/tables/{}".format(table.id),
+            data={"description": "One row per order."},
+            user=self._curator(),
+            org=False,
+        )
+
+        self.assertEqual(200, rv.status_code)
+
+    def test_somebody_without_the_feature_may_not(self):
+        rv = self.make_request("get", "/api/catalog", user=self.factory.user, org=False)
+        self.assertEqual(403, rv.status_code)
+
+    def test_nor_anybody_when_the_install_has_mcp_switched_off(self):
+        curator = self._curator()
+        with mock.patch("sqldesk.settings.FEATURE_AI", False):
+            self.assertEqual(403, self.make_request("get", "/api/catalog", user=curator, org=False).status_code)
+            admin = self.factory.create_admin()
+            self.assertEqual(403, self.make_request("get", "/api/catalog", user=admin, org=False).status_code)
+
+    def test_harvesting_is_still_an_admins_call(self):
+        # It reads every data source's schema on the worker.
+        curator = self._curator()
+        rv = self.make_request("post", "/api/catalog/harvest", data={}, user=curator, org=False)
+        self.assertEqual(403, rv.status_code)
+
+
+class TestCatalogReview(CatalogTestCase):
     """
     Describing a table by hand. The ordering matters as much as the writing:
     nobody documents three thousand tables, so the list has to start with the
@@ -377,16 +443,14 @@ class TestCatalogReview(BaseTestCase):
         return table
 
     def test_it_needs_a_super_admin(self):
-        self.assertEqual(
-            403, self.make_request("get", "/api/admin/catalog", user=self.factory.user, org=False).status_code
-        )
+        self.assertEqual(403, self.make_request("get", "/api/catalog", user=self.factory.user, org=False).status_code)
 
     def test_most_used_first(self):
         self._table("rare", usage=1)
         self._table("popular", usage=90)
         admin = self.factory.create_admin()
 
-        rv = self.make_request("get", "/api/admin/catalog", user=admin, org=False)
+        rv = self.make_request("get", "/api/catalog", user=admin, org=False)
 
         self.assertEqual(["popular", "rare"], [t["name"] for t in rv.json["tables"]])
 
@@ -395,7 +459,7 @@ class TestCatalogReview(BaseTestCase):
         self._table("bare", usage=4)
         admin = self.factory.create_admin()
 
-        rv = self.make_request("get", "/api/admin/catalog?undescribed=1", user=admin, org=False)
+        rv = self.make_request("get", "/api/catalog?undescribed=1", user=admin, org=False)
 
         self.assertEqual(["bare"], [t["name"] for t in rv.json["tables"]])
 
@@ -405,7 +469,7 @@ class TestCatalogReview(BaseTestCase):
 
         self.make_request(
             "post",
-            "/api/admin/catalog/tables/{}".format(table.id),
+            "/api/catalog/tables/{}".format(table.id),
             data={"description": "  Orders, excluding the test tenant.  "},
             user=admin,
             org=False,
@@ -422,7 +486,7 @@ class TestCatalogReview(BaseTestCase):
 
         self.make_request(
             "post",
-            "/api/admin/catalog/tables/{}".format(table.id),
+            "/api/catalog/tables/{}".format(table.id),
             data={"description": ""},
             user=admin,
             org=False,
@@ -442,7 +506,7 @@ class TestCatalogReview(BaseTestCase):
 
         rv = self.make_request(
             "post",
-            "/api/admin/catalog/tables/{}".format(table.id),
+            "/api/catalog/tables/{}".format(table.id),
             data={"description": "x"},
             user=admin,
             org=False,
@@ -451,7 +515,7 @@ class TestCatalogReview(BaseTestCase):
         self.assertEqual(404, rv.status_code)
 
 
-class TestMeasureReview(BaseTestCase):
+class TestMeasureReview(CatalogTestCase):
     """
     Approval is the whole point: until somebody sets it, a definition is
     something we noticed rather than something the organisation stands behind.
@@ -473,7 +537,7 @@ class TestMeasureReview(BaseTestCase):
         return measure
 
     def test_it_needs_a_super_admin(self):
-        rv = self.make_request("get", "/api/admin/catalog/measures", user=self.factory.user, org=False)
+        rv = self.make_request("get", "/api/catalog/measures", user=self.factory.user, org=False)
 
         self.assertEqual(403, rv.status_code)
 
@@ -482,7 +546,7 @@ class TestMeasureReview(BaseTestCase):
         self._measure("everywhere", usage=40)
         admin = self.factory.create_admin()
 
-        rv = self.make_request("get", "/api/admin/catalog/measures", user=admin, org=False)
+        rv = self.make_request("get", "/api/catalog/measures", user=admin, org=False)
 
         self.assertEqual(["everywhere", "rare"], [m["name"] for m in rv.json["measures"]])
 
@@ -491,7 +555,7 @@ class TestMeasureReview(BaseTestCase):
         self._measure("proposed", usage=8)
         admin = self.factory.create_admin()
 
-        rv = self.make_request("get", "/api/admin/catalog/measures?pending=1", user=admin, org=False)
+        rv = self.make_request("get", "/api/catalog/measures?pending=1", user=admin, org=False)
 
         self.assertEqual(["proposed"], [m["name"] for m in rv.json["measures"]])
 
@@ -501,7 +565,7 @@ class TestMeasureReview(BaseTestCase):
 
         self.make_request(
             "post",
-            "/api/admin/catalog/measures/{}".format(measure.id),
+            "/api/catalog/measures/{}".format(measure.id),
             data={"status": "approved", "description": "Agreed with finance."},
             user=admin,
             org=False,
@@ -518,7 +582,7 @@ class TestMeasureReview(BaseTestCase):
 
         self.make_request(
             "post",
-            "/api/admin/catalog/measures/{}".format(measure.id),
+            "/api/catalog/measures/{}".format(measure.id),
             data={"status": "denied"},
             user=admin,
             org=False,
@@ -545,7 +609,7 @@ class TestMeasureReview(BaseTestCase):
 
         rv = self.make_request(
             "post",
-            "/api/admin/catalog/measures/{}".format(measure.id),
+            "/api/catalog/measures/{}".format(measure.id),
             data={"status": "approved"},
             user=admin,
             org=False,
@@ -558,7 +622,7 @@ class TestMeasureReview(BaseTestCase):
         self._measure("still_thinking", usage=4)
         admin = self.factory.create_admin()
 
-        rv = self.make_request("get", "/api/admin/catalog/measures?pending=1", user=admin, org=False)
+        rv = self.make_request("get", "/api/catalog/measures?pending=1", user=admin, org=False)
 
         self.assertEqual(["still_thinking"], [m["name"] for m in rv.json["measures"]])
 
@@ -568,7 +632,7 @@ class TestMeasureReview(BaseTestCase):
 
         rv = self.make_request(
             "post",
-            "/api/admin/catalog/measures/{}".format(measure.id),
+            "/api/catalog/measures/{}".format(measure.id),
             data={"status": "probably"},
             user=admin,
             org=False,
@@ -579,7 +643,7 @@ class TestMeasureReview(BaseTestCase):
         self.assertEqual(models.MEASURE_PROPOSED, models.CatalogMeasure.query.get(measure.id).status)
 
 
-class TestCatalogHarvest(BaseTestCase):
+class TestCatalogHarvest(CatalogTestCase):
     """
     Harvesting from the Catalog page rather than waiting for the schedule --
     and, for a data source just added, harvesting only what has nothing in
@@ -610,12 +674,12 @@ class TestCatalogHarvest(BaseTestCase):
             pass
 
     def _harvest(self, body, user=None):
-        return self.make_request("post", "/api/admin/catalog/harvest", data=body, user=user or self.admin, org=False)
+        return self.make_request("post", "/api/catalog/harvest", data=body, user=user or self.admin, org=False)
 
     def test_it_needs_a_super_admin(self):
         self.assertEqual(403, self._harvest({}, user=self.factory.user).status_code)
         self.assertEqual(
-            403, self.make_request("get", "/api/admin/catalog/sources", user=self.factory.user, org=False).status_code
+            403, self.make_request("get", "/api/catalog/sources", user=self.factory.user, org=False).status_code
         )
 
     def test_only_unharvested_leaves_sources_with_a_catalog_alone(self):
@@ -689,7 +753,7 @@ class TestCatalogHarvest(BaseTestCase):
         self._forget_jobs(waiting)
         self._harvest({"data_source_id": waiting.id})
 
-        rv = self.make_request("get", "/api/admin/catalog/sources", user=self.admin, org=False)
+        rv = self.make_request("get", "/api/catalog/sources", user=self.admin, org=False)
 
         by_id = {source["id"]: source for source in rv.json["sources"]}
         self.assertEqual(1, by_id[held.id]["tables"])
@@ -699,7 +763,7 @@ class TestCatalogHarvest(BaseTestCase):
         self.assertEqual("queued", by_id[waiting.id]["state"])
 
 
-class TestCatalogDownload(BaseTestCase):
+class TestCatalogDownload(CatalogTestCase):
     """
     The same files `manage ai export` writes, for somebody with no shell.
     A curation step that requires docker access is one that does not happen.
@@ -721,7 +785,7 @@ class TestCatalogDownload(BaseTestCase):
 
     def test_it_needs_a_super_admin(self):
         self._harvested()
-        rv = self.make_request("get", "/api/admin/catalog/export", user=self.factory.user, org=False)
+        rv = self.make_request("get", "/api/catalog/export", user=self.factory.user, org=False)
 
         self.assertEqual(403, rv.status_code)
 
@@ -729,7 +793,7 @@ class TestCatalogDownload(BaseTestCase):
         self._harvested()
         admin = self.factory.create_admin()
 
-        rv = self.make_request("get", "/api/admin/catalog/export", user=admin, org=False)
+        rv = self.make_request("get", "/api/catalog/export", user=admin, org=False)
 
         self.assertEqual(200, rv.status_code)
         archive = zipfile.ZipFile(io.BytesIO(rv.data))
@@ -742,7 +806,7 @@ class TestCatalogDownload(BaseTestCase):
         self._harvested()
         admin = self.factory.create_admin()
 
-        rv = self.make_request("get", "/api/admin/catalog/export", user=admin, org=False)
+        rv = self.make_request("get", "/api/catalog/export", user=admin, org=False)
 
         self.assertIn("attachment", rv.headers["Content-Disposition"])
         self.assertIn("sqldesk-semantic-", rv.headers["Content-Disposition"])
@@ -756,9 +820,7 @@ class TestCatalogDownload(BaseTestCase):
         db.session.commit()
         admin = self.factory.create_admin()
 
-        rv = self.make_request(
-            "get", "/api/admin/catalog/export?data_source_id={}".format(other.id), user=admin, org=False
-        )
+        rv = self.make_request("get", "/api/catalog/export?data_source_id={}".format(other.id), user=admin, org=False)
 
         names = zipfile.ZipFile(io.BytesIO(rv.data)).namelist()
         self.assertEqual(["other/elsewhere.yml"], names)
@@ -768,8 +830,6 @@ class TestCatalogDownload(BaseTestCase):
         theirs = self.factory.create_data_source(name="Theirs", org=elsewhere)
         admin = self.factory.create_admin()
 
-        rv = self.make_request(
-            "get", "/api/admin/catalog/export?data_source_id={}".format(theirs.id), user=admin, org=False
-        )
+        rv = self.make_request("get", "/api/catalog/export?data_source_id={}".format(theirs.id), user=admin, org=False)
 
         self.assertEqual(404, rv.status_code)
