@@ -8,33 +8,37 @@ import * as Sidebar from "@/components/items-list/components/Sidebar";
 import { ControllerType } from "@/components/items-list/ItemsList";
 import DeleteGroupButton from "./DeleteGroupButton";
 
-import { currentUser } from "@/services/auth";
+import { currentUser, clientConfig } from "@/services/auth";
 import Group from "@/services/group";
 import notification from "@/services/notification";
 
-const MANAGE_LIVE_PERMISSION = "manage_live_dashboards";
-
 /*
-  Whether this group's members may turn dashboards live. Admins can always;
-  this lets them hand it to anyone else, including everybody through the
-  default group.
+  One checkbox per feature this install offers, drawn from the list the
+  server sends in `grantableFeatures`.
+
+  The list is deliberately not kept here. A feature is added in
+  sqldesk/features.py and appears on this page with its own label and its own
+  sentence; a page carrying its own copy of the names is a page that drifts
+  from the server the first time somebody adds one.
 */
-function LivePermissionToggle({ group }) {
+function FeatureToggle({ group, feature }) {
   const [granted, setGranted] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    setGranted((group.permissions || []).includes(MANAGE_LIVE_PERMISSION));
-  }, [group]);
+    setGranted((group.permissions || []).includes(feature.name));
+  }, [group, feature.name]);
 
   const toggle = (event) => {
     const next = event.target.checked;
     setSaving(true);
-    Group.setPermissions(group, { [MANAGE_LIVE_PERMISSION]: next })
+    Group.setPermissions(group, { [feature.name]: next })
       .then((updated) => {
-        setGranted((updated.permissions || []).includes(MANAGE_LIVE_PERMISSION));
+        setGranted((updated.permissions || []).includes(feature.name));
         notification.success(
-          next ? "Members can now make dashboards live." : "Members can no longer make dashboards live."
+          next
+            ? `Members can now: ${feature.label.toLowerCase()}.`
+            : `Members can no longer: ${feature.label.toLowerCase()}.`
         );
       })
       .catch(() => notification.error("Could not change the permission."))
@@ -42,14 +46,21 @@ function LivePermissionToggle({ group }) {
   };
 
   return (
-    <Checkbox checked={granted} disabled={saving} onChange={toggle} data-test="GroupLivePermission">
-      Members can make dashboards live
-    </Checkbox>
+    <div className="m-b-10">
+      <Checkbox checked={granted} disabled={saving} onChange={toggle} data-test={`GroupFeature-${feature.name}`}>
+        {feature.label}
+      </Checkbox>
+      <div className="text-muted" style={{ fontSize: 12, lineHeight: 1.4, marginLeft: 24 }}>
+        {feature.description}
+      </div>
+    </div>
   );
 }
 
-LivePermissionToggle.propTypes = {
+FeatureToggle.propTypes = {
   group: PropTypes.object.isRequired, // eslint-disable-line react/forbid-prop-types
+  feature: PropTypes.shape({ name: PropTypes.string, label: PropTypes.string, description: PropTypes.string })
+    .isRequired,
 };
 
 export default function DetailsPageSidebar({
@@ -63,8 +74,11 @@ export default function DetailsPageSidebar({
   onGroupDeleted,
 }) {
   const canRemove = group && currentUser.isAdmin && group.type !== "builtin";
-  // The admin group has every permission already.
-  const canGrantLive = group && currentUser.isAdmin && !(group.permissions || []).includes("admin");
+  // The admin group has every feature already, so there is nothing to grant it.
+  const features =
+    group && currentUser.isAdmin && !(group.permissions || []).includes("admin")
+      ? clientConfig.grantableFeatures || []
+      : [];
 
   return (
     <React.Fragment>
@@ -81,10 +95,12 @@ export default function DetailsPageSidebar({
           Add Data Sources
         </Button>
       )}
-      {canGrantLive && (
+      {features.length > 0 && (
         <React.Fragment>
           <Divider dashed className="m-t-10 m-b-10" />
-          <LivePermissionToggle group={group} />
+          {features.map((feature) => (
+            <FeatureToggle key={feature.name} group={group} feature={feature} />
+          ))}
         </React.Fragment>
       )}
       {canRemove && (

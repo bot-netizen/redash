@@ -1,7 +1,7 @@
 from flask import request
 from flask_restful import abort
 
-from sqldesk import live, models
+from sqldesk import features, models
 from sqldesk.handlers.base import BaseResource, get_object_or_404
 from sqldesk.permissions import require_admin, require_permission
 
@@ -29,9 +29,9 @@ class GroupListResource(BaseResource):
         return [g.to_dict() for g in groups]
 
 
-# Permissions an admin may grant or take away from a group one at a time.
-# Everything else about a group's permissions is fixed by its type.
-GRANTABLE_PERMISSIONS = (live.MANAGE_LIVE_PERMISSION,)
+# What an admin may grant or take away, one at a time; everything else about
+# a group's permissions is fixed by its type. The list lives in
+# sqldesk/features.py, so adding a feature does not mean editing this file.
 
 
 class GroupPermissionsResource(BaseResource):
@@ -40,15 +40,17 @@ class GroupPermissionsResource(BaseResource):
         """
         Grant or take away a grantable permission.
 
-        :<json boolean manage_live_dashboards: whether members may turn
-                                                dashboards live
+        The body names features and says whether this group has them:
+        `{"use_mcp": true}`. Only features this install offers are accepted,
+        so an install with MCP switched off cannot grant MCP.
         :>json object group: the group, with its permissions
         """
         group = models.Group.get_by_id_and_org(group_id, self.current_org)
         body = request.get_json(force=True, silent=True) or {}
-        unknown = [key for key in body if key not in GRANTABLE_PERMISSIONS]
+        grantable = [feature.name for feature in features.grantable()]
+        unknown = [key for key in body if key not in grantable]
         if unknown or not body:
-            abort(400, message="Only these can be granted: {}.".format(", ".join(GRANTABLE_PERMISSIONS)))
+            abort(400, message="Only these can be granted: {}.".format(", ".join(grantable)))
 
         permissions = list(group.permissions or [])
         for permission, granted in body.items():

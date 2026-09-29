@@ -5,7 +5,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from itsdangerous import BadSignature, SignatureExpired
 from sqlalchemy.orm.exc import NoResultFound
 
-from sqldesk import __version__, limiter, models, settings
+from sqldesk import __version__, features, limiter, models, settings
 from sqldesk.authentication import current_org, get_login_url, get_next_path
 from sqldesk.authentication.account import (
     INVITE,
@@ -306,6 +306,9 @@ def client_config():
         "tableCellMaxJSONSize": settings.TABLE_CELL_MAX_JSON_SIZE,
         # Gates the MCP pages and the admin catalog.
         "aiEnabled": settings.FEATURE_AI,
+        # What an admin may grant a group, so the Group page does not keep
+        # its own copy of the list and drift from it.
+        "grantableFeatures": [feature.to_dict() for feature in features.grantable()],
     }
 
     client_config.update(defaults)

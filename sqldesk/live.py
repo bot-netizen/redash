@@ -51,7 +51,9 @@ SWEEP_TIMEOUT = 60
 
 
 def can_manage_live(user):
-    return user.has_permission("admin") or user.has_permission(MANAGE_LIVE_PERMISSION)
+    from sqldesk import features
+
+    return features.can(user, MANAGE_LIVE_PERMISSION)
 
 
 def live_settings(dashboard):
