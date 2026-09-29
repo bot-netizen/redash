@@ -66,35 +66,6 @@
     font-weight: 600;
     margin: 0 0 12px;
   }
-
-  .mcp-grid {
-    display: grid;
-    gap: 12px;
-    // Escaped: less 3.13 reads CSS `min()` as its own function and fails to
-    // compile. `~"..."` hands it to the browser untouched.
-    grid-template-columns: repeat(auto-fit, minmax(~"min(100%, 260px)", 1fr));
-    margin-bottom: 30px;
-  }
-
-  .mcp-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-card, 8px);
-    padding: 16px 18px;
-
-    h4 {
-      margin: 0 0 6px;
-      font-size: 14px;
-      font-weight: 600;
-    }
-
-    p {
-      margin: 0;
-      font-size: 13.5px;
-      line-height: 1.55;
-      color: var(--color-text-muted);
-    }
-  }
 }
 
 .mcp-page {
@@ -115,11 +86,6 @@
 
   .mcp-outcome-ok {
     color: var(--color-text-muted);
-  }
-
-  .mcp-outcome-error,
-  .mcp-outcome-refused {
-    font-weight: 600;
   }
 
   .mcp-empty {
