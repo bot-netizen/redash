@@ -91,6 +91,7 @@ from sqldesk.handlers.uploads import (
     DataSourceUploadResource,
 )
 from sqldesk.handlers.users import (
+    UserAccessResource,
     UserDisableResource,
     UserInviteResource,
     UserListResource,
@@ -297,6 +298,7 @@ api.add_org_resource(
     endpoint="user_regenerate_api_key",
 )
 api.add_org_resource(UserDisableResource, "/api/users/<user_id>/disable", endpoint="user_disable")
+api.add_org_resource(UserAccessResource, "/api/users/<user_id>/access", endpoint="user_access")
 
 api.add_org_resource(VisualizationListResource, "/api/visualizations", endpoint="visualizations")
 api.add_org_resource(

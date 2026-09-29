@@ -214,6 +214,83 @@ class TestUserListGet(BaseTestCase):
         )
 
 
+class TestUserAccess(BaseTestCase):
+    """
+    What somebody may do, and which group gives it to them. Read-only: a page
+    that let you tick a feature here would quietly disagree with the Groups
+    page, which is where access actually lives.
+    """
+
+    def setUp(self):
+        super().setUp()
+        feature = patch("sqldesk.settings.FEATURE_AI", True)
+        feature.start()
+        self.addCleanup(feature.stop)
+
+    def _path(self, user):
+        return "/api/users/{}/access".format(user.id)
+
+    def test_it_names_the_group_that_grants_a_feature(self):
+        group = self.factory.create_group(
+            name="Curators", permissions=models.Group.DEFAULT_PERMISSIONS + ["manage_catalog"]
+        )
+        models.db.session.add(group)
+        models.db.session.commit()
+        curator = self.factory.create_user(group_ids=[group.id])
+
+        rv = self.make_request("get", self._path(curator), user=curator)
+
+        by_name = {f["name"]: f for f in rv.json["features"]}
+        self.assertTrue(by_name["manage_catalog"]["granted"])
+        self.assertEqual(["Curators"], by_name["manage_catalog"]["granted_by"])
+        self.assertFalse(by_name["use_mcp"]["granted"])
+        self.assertEqual([], by_name["use_mcp"]["granted_by"])
+
+    def test_an_administrator_has_everything_without_a_group_granting_it(self):
+        admin = self.factory.create_admin()
+
+        rv = self.make_request("get", self._path(admin), user=admin)
+
+        self.assertTrue(rv.json["is_admin"])
+        for feature in rv.json["features"]:
+            self.assertTrue(feature["granted"], feature["name"])
+            self.assertEqual(["Administrator"], feature["granted_by"], feature["name"])
+
+    def test_it_says_which_data_sources_and_how_much(self):
+        viewers = self.factory.create_group(name="Viewers")
+        models.db.session.add(viewers)
+        self.factory.create_data_source(name="Read only", group=viewers, view_only=True)
+        self.factory.create_data_source(name="Writable", group=viewers, view_only=False)
+        self.factory.create_data_source(name="Not theirs", group=self.factory.create_group(name="Others"))
+        models.db.session.commit()
+        member = self.factory.create_user(group_ids=[viewers.id])
+
+        rv = self.make_request("get", self._path(member), user=member)
+
+        access = {s["name"]: s["access"] for s in rv.json["data_sources"]}
+        self.assertEqual("view only", access["Read only"])
+        self.assertEqual("full", access["Writable"])
+        self.assertNotIn("Not theirs", access)
+
+    def test_somebody_else_cannot_read_it(self):
+        other = self.factory.create_user()
+        nosy = self.factory.create_user(
+            group_ids=[self.factory.create_group(name="Nosy", permissions=["view_query"]).id]
+        )
+        models.db.session.commit()
+
+        self.assertEqual(403, self.make_request("get", self._path(other), user=nosy).status_code)
+
+    def test_a_feature_the_install_does_not_offer_is_not_listed(self):
+        admin = self.factory.create_admin()
+        with patch("sqldesk.settings.FEATURE_AI", False):
+            rv = self.make_request("get", self._path(admin), user=admin)
+
+        listed = [f["name"] for f in rv.json["features"]]
+        self.assertIn("manage_live_dashboards", listed)
+        self.assertNotIn("use_mcp", listed)
+
+
 class TestUserResourceGet(BaseTestCase):
     def test_returns_api_key_for_your_own_user(self):
         rv = self.make_request("get", "/api/users/{}".format(self.factory.user.id))

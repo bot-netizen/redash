@@ -2,6 +2,7 @@ import React from "react";
 import { UserProfile } from "@/components/proptypes";
 import UserGroups from "@/components/UserGroups";
 
+import UserAccess from "./UserAccess";
 import useUserGroups from "../hooks/useUserGroups";
 
 export default function ReadOnlyUserProfile({ user }) {
@@ -20,6 +21,7 @@ export default function ReadOnlyUserProfile({ user }) {
         <dt className="m-b-5">Groups:</dt>
         <dd>{isLoadingGroups ? "Loading..." : <UserGroups groups={groups} />}</dd>
       </dl>
+      <UserAccess user={user} />
     </div>
   );
 }

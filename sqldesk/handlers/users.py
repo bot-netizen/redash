@@ -2,11 +2,11 @@ from disposable_email_domains import blacklist
 from flask import request
 from flask_login import current_user, login_user
 from flask_restful import abort
-from funcy import partial, project
+from funcy import flatten, partial, project
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import NoResultFound
 
-from sqldesk import limiter, models, settings
+from sqldesk import features, limiter, models, settings
 from sqldesk.authentication.account import (
     invite_link_for_user,
     send_invite_email,
@@ -294,6 +294,55 @@ class UserResource(BaseResource):
         models.db.session.commit()
 
         return user.to_dict(with_api_key=is_admin_or_owner(user_id))
+
+
+class UserAccessResource(BaseResource):
+    """
+    What this person may do, and where it comes from.
+
+    Read-only on purpose. Access is a property of the groups somebody is in,
+    so a page that let you tick a feature here would be a page that quietly
+    disagreed with the Groups page. What it does instead is name the group
+    that grants each thing, so whoever is looking knows where to go.
+    """
+
+    def get(self, user_id):
+        require_permission_or_owner("list_users", user_id)
+        user = get_object_or_404(models.User.get_by_id_and_org, user_id, self.current_org)
+
+        groups = models.Group.query.filter(
+            models.Group.id.in_(user.group_ids), models.Group.org == self.current_org
+        ).all()
+        is_admin = user.has_permission("admin")
+
+        offered = []
+        for feature in features.grantable():
+            granted_by = [group.name for group in groups if feature.name in (group.permissions or [])]
+            offered.append(
+                {
+                    "name": feature.name,
+                    "label": feature.label,
+                    "description": feature.description,
+                    "granted": features.can(user, feature.name),
+                    # An administrator has everything without being granted
+                    # it, and saying which group would be a lie.
+                    "granted_by": ["Administrator"] if is_admin and not granted_by else granted_by,
+                }
+            )
+
+        sources = []
+        for source in models.DataSource.query.filter(models.DataSource.org == self.current_org).order_by(
+            models.DataSource.name
+        ):
+            if is_admin:
+                sources.append({"name": source.name, "access": "full"})
+                continue
+            matching = set(source.groups.keys()) & set(user.group_ids)
+            if matching:
+                view_only = all(flatten([source.groups[group] for group in matching]))
+                sources.append({"name": source.name, "access": "view only" if view_only else "full"})
+
+        return {"features": offered, "data_sources": sources, "is_admin": is_admin}
 
 
 class UserDisableResource(BaseResource):
