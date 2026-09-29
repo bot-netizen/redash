@@ -58,6 +58,13 @@ module.exports = {
   },
   overrides: [
     {
+      // A command-line script whose whole job is printing a report, run by CI
+      // and by anyone checking what the initial load costs.
+      files: ["bundle-budget.js"],
+      env: { node: true, browser: false },
+      rules: { "no-console": "off" },
+    },
+    {
       // Only run typescript-eslint on TS files
       files: ["*.ts", "*.tsx", ".*.ts", ".*.tsx"],
       extends: ["plugin:@typescript-eslint/recommended"],

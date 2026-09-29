@@ -125,6 +125,11 @@ jobs:
       - name: Run Tests
         run: pnpm run test
       - run: pnpm run lint
+      # What has to arrive before a dashboard draws. Fails when it grows past
+      # client/bundle-budget.json, because a page gets slow a few kilobytes at
+      # a time and nobody notices until it is a second and a half.
+      - name: Check the initial load against its budget
+        run: pnpm run bundle-budget
 
   frontend-e2e-tests:
     runs-on: ubuntu-22.04
