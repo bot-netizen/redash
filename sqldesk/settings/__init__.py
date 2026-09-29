@@ -25,7 +25,6 @@ PROXIES_COUNT = int(os.environ.get("SQLDESK_PROXIES_COUNT", "1"))
 STATSD_HOST = os.environ.get("SQLDESK_STATSD_HOST", "127.0.0.1")
 STATSD_PORT = int(os.environ.get("SQLDESK_STATSD_PORT", "8125"))
 STATSD_PREFIX = os.environ.get("SQLDESK_STATSD_PREFIX", "sqldesk")
-STATSD_USE_TAGS = parse_boolean(os.environ.get("SQLDESK_STATSD_USE_TAGS", "false"))
 
 # Connection settings for SQLDesk's own database (where we store the queries, results, etc)
 SQLALCHEMY_DATABASE_URI = os.environ.get(
@@ -424,7 +423,6 @@ SENTRY_DSN = os.environ.get("SQLDESK_SENTRY_DSN", "")
 SENTRY_ENVIRONMENT = os.environ.get("SQLDESK_SENTRY_ENVIRONMENT")
 
 # Client side toggles:
-ALLOW_SCRIPTS_IN_USER_INPUT = parse_boolean(os.environ.get("SQLDESK_ALLOW_SCRIPTS_IN_USER_INPUT", "false"))
 # An ordinary dashboard's auto-refresh is a timer in every open tab, so it
 # starts at ten minutes; anything faster is what live dashboards are for,
 # which run the queries once on the server however many people watch. Values
@@ -504,7 +502,6 @@ FEATURE_SHOW_QUERY_RESULTS_COUNT = parse_boolean(os.environ.get("SQLDESK_FEATURE
 FEATURE_AUTO_PUBLISH_NAMED_QUERIES = parse_boolean(
     os.environ.get("SQLDESK_FEATURE_AUTO_PUBLISH_NAMED_QUERIES", "true")
 )
-FEATURE_EXTENDED_ALERT_OPTIONS = parse_boolean(os.environ.get("SQLDESK_FEATURE_EXTENDED_ALERT_OPTIONS", "false"))
 
 # Attaching a picture of a dashboard or a query to an alert needs something
 # that can draw one, and nothing in this image can: see SCREENSHOT_URL. Off

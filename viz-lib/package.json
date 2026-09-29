@@ -2,7 +2,8 @@
   "name": "@sqldesk/viz",
   "version": "0.6.0-rc.4",
   "description": "SQLDesk visualizations",
-  "main": "dist/sqldesk-visualizations.js",
+  "main": "lib/index.js",
+  "module": "esm/index.js",
   "scripts": {
     "clean": "rm -rf lib esm dist",
     "type-check": "tsc --noEmit",
@@ -75,8 +76,8 @@
     "webpack-cli": "^6.0.1"
   },
   "files": [
-    "dist",
-    "lib"
+    "lib",
+    "esm"
   ],
   "dependencies": {
     "axios": "0.28.0",

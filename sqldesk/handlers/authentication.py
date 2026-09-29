@@ -286,12 +286,10 @@ def client_config():
         client_config["showBeaconConsentMessage"] = True
 
     defaults = {
-        "allowScriptsInUserInput": settings.ALLOW_SCRIPTS_IN_USER_INPUT,
         "showPermissionsControl": current_org.get_setting("feature_show_permissions_control"),
         "disablePublicUrls": current_org.get_setting("disable_public_urls"),
         "multiByteSearchEnabled": current_org.get_setting("multi_byte_search_enabled"),
         "autoPublishNamedQueries": settings.FEATURE_AUTO_PUBLISH_NAMED_QUERIES,
-        "extendedAlertOptions": settings.FEATURE_EXTENDED_ALERT_OPTIONS,
         # Both halves: the flag, and somewhere to send the request. Without a
         # renderer there is nothing to turn on, so the editor should not offer it.
         "alertScreenshots": settings.FEATURE_ALERT_SCREENSHOTS and bool(settings.SCREENSHOT_URL),
