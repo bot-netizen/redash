@@ -24,13 +24,36 @@ const DIST = path.join(ROOT, "client", "dist");
 function build() {
   // `--json` writes the stats to stdout and the files to dist, so this is one
   // build serving both purposes rather than two.
-  const out = execFileSync("npx", ["webpack", "--json"], {
-    cwd: ROOT,
-    env: { ...process.env, NODE_ENV: "production" },
-    maxBuffer: 256 * 1024 * 1024,
-    encoding: "utf8",
-  });
+  let out;
+  try {
+    out = execFileSync("npx", ["webpack", "--json"], {
+      cwd: ROOT,
+      env: { ...process.env, NODE_ENV: "production" },
+      maxBuffer: 256 * 1024 * 1024,
+      encoding: "utf8",
+    });
+  } catch (error) {
+    // The stats are ~170 MB, and Node prints the whole failed child's stdout
+    // in the error it throws. Say what broke instead.
+    console.error("The build failed.\n");
+    console.error((error.stderr || "").trim() || "webpack wrote nothing to stderr.");
+    const stats = tryParse(error.stdout);
+    if (stats && stats.errors) {
+      for (const e of stats.errors.slice(0, 5)) {
+        console.error("\n" + (e.message || e).toString().split("\n").slice(0, 8).join("\n"));
+      }
+    }
+    process.exit(1);
+  }
   return JSON.parse(out);
+}
+
+function tryParse(text) {
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
 }
 
 function gzippedSize(file) {

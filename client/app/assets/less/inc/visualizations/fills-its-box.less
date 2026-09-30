@@ -1,0 +1,87 @@
+/*
+  A visualization told to fill a box of a fixed size, rather than to be as
+  tall as its content.
+
+  Two places ask for this: a dashboard widget whose height the author has set,
+  and the query page's fixed layout, where the visualization fills what is
+  left under the editor. The rules are identical and the arrangement is
+  fiddly -- an absolutely positioned flex column with the filters holding
+  their height and the chart taking the rest -- so they are written once here
+  and mixed in at both.
+
+  A mixin rather than a shared selector list. When these lived as one rule in
+  `dashboard-grid.less`, naming both the widget and `.query-fixed-layout`, the
+  query page's layout was only in the stylesheet that the dashboard grid
+  pulled in. That was invisible while everything was in one bundle; the moment
+  the dashboard became a chunk of its own, opening a query gave you a
+  visualization with no layout at all -- the table drawn over the filters.
+  Each importer gets its own copy now, which is a kilobyte and cannot come
+  apart.
+*/
+.visualization-fills-its-box() {
+  .visualization-renderer {
+    display: flex;
+    flex-direction: column;
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+
+    > .visualization-renderer-wrapper {
+      flex-grow: 1;
+      position: relative;
+    }
+
+    > .filters-wrapper {
+      flex-grow: 0;
+      flex-shrink: 0;
+    }
+  }
+
+  .sunburst-visualization-container,
+  .sankey-visualization-container,
+  .map-visualization-container,
+  .word-cloud-visualization-container,
+  .box-plot-deprecated-visualization-container,
+  .chart-visualization-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    height: auto;
+    overflow: hidden;
+  }
+
+  .counter-visualization-container {
+    height: 100%;
+
+    .counter-visualization-content {
+      position: absolute;
+      left: 10px;
+      top: 15px;
+      right: 10px;
+      bottom: 15px;
+      height: auto;
+      overflow: hidden;
+      padding: 0;
+    }
+
+    // A Stat with a sparkline gives the bottom third to the line.
+    &.counter-visualization-with-sparkline {
+      .counter-visualization-content {
+        bottom: calc(34% + 4px);
+      }
+
+      .counter-visualization-sparkline {
+        position: absolute;
+        left: 6px;
+        right: 6px;
+        bottom: 6px;
+        height: 34%;
+      }
+    }
+  }
+}

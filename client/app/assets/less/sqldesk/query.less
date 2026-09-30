@@ -134,11 +134,31 @@ body.fixed-layout {
   }
 }
 
-// Don't let filters take all visualization space on query fixed layout
 .query-fixed-layout {
+  // The visualization fills what is left below the editor, rather than being
+  // as tall as its content. Shared with a fixed-height dashboard widget --
+  // see inc/visualizations/fills-its-box, which explains why it is a mixin.
+  .visualization-fills-its-box();
+
+  // Don't let filters take all visualization space on query fixed layout
   .filters-wrapper {
     max-height: 40%;
     overflow: auto;
+  }
+
+  .visualization-renderer > .visualization-renderer-wrapper {
+    .counter-visualization-container {
+      // counter is too large on Query pages, so let's add some constraints
+      max-width: 600px;
+      max-height: 400px;
+      // center it
+      position: absolute;
+      left: 0;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      margin: auto;
+    }
   }
 }
 
