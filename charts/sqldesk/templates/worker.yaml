@@ -44,6 +44,22 @@ spec:
               {{- end }}
             - name: WORKERS_COUNT
               value: {{ .Values.worker.workersCount | quote }}
+          livenessProbe:
+            # Asks this container's supervisord whether its own workers are
+            # running. Not the count of workers registered in Redis, which is
+            # every pod's workers against one pod's expectation -- see the
+            # comment on `workers_healthcheck`.
+            exec:
+              command: ["/app/bin/docker-entrypoint", "workers_healthcheck"]
+            # worker.conf sets startsecs=300, so a fresh worker reports
+            # STARTING for five minutes; the check counts that as alive, and
+            # this only has to outlast the image pull and the imports.
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            # A worker briefly restarting is supervisord doing its job. Three
+            # failures in a row is supervisord having given up.
+            failureThreshold: 3
           volumeMounts:
             {{- include "sqldesk.uploadsMount" . | nindent 12 }}
           resources:
@@ -106,6 +122,22 @@ spec:
               value: {{ .Values.mcp.queue | quote }}
             - name: WORKERS_COUNT
               value: {{ .Values.mcp.worker.workersCount | quote }}
+          livenessProbe:
+            # Asks this container's supervisord whether its own workers are
+            # running. Not the count of workers registered in Redis, which is
+            # every pod's workers against one pod's expectation -- see the
+            # comment on `workers_healthcheck`.
+            exec:
+              command: ["/app/bin/docker-entrypoint", "workers_healthcheck"]
+            # worker.conf sets startsecs=300, so a fresh worker reports
+            # STARTING for five minutes; the check counts that as alive, and
+            # this only has to outlast the image pull and the imports.
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            # A worker briefly restarting is supervisord doing its job. Three
+            # failures in a row is supervisord having given up.
+            failureThreshold: 3
           volumeMounts:
             {{- include "sqldesk.uploadsMount" . | nindent 12 }}
           resources:
@@ -153,6 +185,7 @@ spec:
         {{- include "sqldesk.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: scheduler
     spec:
+      {{- include "sqldesk.podSecurity" . | nindent 6 }}
       containers:
         - name: scheduler
           image: {{ include "sqldesk.image" . }}
@@ -160,6 +193,19 @@ spec:
           args: ["scheduler"]
           env:
             {{- include "sqldesk.env" . | nindent 12 }}
+          livenessProbe:
+            # A scheduler whose process is up and whose loop has stopped is
+            # the failure nothing else reports: no scheduled query runs and
+            # Kubernetes sees a healthy container. The scheduler writes a
+            # heartbeat every pass; this reads it.
+            exec:
+              command: ["/app/bin/docker-entrypoint", "scheduler_healthcheck"]
+            # The heartbeat lasts 90 seconds, so the first one has to have
+            # been written before this starts asking.
+            initialDelaySeconds: 90
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.scheduler.resources | nindent 12 }}
 {{- end }}

@@ -24,6 +24,14 @@ from sqldesk.tasks.worker import Queue
 
 logger = logging.getLogger(__name__)
 
+#: Written by the scheduler every pass, read by `scheduler_healthcheck`.
+HEARTBEAT_KEY = "sqldesk:scheduler:heartbeat"
+
+#: How long a heartbeat stays good for. Generous on purpose -- at a five-second
+#: interval this is eighteen passes, so what fails the probe is a scheduler
+#: that has stopped, not one that had a slow minute.
+HEARTBEAT_TTL = 90
+
 
 class StatsdRecordingScheduler(Scheduler):
     """
@@ -33,6 +41,9 @@ class StatsdRecordingScheduler(Scheduler):
     scheduled job for good when it finds the job's record in Redis gone, and
     the jobs were only ever scheduled when this process started -- so one lost
     record stopped that job until somebody restarted the scheduler.
+
+    And it records a heartbeat something outside the process can read, which
+    is what `scheduler_healthcheck` and the Admin page use.
     """
 
     queue_class = Queue
@@ -56,6 +67,29 @@ class StatsdRecordingScheduler(Scheduler):
             except Exception:  # never let the check stop the scheduler itself
                 logger.exception("Could not check the periodic jobs are scheduled.")
         return jobs
+
+    def heartbeat(self):
+        """
+        Say, every pass round the loop, that the loop went round.
+
+        rq-scheduler's own heartbeat cannot be used for this. It is an EXPIRE
+        on `rq:scheduler_instance:<name>`, and EXPIRE on a key that has
+        already gone does nothing at all -- so a single pass slower than the
+        fifteen-second TTL loses the key for the rest of the process's life,
+        while the scheduler carries on working perfectly. Measured on a
+        running scheduler: the schedule kept advancing every five seconds with
+        no instance key in Redis whatsoever. A probe reading that key would
+        have restarted a healthy scheduler every minute, for ever.
+
+        SET writes the key whether or not it is there, which is the whole
+        difference.
+
+        The failure this exists to catch is a scheduler whose process is up
+        and whose loop has stopped: nothing else reports it, and no scheduled
+        query runs until somebody notices by hand. Issue #1 was exactly that.
+        """
+        super().heartbeat()
+        self.connection.set(HEARTBEAT_KEY, time.time(), ex=HEARTBEAT_TTL)
 
 
 rq_scheduler = StatsdRecordingScheduler(connection=rq_redis_connection, queue_name="periodic", interval=5)

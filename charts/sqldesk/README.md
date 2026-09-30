@@ -78,6 +78,24 @@ turns uploads' storage off, and uploads with it.
 - **`scheduler.replicas` is not a value.** Two schedulers would put every due
   job on the queue twice.
 
+## What gets restarted, and why
+
+Every pod has a liveness probe, and each one asks a different question.
+
+- **server** — `/ping`, generously: five failures at thirty seconds. A server
+  busy serving is not a server to restart.
+- **worker** and **mcp-worker** — whether *this* container's own workers are
+  running, asked of the supervisord inside it. A worker that has just started
+  reports `STARTING` for five minutes and counts as alive; three consecutive
+  failures means supervisord has given up restarting it, and the pod goes.
+- **scheduler** — whether the scheduling loop went round. The scheduler writes
+  a heartbeat every pass and the probe reads it. This is the one failure
+  Kubernetes cannot see for itself: the process stays up, nothing is
+  scheduled, and no scheduled query runs until somebody notices by hand.
+
+There are no readiness probes on the workers or the scheduler. Nothing routes
+traffic to them, so readiness has nothing to gate.
+
 ## MCP
 
 ```bash

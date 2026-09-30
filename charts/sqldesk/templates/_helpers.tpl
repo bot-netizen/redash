@@ -219,11 +219,22 @@ affinity: {{- toYaml . | nindent 2 }}
 {{- end -}}
 
 {{/*
-The image's own user. A fresh volume belongs to root; this makes it the
-application's, so the first upload is not a permission error.
+The image's own user, which is uid 1000 (`sqldesk`) -- confirmed against the
+running image, not assumed.
+
+`fsGroup` is for the uploads volume: a fresh volume belongs to root, and this
+makes it the application's, so the first upload is not a permission error.
+
+`runAsNonRoot` with an explicit uid is for everything else. The image already
+declares USER sqldesk, so this changes nothing about how the pods run; what it
+adds is a cluster that refuses to start them if a future image forgets, and an
+admission policy that can insist on it.
 */}}
 {{- define "sqldesk.podSecurity" -}}
 securityContext:
   fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
 {{- end -}}
 

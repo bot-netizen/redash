@@ -6,6 +6,8 @@ from rq import Connection
 from sqldesk import rq_redis_connection
 from sqldesk.tasks import Queue, Worker
 from sqldesk.tasks.schedule import (
+    HEARTBEAT_KEY,
+    HEARTBEAT_TTL,
     reschedule_missing_periodic_jobs,
     rq_scheduler,
     schedule_periodic_jobs,
@@ -145,3 +147,44 @@ class TestSchedulerMetrics(TestCase):
         with patch("statsd.StatsClient.incr") as incr:
             rq_scheduler.enqueue_jobs()
             incr.assert_called_once_with("rq.jobs.created.periodic")
+
+
+class TestTheSchedulerSaysItIsAlive(TestCase):
+    """
+    Something outside the process has to be able to tell a scheduler that is
+    looping from one that is merely running, because Kubernetes cannot: the
+    process stays up either way and no scheduled query runs.
+    """
+
+    def setUp(self):
+        rq_redis_connection.delete(HEARTBEAT_KEY)
+
+    def tearDown(self):
+        rq_redis_connection.delete(HEARTBEAT_KEY)
+
+    def test_a_pass_round_the_loop_records_a_heartbeat(self):
+        rq_scheduler.heartbeat()
+
+        self.assertTrue(rq_redis_connection.exists(HEARTBEAT_KEY))
+        ttl = rq_redis_connection.ttl(HEARTBEAT_KEY)
+        self.assertGreater(ttl, 0)
+        self.assertLessEqual(ttl, HEARTBEAT_TTL)
+
+    def test_a_heartbeat_that_has_already_expired_comes_back(self):
+        # The whole reason this is not rq-scheduler's own heartbeat, which is
+        # an EXPIRE: EXPIRE on a key that has gone does nothing, so one slow
+        # pass would lose the signal for the life of the process while the
+        # scheduler carried on working.
+        rq_scheduler.heartbeat()
+        rq_redis_connection.delete(HEARTBEAT_KEY)
+
+        rq_scheduler.heartbeat()
+
+        self.assertTrue(rq_redis_connection.exists(HEARTBEAT_KEY))
+
+    def test_it_stops_being_true_once_the_scheduler_stops(self):
+        rq_scheduler.heartbeat()
+        # What Redis does for us after HEARTBEAT_TTL with nobody writing it.
+        rq_redis_connection.delete(HEARTBEAT_KEY)
+
+        self.assertFalse(rq_redis_connection.exists(HEARTBEAT_KEY))

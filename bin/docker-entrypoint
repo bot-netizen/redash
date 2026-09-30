@@ -22,17 +22,69 @@ worker() {
   exec supervisord -c bin/worker.conf
 }
 
+# Are this container's own workers alive?
+#
+# Asks the supervisord in this container, not Redis. The check this replaced
+# counted the workers registered in Redis and compared them with this pod's
+# WORKERS_COUNT -- which is every pod's workers against one pod's expectation,
+# so a pod whose workers were all dead still passed as long as its neighbours
+# were alive. As a liveness probe that is worse than nothing: it restarts
+# healthy pods under load and never restarts the broken one.
+#
+# RUNNING and STARTING both count as alive: worker.conf sets startsecs=300, so
+# a worker that has just started sits in STARTING for five minutes. FATAL is
+# supervisord saying it has given up restarting, which is when the pod should
+# go.
 workers_healthcheck() {
-  WORKERS_COUNT=${WORKERS_COUNT}
-  echo "Checking active workers count against $WORKERS_COUNT..."
-  ACTIVE_WORKERS_COUNT=`echo $(rq info --url $SQLDESK_REDIS_URL -R | grep workers | grep -oP ^[0-9]+)`
-  if [ "$ACTIVE_WORKERS_COUNT" -lt "$WORKERS_COUNT"  ]; then
-    echo "$ACTIVE_WORKERS_COUNT workers are active, Exiting"
+  status=$(supervisorctl -s unix:///tmp/supervisor.sock status worker:* 2>&1) || true
+
+  case "$status" in
+    *"refused connection"*|*"no such file"*|*SHUTDOWN_STATE*)
+      echo "supervisord is not answering:"
+      echo "$status"
+      exit 1
+      ;;
+  esac
+
+  if [ -z "$status" ]; then
+    echo "supervisord reports no worker processes at all"
     exit 1
-  else
-    echo "$ACTIVE_WORKERS_COUNT workers are active"
-    exit 0
   fi
+
+  dead=$(echo "$status" | grep -Ev '[[:space:]](RUNNING|STARTING)[[:space:]]*' || true)
+  if [ -n "$dead" ]; then
+    echo "not running:"
+    echo "$dead"
+    exit 1
+  fi
+
+  echo "$status"
+  exit 0
+}
+
+# Is the scheduler still going round its loop?
+#
+# The scheduler writes `sqldesk:scheduler:heartbeat` with a ninety-second TTL
+# every pass (see sqldesk/tasks/schedule.py, which explains why it is ours and
+# not rq-scheduler's). Gone means the loop has stopped -- the failure Kubernetes
+# cannot see for itself, because the process is still up and nothing is being
+# scheduled. Issue #1 was exactly that.
+#
+# Redis directly rather than manage.py: a probe should not load the
+# application, forty query runners and a database connection every minute.
+scheduler_healthcheck() {
+  exec python -c "
+import os, sys
+import redis
+
+url = os.environ.get('SQLDESK_REDIS_URL') or os.environ.get('REDIS_URL')
+if not url:
+    sys.exit('no SQLDESK_REDIS_URL to check against')
+if redis.from_url(url).exists('sqldesk:scheduler:heartbeat'):
+    print('the scheduler is looping')
+    sys.exit(0)
+sys.exit('no scheduler heartbeat in the last 90 seconds -- the loop has stopped')
+"
 }
 
 dev_worker() {
@@ -66,6 +118,9 @@ help() {
   echo "scheduler -- start an rq-scheduler instance"
   echo "dev_scheduler -- start an rq-scheduler instance with code reloading"
   echo ""
+  echo "workers_healthcheck -- exit non-zero if this container's workers are not running"
+  echo "scheduler_healthcheck -- exit non-zero if the scheduler has stopped looping"
+  echo ""
   echo "shell -- open shell"
   echo "dev_server -- start Flask development server with debugger and auto reload"
   echo "debug -- start Flask development server with remote debugger via debugpy"
@@ -93,6 +148,10 @@ case "$1" in
   workers_healthcheck)
     shift
     workers_healthcheck
+    ;;
+  scheduler_healthcheck)
+    shift
+    scheduler_healthcheck
     ;;
   server)
     shift
