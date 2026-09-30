@@ -40,6 +40,12 @@ spec:
         {{- include "sqldesk.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: screenshots
     spec:
+      securityContext:
+        # The image's own user; a browser that renders pages is the last thing
+        # that should be root.
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
       containers:
         - name: screenshots
           image: {{ printf "%s:%s" .Values.rendering.image.repository (.Values.rendering.image.tag | default .Chart.AppVersion) }}

@@ -5,26 +5,44 @@
 # megabytes to an image the server and the worker share, for a feature most
 # installs never turn on.
 #
-# Microsoft's Playwright image is the base because it already carries Chromium
-# and the fonts and system libraries a browser needs on Linux -- a list that is
-# long, dull, and easy to get subtly wrong in ways that only show up as a
-# missing glyph in somebody's chart.
-FROM mcr.microsoft.com/playwright/python:v1.49.0-noble
+# Chromium on the same slim base as SQLDesk itself, rather than Microsoft's
+# Playwright image. That image was the obvious start -- it carries the browsers
+# and the long, dull list of system libraries and fonts a browser needs on
+# Linux, which is easy to get subtly wrong in ways that show up only as a
+# missing glyph in somebody's chart. But it also carries Firefox and WebKit,
+# which nothing here launches.
+#
+# Measured on 2026-09-29, the sizes people actually download:
+#
+#   Playwright base, three browsers   953 MB compressed (2.53 GB on disk)
+#   this, Chromium alone              517 MB compressed (1.49 GB on disk)
+#
+# `--with-deps` installs the same font and library packages the Playwright
+# image has: 51 font families against its 50, so nothing is lost. Checked by
+# rendering a real dashboard through both -- identical charts, axes and
+# labels.
+FROM python:3.13-slim-bookworm
+
+# One copy of the browser, in a path the unprivileged user below can read.
+# Left to itself `playwright install` puts it under the installing user's home,
+# and a second copy for the runtime user is another 170 MB in another layer.
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /app
 
-# The base image carries the browsers and the system libraries they need, but
-# not the Python binding -- `import playwright` fails in it out of the box.
-# The binding's version has to match the browsers the image shipped with
-# (v1.49.0 here), because playwright checks the browser revision it finds and
-# refuses one it does not recognise. Bump both together or neither.
-RUN pip install --no-cache-dir playwright==1.49.0 flask==3.0.3 gunicorn==23.0.0
+# The binding's version has to match the browser it installs, because
+# playwright checks the browser revision it finds and refuses one it does not
+# recognise. Bump them together or neither.
+RUN pip install --no-cache-dir playwright==1.49.0 flask==3.0.3 gunicorn==23.0.0 \
+ && playwright install --with-deps chromium \
+ && chmod -R a+rX /ms-playwright \
+ && rm -rf /var/lib/apt/lists/* /root/.cache/pip
 
 COPY screenshots/service.py /app/service.py
 
-# The base image runs as root and ships an unprivileged `pwuser` for exactly
-# this. A browser that renders pages is the last thing that should be root.
-USER pwuser
+# A browser that renders pages is the last thing that should be root.
+RUN useradd --create-home --uid 1000 renderer
+USER renderer
 
 ENV PORT=3000
 EXPOSE 3000

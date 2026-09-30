@@ -3,7 +3,7 @@ name: sqldesk
 description: SQLDesk — query 35+ data sources, build dashboards, share what you find.
 type: application
 # The chart's own version, bumped when the chart changes.
-version: 0.4.0
+version: 0.5.0
 # The application it installs by default. `image.tag` overrides it.
 appVersion: "0.6.0-rc.4"
 home: https://bot-netizen.github.io/sqldesk
