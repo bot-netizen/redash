@@ -18,10 +18,15 @@ __version__ = "0.6.0-rc.4"
 
 
 if os.environ.get("REMOTE_DEBUG"):
-    import debugpy
-
-    debugpy.listen(("0.0.0.0", 5678))
-    debugpy.wait_for_client()
+    # debugpy is a development dependency, so the released image does not
+    # carry a debug server -- say so, rather than failing on the import.
+    try:
+        import debugpy
+    except ImportError:
+        sys.stderr.write("REMOTE_DEBUG is set, but debugpy is not installed. This image does not include it.\n")
+    else:
+        debugpy.listen(("0.0.0.0", 5678))
+        debugpy.wait_for_client()
 
 
 def setup_logging():

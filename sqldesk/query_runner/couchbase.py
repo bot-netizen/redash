@@ -13,7 +13,6 @@ from sqldesk.query_runner import (
 
 logger = logging.getLogger(__name__)
 try:
-    import httplib2  # noqa: F401
     import requests
 except ImportError as e:
     logger.error("Failed to import: " + str(e))
