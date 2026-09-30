@@ -57,12 +57,23 @@ spec:
             httpGet: { path: /ping, port: http }
             initialDelaySeconds: 15
             periodSeconds: 10
+            # Kubernetes' default is one second, which is not long enough for
+            # a Python process that is merely busy. On a small node a garbage
+            # collection or a burst of traffic takes `/ping` past a second,
+            # and the pod is then marked unready -- taken out of the Service
+            # while it is working perfectly well.
+            timeoutSeconds: 5
           livenessProbe:
             httpGet: { path: /ping, port: http }
             # Generous: a server busy serving is not a server to restart.
             initialDelaySeconds: 60
             periodSeconds: 30
             failureThreshold: 5
+            # Same reasoning, and more so: this one restarts the container.
+            # Seen on the development cluster -- the node ran short of memory,
+            # `/ping` went past a second, and a server that would have
+            # recovered was killed and restarted instead.
+            timeoutSeconds: 10
           volumeMounts:
             {{- include "sqldesk.uploadsMount" . | nindent 12 }}
           resources:
