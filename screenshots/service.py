@@ -115,7 +115,12 @@ def _render(url, headers, wait_for, timeout_seconds, full_page):
                 # check captures for blank content afterwards.
                 page.wait_for_selector(wait_for, timeout=timeout_ms, state="attached")
 
-            return page.screenshot(full_page=full_page, type="png")
+            # The caller's timeout covers the capture too. Playwright's own
+            # default is 30 seconds, and a full-page shot of a long dashboard
+            # goes past it: one of 2800x21574 timed out here while the same
+            # page had loaded and drawn in a fraction of that. The picture
+            # being slow is not a reason to send the alert without one.
+            return page.screenshot(full_page=full_page, type="png", timeout=timeout_ms)
         finally:
             browser.close()
 

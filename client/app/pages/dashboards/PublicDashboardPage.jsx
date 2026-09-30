@@ -14,7 +14,7 @@ import useDashboard from "./hooks/useDashboard";
 import LiveBadge from "./components/LiveBadge";
 import DashboardFilters from "./components/DashboardFilters";
 
-import useScreenshotMode from "@/lib/hooks/useScreenshotMode";
+import useScreenshotMode, { everyWidgetHasFinished } from "@/lib/hooks/useScreenshotMode";
 
 import "./PublicDashboardPage.less";
 
@@ -22,10 +22,10 @@ function PublicDashboard({ dashboard, token }) {
   const dashboardConfiguration = useDashboard(dashboard, { publicToken: token });
   const { filters, loadWidget, refreshWidget, live } = dashboardConfiguration;
 
-  // Being photographed for an alert: say so once every widget has stopped
-  // loading, or the renderer captures a page of spinners.
-  const everyWidgetLoaded = dashboard.widgets.every((widget) => !widget.loading);
-  useScreenshotMode(everyWidgetLoaded);
+  // Being photographed for an alert: say so once every widget has something
+  // to show, or the renderer captures a page of spinners -- or, as it turned
+  // out, a page of nothing at all.
+  useScreenshotMode(everyWidgetHasFinished(dashboard.widgets));
 
   return (
     <div className="container p-t-10 p-b-20">

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { has } from "lodash";
+import { isDeferringOffscreenCharts } from "@sqldesk/viz/lib/services/offscreen";
 import location from "@/services/location";
 
 /*
@@ -29,6 +30,25 @@ import location from "@/services/location";
 
 export const SCREENSHOT_ATTRIBUTE = "data-rendered";
 
+/**
+ * Has every widget on this dashboard finished, so the page is worth capturing?
+ *
+ * Not `every(widget => !widget.loading)`, which is what this was: a widget is
+ * not loading *before* it starts either, so that is true on the first render
+ * and the page says it has drawn while it is still empty. An empty page is
+ * perfectly still, so the settling check below agrees with it and the picture
+ * is a grid of blank tiles.
+ *
+ * It really happened, about half the time, on a dashboard of eighty widgets:
+ * the same URL captured 3.1 MB or 1.7 MB depending on which side of the race
+ * it landed. A widget is done when it has stopped loading *and* has something
+ * to show -- a result or an error. A textbox has no query and is done when it
+ * exists.
+ */
+export function everyWidgetHasFinished(widgets) {
+  return (widgets || []).every((widget) => !widget.visualization || (!widget.loading && widget.data !== undefined));
+}
+
 /** How often to look for movement. Longer than viz-lib's 100ms resize poll. */
 const SAMPLE_MS = 150;
 
@@ -36,11 +56,33 @@ const SAMPLE_MS = 150;
 const STABLE_SAMPLES = 2;
 
 /**
+ * The earliest a page may claim to have drawn, measured from the moment its
+ * data arrived.
+ *
+ * Stillness alone is not enough, and this is the second time that has bitten.
+ * Between "every widget has its result" and "ECharts has put a canvas on the
+ * page" there is a gap of a few hundred milliseconds in which the document is
+ * genuinely, measurably still -- the tiles are laid out and empty. Two samples
+ * 150ms apart both land in it often enough to matter: on a dashboard of eighty
+ * widgets the same URL came back 3.1 MB or 1.7 MB, about half and half, with
+ * the 1.7 MB one a grid of blank tiles.
+ *
+ * So nothing is declared drawn inside this window however still it looks. It
+ * costs every capture a second and a half; a wrong picture costs more.
+ */
+const MIN_SETTLE_MS = 1500;
+
+/**
  * Give up waiting and take the picture anyway.
  *
  * A page that never settles -- a live dashboard ticking every second, an
  * animation that does not end -- must still be photographed. A slightly early
  * picture beats a timeout and no picture at all.
+ *
+ * Raising this to 45s was tried against the capture problem described on
+ * MIN_SETTLE_MS and changed nothing: the wait stayed at about ten seconds
+ * either way, which is how we know the settling check is what decides and
+ * this is not.
  */
 const DEADLINE_MS = 10000;
 
@@ -91,8 +133,17 @@ export default function useScreenshotMode(ready) {
 
       const current = layoutFingerprint();
       const agreed = current === previous ? matches + 1 : 0;
+      const elapsed = Date.now() - startedAt;
 
-      if (agreed >= STABLE_SAMPLES || Date.now() - startedAt > DEADLINE_MS) {
+      // A chart below the window is not built until it is scrolled towards.
+      // A page being photographed is captured whole, so the first
+      // visualization to render turns that off for everybody -- and until it
+      // has, most of this page is empty rectangles that are perfectly still.
+      // Stillness alone said "drawn" to that, which is how a capture of an
+      // eighty-widget dashboard came back with five charts on it.
+      const stillWaitingForCharts = isDeferringOffscreenCharts();
+
+      if ((agreed >= STABLE_SAMPLES && elapsed >= MIN_SETTLE_MS && !stillWaitingForCharts) || elapsed > DEADLINE_MS) {
         markDrawn();
         return;
       }
