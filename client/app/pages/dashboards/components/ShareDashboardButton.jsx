@@ -9,8 +9,11 @@ import ShareAltOutlinedIcon from "@ant-design/icons/ShareAltOutlined";
 import LinkOutlinedIcon from "@ant-design/icons/LinkOutlined";
 import FilePdfOutlinedIcon from "@ant-design/icons/FilePdfOutlined";
 import FileImageOutlinedIcon from "@ant-design/icons/FileImageOutlined";
+import MailOutlinedIcon from "@ant-design/icons/MailOutlined";
 import PlainButton from "@/components/PlainButton";
 import notification from "@/services/notification";
+import { currentUser } from "@/services/auth";
+import SubscribeDashboardDialog from "./SubscribeDashboardDialog";
 import { exportSizeProblem, renderDashboardToPng, renderDashboardToPdf, downloadBlob, filenameFor } from "../export";
 
 /*
@@ -101,6 +104,13 @@ export default function ShareDashboardButton({ dashboard, getExportTarget, onSho
     [runExport, dashboard.name, owner]
   );
 
+  // Sending needs a renderer, which is a separate optional container, so the
+  // feature is only offered where one is configured -- `can` asks both
+  // questions. A dashboard nobody has saved yet has nothing to subscribe to.
+  const canSubscribe = currentUser.can("send_dashboards") && !dashboard.is_draft;
+
+  const subscribe = useCallback(() => SubscribeDashboardDialog.showModal({ dashboard }), [dashboard]);
+
   return (
     <Dropdown
       trigger={["click"]}
@@ -120,7 +130,15 @@ export default function ShareDashboardButton({ dashboard, getExportTarget, onSho
               </PlainButton>
             </Menu.Item>
           )}
-          {onShowPublicLink && <Menu.Divider />}
+          {canSubscribe && (
+            <Menu.Item key="subscribe">
+              <PlainButton onClick={subscribe} data-test="SubscribeDashboardButton">
+                <MailOutlinedIcon className="m-r-5" aria-hidden="true" />
+                Send on a schedule&hellip;
+              </PlainButton>
+            </Menu.Item>
+          )}
+          {(onShowPublicLink || canSubscribe) && <Menu.Divider />}
           <Menu.Item key="pdf" disabled={!!busy}>
             <PlainButton onClick={exportPdf} data-test="ExportPdfButton">
               <FilePdfOutlinedIcon className="m-r-5" aria-hidden="true" />

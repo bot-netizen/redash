@@ -5,7 +5,7 @@ from flask_login import current_user, login_required, login_user, logout_user
 from itsdangerous import BadSignature, SignatureExpired
 from sqlalchemy.orm.exc import NoResultFound
 
-from sqldesk import __version__, features, limiter, models, settings
+from sqldesk import __version__, features, limiter, models, settings, unsubscribe
 from sqldesk.authentication import current_org, get_login_url, get_next_path
 from sqldesk.authentication.account import (
     INVITE,
@@ -19,6 +19,7 @@ from sqldesk.authentication.account import (
 )
 from sqldesk.handlers import routes
 from sqldesk.handlers.base import json_response, org_scoped_rule
+from sqldesk.security import csrf
 from sqldesk.version_check import get_latest_version
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,46 @@ def invite(token, org_slug=None):
 @routes.route(org_scoped_rule("/reset/<token>"), methods=["GET", "POST"])
 def reset(token, org_slug=None):
     return render_token_login_page("reset.html", org_slug, token, False)
+
+
+# Taking yourself off a dashboard subscription, from the link in the email.
+#
+# Exempt from CSRF, for two reasons that point the same way. A mail client's
+# own Unsubscribe button posts here with no page behind it (RFC 8058), so a
+# CSRF token is not something it could have. And the token in the URL *is* the
+# credential: anybody who could mount a CSRF attack here already has the link,
+# and all it does is take its holder off one subscription.
+#
+# What CSRF would have protected against is protected instead by not acting on
+# a GET -- mail clients and scanners fetch links before anybody reads them.
+@csrf.exempt
+@routes.route(org_scoped_rule("/unsubscribe/<token>"), methods=["GET", "POST"])
+def unsubscribe_from_dashboard(token, org_slug=None):
+    subscription, user = unsubscribe.load(token)
+    dashboard = subscription.dashboard if subscription else None
+
+    if subscription is None or dashboard is None:
+        return render_template("unsubscribe.html", subscription=None, done=False), 404
+
+    if request.method == "POST":
+        unsubscribe.remove(subscription, user)
+        models.db.session.add(subscription)
+        models.db.session.commit()
+        return render_template(
+            "unsubscribe.html",
+            subscription=subscription,
+            dashboard_name=dashboard.name,
+            recipient_name=user.name,
+            done=True,
+        )
+
+    return render_template(
+        "unsubscribe.html",
+        subscription=subscription,
+        dashboard_name=dashboard.name,
+        recipient_name=user.name,
+        done=False,
+    )
 
 
 @routes.route(org_scoped_rule("/verify/<token>"), methods=["GET"])

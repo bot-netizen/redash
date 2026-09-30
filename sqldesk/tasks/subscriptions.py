@@ -21,7 +21,7 @@ import logging
 
 from flask_mail import Message
 
-from sqldesk import mail, models, one_page, screenshots
+from sqldesk import mail, models, one_page, screenshots, unsubscribe
 from sqldesk.models import db
 from sqldesk.utils import base_url
 from sqldesk.worker import job
@@ -115,7 +115,8 @@ def send_subscription(subscription_id):
         return
 
     try:
-        _mail(subscription, dashboard, recipients, picture)
+        for recipient in recipients:
+            _mail(subscription, dashboard, recipient, picture)
     except Exception:
         logger.exception("Could not mail subscription %s.", subscription_id)
         _record_problem(subscription, "The mail server would not take it.")
@@ -142,26 +143,45 @@ def _freshness(dashboard):
     return "Numbers as of {}.".format(oldest.strftime("%d %b %Y, %H:%M UTC"))
 
 
-def _mail(subscription, dashboard, recipients, picture):
+BODY = (
+    '<div style="font:14px/1.5 sans-serif;color:#34302b">'
+    '<div style="font-size:18px;font-weight:600">{name}</div>'
+    '<div style="color:#6f6b66;margin:4px 0 16px">{freshness}</div>'
+    "{picture}"
+    '<div style="margin-top:20px;color:#6f6b66;font-size:12px">'
+    'Sent because {owner} subscribed you. <a href="{link}">Open it in SQLDesk</a>. '
+    '<a href="{unsubscribe}">Unsubscribe</a>.'
+    "</div></div>"
+)
+
+
+def _mail(subscription, dashboard, recipient, picture):
+    """
+    One message, to one person.
+
+    One each rather than one to everybody, because the unsubscribe link is
+    theirs alone -- a shared link would let anyone on the subscription remove
+    anyone else. It also keeps the recipients from seeing each other's
+    addresses, which a dashboard subscription has no business revealing.
+    """
     mime_type, extension = FORMATS[subscription.format]
     filename = "{}.{}".format(dashboard.name.replace("/", "-")[:60] or "dashboard", extension)
-    link = "{}/dashboards/{}".format(base_url(dashboard.org).rstrip("/"), dashboard.id)
-
-    body = (
-        '<div style="font:14px/1.5 sans-serif;color:#34302b">'
-        '<div style="font-size:18px;font-weight:600">{name}</div>'
-        '<div style="color:#6f6b66;margin:4px 0 16px">{freshness}</div>'
-        "{picture}"
-        '<div style="margin-top:20px;color:#6f6b66;font-size:12px">'
-        'Sent because {owner} subscribed you. <a href="{link}">Open it in SQLDesk</a>.'
-        "</div></div>"
-    )
+    base = base_url(dashboard.org).rstrip("/")
+    link = "{}/dashboards/{}".format(base, dashboard.id)
+    unsubscribe_link = unsubscribe.link_for(subscription, recipient, base)
 
     message = Message(
-        recipients=[user.email for user in recipients],
+        recipients=[recipient.email],
         # The dashboard's name is what the reader is looking for in a list of
         # subject lines; anything before it is noise.
         subject=dashboard.name,
+        # What a mail client's own Unsubscribe button uses. `One-Click` is
+        # RFC 8058: the client POSTs to the address and expects it to work
+        # without the reader visiting a page.
+        extra_headers={
+            "List-Unsubscribe": "<{}>".format(unsubscribe_link),
+            "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+        },
     )
 
     if subscription.format == models.DashboardSubscription.PNG:
@@ -186,12 +206,13 @@ def _mail(subscription, dashboard, recipients, picture):
         message.attach(filename, mime_type, picture)
         rendered_picture = '<div style="color:#6f6b66">Attached: {}</div>'.format(filename)
 
-    message.html = body.format(
+    message.html = BODY.format(
         name=dashboard.name,
         freshness=_freshness(dashboard),
         picture=rendered_picture,
         owner=subscription.user.name,
         link=link,
+        unsubscribe=unsubscribe_link,
     )
 
     mail.send(message)

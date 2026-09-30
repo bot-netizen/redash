@@ -1,0 +1,40 @@
+{% set hide_page_header = true %}
+
+{% extends "layouts/signed_out.html" %}
+
+{% block title %}Unsubscribe{% endblock %}
+
+{% block content %}
+<div class="fixed-width-page">
+  <div class="bg-white tiled m-t-0" style="padding: 24px">
+    {% if done %}
+      <h4>You have been unsubscribed.</h4>
+      <p class="text-muted">
+        You will not be sent <strong>{{ dashboard_name }}</strong> again.
+        Nobody else on the subscription is affected.
+      </p>
+    {% elif not subscription %}
+      {# A link from an email about a subscription that has since been deleted,
+         or one that has been tampered with. Both say the same thing: there is
+         nothing here to stop. #}
+      <h4>Nothing to unsubscribe from.</h4>
+      <p class="text-muted">
+        This subscription has been stopped already, or the link is not one we issued.
+      </p>
+    {% else %}
+      <h4>Stop receiving {{ dashboard_name }}?</h4>
+      <p class="text-muted">
+        {{ recipient_name }} will no longer be sent this dashboard.
+        Nobody else on the subscription is affected.
+      </p>
+      {# A button rather than a link that acts on its own: mail clients and
+         security scanners fetch the links in a message before anybody reads
+         it, and a GET that unsubscribed would unsubscribe people who never
+         clicked anything. #}
+      <form method="POST">
+        <button class="btn btn-primary" type="submit">Unsubscribe me</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
