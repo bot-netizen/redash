@@ -288,7 +288,14 @@ class PublicDashboardResource(BaseResource):
         :param token: An API key for a public dashboard.
         :>json array widgets: An array of arrays of :ref:`public widgets <public-widget-label>`, corresponding to the rows and columns the widgets are displayed in
         """
-        if self.current_org.get_setting("disable_public_urls"):
+        # A render pass is not a public link. It is good for one dashboard for
+        # five minutes and is spent when the picture is taken, so an
+        # organization switching public URLs off does not stop its own alerts
+        # being drawn. The live check-in below has no such exception: that one
+        # really is somebody arriving through a shared link.
+        if self.current_org.get_setting("disable_public_urls") and not getattr(
+            self.current_user, "is_render_pass", False
+        ):
             abort(400, message="Public URLs are disabled.")
 
         if not isinstance(self.current_user, models.ApiUser):

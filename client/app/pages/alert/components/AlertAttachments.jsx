@@ -41,16 +41,11 @@ function searchBoth(term) {
     Dashboard.query({ q: text, page_size: 10 }).catch(() => ({ results: [] })),
     Query.query({ q: text, page_size: 10 }).catch(() => ({ results: [] })),
   ]).then(([dashboards, queries]) => [
-    ...map(dashboards.results, (d) => ({
-      type: DASHBOARD,
-      id: d.id,
-      name: d.name,
-      // A dashboard can only be drawn if it has a shareable link; nothing
-      // here creates one, because making a dashboard public is the owner's
-      // decision and not a side effect of attaching it to an alert.
-      shared: !!d.public_url,
-    })),
-    ...map(queries.results, (q) => ({ type: QUERY, id: q.id, name: q.name, shared: true })),
+    // Any dashboard can be drawn. The renderer is let in with a pass good for
+    // that one dashboard for five minutes, so attaching one no longer means
+    // first sharing it with the internet.
+    ...map(dashboards.results, (d) => ({ type: DASHBOARD, id: d.id, name: d.name })),
+    ...map(queries.results, (q) => ({ type: QUERY, id: q.id, name: q.name })),
   ]);
 }
 
@@ -74,11 +69,6 @@ export default function AlertAttachments({ value, onChange, editMode }) {
             <div className="alert-attachment-option">
               <span className="alert-attachment-kind">{item.type}</span>
               <span className="flex-fill">{item.name}</span>
-              {!item.shared && (
-                <Tooltip title="This dashboard has no shareable link, so there is nothing to draw. Share it first.">
-                  <span className="alert-attachment-warning">not shared</span>
-                </Tooltip>
-              )}
               <ListItemAddon isSelected={isSelected} alreadyInGroup={alreadyAttached} deselectedIcon="fa-plus" />
             </div>
           ),

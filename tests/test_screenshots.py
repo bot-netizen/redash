@@ -2,7 +2,7 @@ from unittest import mock
 
 import requests
 
-from sqldesk import models, screenshots
+from sqldesk import models, render_pass, screenshots
 from sqldesk.models import db
 from tests import BaseTestCase
 
@@ -49,7 +49,7 @@ class TestCapture(BaseTestCase):
         with _on(INTERNAL_BASE_URL="http://server:5000"), mock.patch("sqldesk.screenshots.requests.post") as post:
             post.return_value = mock.Mock(content=b"PNG", raise_for_status=mock.Mock())
 
-            screenshots.capture(screenshots.QUERY, query)
+            screenshots.capture(screenshots.QUERY, query, self.factory.user)
 
         body = post.call_args[1]["json"]
         self.assertIn(f"/embed/query/{query.id}/visualization/", body["url"])
@@ -64,13 +64,15 @@ class TestCapture(BaseTestCase):
 
         with _on(SCREENSHOT_TOKEN="only-the-worker-knows"), mock.patch("sqldesk.screenshots.requests.post") as post:
             post.return_value = mock.Mock(content=b"PNG", raise_for_status=mock.Mock())
-            screenshots.capture(screenshots.QUERY, query)
+            screenshots.capture(screenshots.QUERY, query, self.factory.user)
 
         self.assertEqual("only-the-worker-knows", post.call_args[1]["headers"]["X-Screenshot-Token"])
 
-    def test_sends_the_key_as_a_header_not_in_the_url(self):
-        # Two services would otherwise write a working credential into their
-        # logs.
+    def test_sends_a_pass_as_a_header_and_never_the_query_own_key(self):
+        # In the header rather than the URL, because two services would
+        # otherwise write a working credential into their logs -- and a pass
+        # rather than the query's own key, which does not expire and opens
+        # that query for as long as it exists.
         query = self._query()
         self.factory.create_visualization(query_rel=query, type="CHART")
         db.session.commit()
@@ -78,11 +80,12 @@ class TestCapture(BaseTestCase):
         with _on(), mock.patch("sqldesk.screenshots.requests.post") as post:
             post.return_value = mock.Mock(content=b"PNG", raise_for_status=mock.Mock())
 
-            screenshots.capture(screenshots.QUERY, query)
+            screenshots.capture(screenshots.QUERY, query, self.factory.user)
 
         body = post.call_args[1]["json"]
-        self.assertEqual(body["headers"]["Authorization"], f"Key {query.api_key}")
+        self.assertTrue(body["headers"]["Authorization"].startswith(f"Key {render_pass.PREFIX}"))
         self.assertNotIn(query.api_key, body["url"])
+        self.assertNotIn(query.api_key, body["headers"]["Authorization"])
 
     def test_waits_for_the_page_to_say_it_has_drawn(self):
         # Without this the usual result is a photograph of a spinner.
@@ -93,7 +96,7 @@ class TestCapture(BaseTestCase):
         with _on(), mock.patch("sqldesk.screenshots.requests.post") as post:
             post.return_value = mock.Mock(content=b"PNG", raise_for_status=mock.Mock())
 
-            screenshots.capture(screenshots.QUERY, query)
+            screenshots.capture(screenshots.QUERY, query, self.factory.user)
 
         self.assertEqual(post.call_args[1]["json"]["wait_for"], screenshots.READY_SELECTOR)
 
@@ -108,34 +111,36 @@ class TestCapture(BaseTestCase):
         with _on(), mock.patch("sqldesk.screenshots.requests.post") as post:
             post.return_value = mock.Mock(content=b"PNG", raise_for_status=mock.Mock())
 
-            screenshots.capture(screenshots.QUERY, query)
+            screenshots.capture(screenshots.QUERY, query, self.factory.user)
 
         self.assertIn(f"/visualization/{chart.id}?", post.call_args[1]["json"]["url"])
 
-    def test_a_dashboard_nobody_has_shared_is_not_drawn(self):
-        # And no link is created for it: making a dashboard publicly reachable
-        # is the owner's decision, not a side effect of attaching it.
+    def test_a_dashboard_nobody_has_shared_is_drawn_anyway(self):
+        # It used to need a public link, so attaching a dashboard to an alert
+        # meant first making it readable by anyone who had the token. A pass
+        # is good for this dashboard for five minutes and nothing else.
         dashboard = self.factory.create_dashboard()
-        db.session.commit()
-
-        with _on(), mock.patch("sqldesk.screenshots.requests.post") as post:
-            self.assertIsNone(screenshots.capture(screenshots.DASHBOARD, dashboard))
-
-        post.assert_not_called()
-        self.assertIsNone(models.ApiKey.get_by_object(dashboard))
-
-    def test_a_shared_dashboard_is_drawn_whole(self):
-        dashboard = self.factory.create_dashboard()
-        key = models.ApiKey.create_for_object(dashboard, self.factory.user)
         db.session.commit()
 
         with _on(), mock.patch("sqldesk.screenshots.requests.post") as post:
             post.return_value = mock.Mock(content=b"PNG", raise_for_status=mock.Mock())
 
-            screenshots.capture(screenshots.DASHBOARD, dashboard)
+            self.assertEqual(b"PNG", screenshots.capture(screenshots.DASHBOARD, dashboard, self.factory.user))
+
+        # And still no public link, which is the whole point.
+        self.assertIsNone(models.ApiKey.get_by_object(dashboard))
+
+    def test_a_dashboard_is_drawn_whole_through_a_pass(self):
+        dashboard = self.factory.create_dashboard()
+        db.session.commit()
+
+        with _on(), mock.patch("sqldesk.screenshots.requests.post") as post:
+            post.return_value = mock.Mock(content=b"PNG", raise_for_status=mock.Mock())
+
+            screenshots.capture(screenshots.DASHBOARD, dashboard, self.factory.user)
 
         body = post.call_args[1]["json"]
-        self.assertIn(key.api_key, body["url"])
+        self.assertIn(render_pass.PREFIX, body["url"])
         # A dashboard is usually taller than a window.
         self.assertTrue(body["full_page"])
 
@@ -158,31 +163,31 @@ class TestCaptureNeverRaises(BaseTestCase):
     def test_a_renderer_that_is_not_there(self):
         query = self._query_with_chart()
         with _on(), mock.patch("sqldesk.screenshots.requests.post", side_effect=requests.ConnectionError("refused")):
-            self.assertIsNone(screenshots.capture(screenshots.QUERY, query))
+            self.assertIsNone(screenshots.capture(screenshots.QUERY, query, self.factory.user))
 
     def test_a_renderer_that_takes_too_long(self):
         query = self._query_with_chart()
         with _on(), mock.patch("sqldesk.screenshots.requests.post", side_effect=requests.Timeout("slow")):
-            self.assertIsNone(screenshots.capture(screenshots.QUERY, query))
+            self.assertIsNone(screenshots.capture(screenshots.QUERY, query, self.factory.user))
 
     def test_a_renderer_that_returns_an_error(self):
         query = self._query_with_chart()
         failing = mock.Mock()
         failing.raise_for_status.side_effect = requests.HTTPError("502")
         with _on(), mock.patch("sqldesk.screenshots.requests.post", return_value=failing):
-            self.assertIsNone(screenshots.capture(screenshots.QUERY, query))
+            self.assertIsNone(screenshots.capture(screenshots.QUERY, query, self.factory.user))
 
     def test_a_renderer_that_returns_nothing(self):
         query = self._query_with_chart()
         empty = mock.Mock(content=b"", raise_for_status=mock.Mock())
         with _on(), mock.patch("sqldesk.screenshots.requests.post", return_value=empty):
-            self.assertIsNone(screenshots.capture(screenshots.QUERY, query))
+            self.assertIsNone(screenshots.capture(screenshots.QUERY, query, self.factory.user))
 
     def test_a_query_with_nothing_to_draw(self):
         query = self.factory.create_query()
         db.session.commit()
         with _on(), mock.patch("sqldesk.screenshots.requests.post") as post:
-            self.assertIsNone(screenshots.capture(screenshots.QUERY, query))
+            self.assertIsNone(screenshots.capture(screenshots.QUERY, query, self.factory.user))
         post.assert_not_called()
 
 

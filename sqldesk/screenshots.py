@@ -22,7 +22,7 @@ import logging
 
 import requests
 
-from sqldesk import models, settings
+from sqldesk import models, render_pass, settings
 from sqldesk.permissions import has_access, view_only
 
 logger = logging.getLogger(__name__)
@@ -40,33 +40,21 @@ def enabled():
     return settings.FEATURE_ALERT_SCREENSHOTS and bool(settings.SCREENSHOT_URL)
 
 
-def _token(kind, obj):
-    """
-    The key that lets the renderer see this page, or None.
-
-    A query always has one of its own. A dashboard only has one once somebody
-    has shared it, and this deliberately does **not** create one: making a
-    dashboard publicly reachable is a decision for the person who owns it, not
-    a side effect of attaching it to an alert. The alert editor says so when
-    you pick a dashboard that has not been shared.
-    """
-    if kind == QUERY:
-        return obj.api_key
-
-    key = models.ApiKey.get_by_object(obj)
-    return key.api_key if key else None
-
-
-def _target_url(kind, obj):
+def _target_url(kind, obj, token):
     """
     The page to photograph, as the renderer will ask for it.
 
     Both are pages the application already serves -- there is no separate
     rendering path to keep in step with what people actually see.
+
+    A dashboard's page takes its credential in the path, because that is how
+    the route is shaped; it is a pass good for five minutes rather than a link
+    anybody keeps. A query's goes in a header instead, since that route has
+    somewhere to put it.
     """
     base = settings.INTERNAL_BASE_URL.rstrip("/")
     if kind == DASHBOARD:
-        return f"{base}/public/dashboards/{_token(kind, obj)}?screenshot=1"
+        return f"{base}/public/dashboards/{token}?screenshot=1"
 
     visualization = _first_visualization(obj)
     if visualization is None:
@@ -92,26 +80,32 @@ def _renderer_headers():
     return {"X-Screenshot-Token": settings.SCREENSHOT_TOKEN} if settings.SCREENSHOT_TOKEN else {}
 
 
-def capture(kind, obj):
+def capture(kind, obj, viewer):
     """
     A PNG of one dashboard or query, or None.
 
     None covers every way this can fail, because they all mean the same thing
     to the caller: send the alert without a picture.
+
+    `viewer` is whose sight of it this is -- the alert's owner. A pass is
+    minted for them, for this object alone, and withdrawn as soon as the
+    renderer answers. Before this the renderer was handed the dashboard's
+    *public* link, so a dashboard could only be pictured once it had been
+    shared with the internet; a picture in an email is not a reason to make
+    one public.
     """
     if not enabled():
         return None
 
-    token = _token(kind, obj)
+    token = render_pass.issue(viewer, obj)
     if token is None:
-        # A dashboard nobody has shared. Not an error -- there is simply no
-        # link for a browser to open.
-        logger.warning("%s %s has no shareable link, so it cannot be drawn.", kind, getattr(obj, "id", "?"))
+        logger.warning("Could not issue a render pass for %s %s.", kind, getattr(obj, "id", "?"))
         return None
 
-    url = _target_url(kind, obj)
+    url = _target_url(kind, obj, token)
     if url is None:
         logger.warning("Nothing to draw for %s %s; skipping its screenshot.", kind, getattr(obj, "id", "?"))
+        render_pass.withdraw(token)
         return None
 
     try:
@@ -120,8 +114,9 @@ def capture(kind, obj):
             headers=_renderer_headers(),
             json={
                 "url": url,
-                # The key goes in a header, not the URL: two services would
-                # otherwise write a working credential into their logs.
+                # The pass goes in a header, not the URL, wherever the
+                # route allows it: two services would otherwise write a
+                # working credential into their logs.
                 "headers": {"Authorization": f"Key {token}"},
                 "wait_for": READY_SELECTOR,
                 "timeout": settings.SCREENSHOT_TIMEOUT,
@@ -135,6 +130,9 @@ def capture(kind, obj):
     except requests.RequestException:
         logger.exception("Could not get a screenshot of %s %s.", kind, getattr(obj, "id", "?"))
         return None
+    finally:
+        # Whatever happened, this pass has had its turn.
+        render_pass.withdraw(token)
 
     image = response.content
     if not image:
@@ -194,7 +192,7 @@ def for_alert(alert):
         if obj is None or not _owner_may_see(kind, obj, alert.user):
             continue
 
-        image = capture(kind, obj)
+        image = capture(kind, obj, alert.user)
         if image is None:
             continue
 
