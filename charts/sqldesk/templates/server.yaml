@@ -32,12 +32,10 @@ spec:
   template:
     metadata:
       annotations:
-        # A Secret referenced through env does not restart a pod when it
-        # changes: the pod template is identical, so there is nothing for
-        # Kubernetes to roll. Rotate a key and every pod keeps using the old
-        # one until somebody restarts it by hand -- which looks exactly like
-        # the key not having been applied. This makes the change visible.
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        # Changes when the secrets do, so the pods roll. See
+        # `sqldesk.secretChecksum` for why this is not simply a checksum of
+        # the rendered template.
+        checksum/secret: {{ include "sqldesk.secretChecksum" . }}
       labels:
         {{- include "sqldesk.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: server

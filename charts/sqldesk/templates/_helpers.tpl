@@ -238,3 +238,38 @@ securityContext:
   runAsGroup: 1000
 {{- end -}}
 
+{{/*
+Something that changes when the secrets do, for the pods to notice.
+
+A Secret reached through `env` does not restart a pod when it changes: the pod
+template is identical, so there is nothing for Kubernetes to roll. Rotate a key
+and every pod keeps using the old one until somebody restarts it by hand --
+which looks exactly like the rotation not having been applied.
+
+Checksumming the rendered secret.yaml covers the Secret this chart makes. With
+`secrets.existingSecret` that template renders nothing at all, so the checksum
+was the same string on every upgrade and rotating an external Secret restarted
+nothing -- the case where somebody is most likely to be rotating keys, because
+they are managing them themselves. So read that Secret from the cluster and
+checksum what is in it.
+
+`lookup` returns nothing during `helm template` and a client-side `--dry-run`,
+so a checksum read from either of those is not the one an install would apply
+-- with the chart's own Secret the four pods do not even agree with each other,
+because `keepSecret` then generates rather than reads. That is a property of
+dry runs, not a fault: `helm get manifest` on a real release shows one value
+across every pod. `helm template --dry-run=server` performs the lookups if you
+want to see the real thing.
+*/}}
+{{- define "sqldesk.secretChecksum" -}}
+{{- if .Values.secrets.existingSecret -}}
+{{- $existing := (lookup "v1" "Secret" .Release.Namespace .Values.secrets.existingSecret) -}}
+{{- if $existing -}}
+{{- toYaml $existing.data | sha256sum -}}
+{{- else -}}
+{{- printf "%s-not-found" .Values.secrets.existingSecret | sha256sum -}}
+{{- end -}}
+{{- else -}}
+{{- include (print .Template.BasePath "/secret.yaml") . | sha256sum -}}
+{{- end -}}
+{{- end -}}
