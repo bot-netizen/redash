@@ -50,9 +50,6 @@ importers:
       dompurify:
         specifier: ^2.0.17
         version: 2.5.8
-      elliptic:
-        specifier: ^6.6.0
-        version: 6.6.1
       font-awesome:
         specifier: ^4.7.0
         version: 4.7.0
@@ -355,9 +352,6 @@ importers:
       axios:
         specifier: 0.28.0
         version: 0.28.0(debug@3.2.7)
-      axios-auth-refresh:
-        specifier: 3.3.6
-        version: 3.3.6(axios@0.28.0(debug@3.2.7))
       beautifymarker:
         specifier: ^1.0.7
         version: 1.0.9
@@ -379,9 +373,6 @@ importers:
       echarts:
         specifier: 6.1.0
         version: 6.1.0
-      font-awesome:
-        specifier: ^4.7.0
-        version: 4.7.0
       hoist-non-react-statics:
         specifier: ^3.3.0
         version: 3.3.2
@@ -415,9 +406,6 @@ importers:
       use-debounce:
         specifier: ^3.4.1
         version: 3.4.3(react@16.14.0)
-      use-media:
-        specifier: ^1.4.0
-        version: 1.5.0(react@16.14.0)
     devDependencies:
       '@babel/cli':
         specifier: ^7.28.6
@@ -535,7 +523,7 @@ importers:
         version: 5.105.3(webpack-cli@6.0.1)
       webpack-cli:
         specifier: ^6.0.1
-        version: 6.0.1(webpack-bundle-analyzer@5.2.0)(webpack-dev-server@5.2.3(debug@3.2.7)(tslib@2.8.1)(webpack-cli@6.0.1)(webpack@5.105.3))(webpack@5.105.3)
+        version: 6.0.1(webpack-bundle-analyzer@5.2.0)(webpack-dev-server@5.2.3)(webpack@5.105.3)
 
 packages:
 
@@ -2866,9 +2854,6 @@ packages:
   bluebird@3.7.2:
     resolution: {integrity: sha512-XpNj6GDQzdfW+r2Wnn7xiSAd7TM3jzkxGXBGTtWKuSXv1xUV+azxAm8jdWZN06QTQk+2N2XB9jRDkvbmQmcRtg==}
 
-  bn.js@4.12.3:
-    resolution: {integrity: sha512-fGTi3gxV/23FTYdAoUtLYp6qySe2KE3teyZitipKNRuVYcBkoP/bB3guXN/XVKUe9mxCHXnc9C4ocyz8OmgN0g==}
-
   body-parser@1.20.4:
     resolution: {integrity: sha512-ZTgYYLMOXY9qKU/57FAo8F+HA2dGX7bqGc71txDRC1rS4frdFI5R7NhluHxH6M0YItAP0sHB4uqAOcYKxO6uGA==}
     engines: {node: '>= 0.8', npm: 1.2.8000 || >= 1.4.16}
@@ -2901,9 +2886,6 @@ packages:
   braces@3.0.3:
     resolution: {integrity: sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==}
     engines: {node: '>=8'}
-
-  brorand@1.1.0:
-    resolution: {integrity: sha512-cKV8tMCEpQs4hK/ik71d6LrPOnpkpGBR0wzxqr68g2m/LB2GxVYQroAjMJZRVM1Y4BCjCKc3vAamxSzOY2RP+w==}
 
   browserslist@3.2.8:
     resolution: {integrity: sha512-WHVocJYavUwVgVViC0ORikPHQquXwVh939TaelZ4WDqpWgTX/FsGhl/+P4qBUAGcRvtOgDgC+xftNWWp2RUTAQ==}
@@ -3600,9 +3582,6 @@ packages:
 
   electron-to-chromium@1.5.302:
     resolution: {integrity: sha512-sM6HAN2LyK82IyPBpznDRqlTQAtuSaO+ShzFiWTvoMJLHyZ+Y39r8VMfHzwbU8MVBzQ4Wdn85+wlZl2TLGIlwg==}
-
-  elliptic@6.6.1:
-    resolution: {integrity: sha512-RaddvvMatK2LJHqFJ+YA4WysVN5Ita9E35botqIYspQ4TkRAlCicdzKOjlyv/1Za5RyTNn7di//eEV0uTAfe3g==}
 
   emittery@0.13.1:
     resolution: {integrity: sha512-DeWwawk6r5yR9jFgnDKYt4sLS0LmHJJi3ZOnb5/JdbYwj3nW+FxQnHIjhBKz8YLC7oRNPVM9NQ47I3CVx34eqQ==}
@@ -4430,9 +4409,6 @@ packages:
     resolution: {integrity: sha512-qdSAmqLF6209RFj4VVItywPMbm3vWylknmB3nvNiUIs72xAimcM8nVYxYr7ncvZq5qzk9MKIZR8ijqD/1QuYjQ==}
     engines: {node: '>= 0.4.0'}
 
-  hash.js@1.1.7:
-    resolution: {integrity: sha512-taOaskGt4z4SOANNseOviYDvjEJinIkRgmp7LbKP2YTTmVxWBl87s/uzK9r+44BclBSp2X7K1hqeNfz9JbBeXA==}
-
   hasha@5.2.2:
     resolution: {integrity: sha512-Hrp5vIK/xr5SkeN2onO32H0MgNZ0f17HRNH39WfL0SYUNOTZ5Lz1TJ8Pajo/87dYGEFlLMm7mIc/k/s6Bvz9HQ==}
     engines: {node: '>=8'}
@@ -4447,9 +4423,6 @@ packages:
 
   history@4.10.1:
     resolution: {integrity: sha512-36nwAD620w12kuzPAsyINPWJqlNbij+hpK1k9XRloDtym8mxzGYl2c17LnV6IAGB2Dmg4tEa7G7DlawS0+qjew==}
-
-  hmac-drbg@1.0.1:
-    resolution: {integrity: sha512-Tti3gMqLdZfhOQY1Mzf/AanLiqh1WTiJgEj26ZuYQ9fbkLomzGchCws4FyrSd4VkpBfiNhaE1On+lOz894jvXg==}
 
   hoist-non-react-statics@3.3.2:
     resolution: {integrity: sha512-/gGivxi8JPKWNm/W0jSmzcMPpfpPLc3dY/6GxhX2hQ9iGj3aDfklV4ET7NjKpSinLpJ5vafa9iiGIEZg10SfBw==}
@@ -5532,9 +5505,6 @@ packages:
 
   minimalistic-assert@1.0.1:
     resolution: {integrity: sha512-UtJcAD4yEaGtjPezWuO9wC4nwUnVH/8/Im3yEHQP4b67cXlD/Qr9hdITCU1xDbSEXg2XKNaP8jsReV7vQd00/A==}
-
-  minimalistic-crypto-utils@1.0.1:
-    resolution: {integrity: sha512-JIYlbt6g8i5jKfJ3xz7rF0LXmv2TkDxBLUkiBeZ7bAx4GnnNMr8xFpGnOxn6GhTEHx3SjRrZEoU+j04prX1ktg==}
 
   minimatch@10.2.4:
     resolution: {integrity: sha512-oRjTw/97aTBN0RHbYCdtF1MQfvusSIBQM0IZEgzl6426+8jSC0nF1a/GmnVLpfB9yyr6g6FTqWqiZVbxrtaCIg==}
@@ -10283,13 +10253,6 @@ snapshots:
       webpack: 5.105.3(webpack-cli@6.0.1)
       webpack-cli: 6.0.1(webpack-bundle-analyzer@5.2.0)(webpack-dev-server@5.2.3)(webpack@5.105.3)
 
-  '@webpack-cli/serve@3.0.1(webpack-cli@6.0.1)(webpack-dev-server@5.2.3(debug@3.2.7)(tslib@2.8.1)(webpack-cli@6.0.1)(webpack@5.105.3))(webpack@5.105.3)':
-    dependencies:
-      webpack: 5.105.3(webpack-cli@6.0.1)
-      webpack-cli: 6.0.1(webpack-bundle-analyzer@5.2.0)(webpack-dev-server@5.2.3(debug@3.2.7)(tslib@2.8.1)(webpack-cli@6.0.1)(webpack@5.105.3))(webpack@5.105.3)
-    optionalDependencies:
-      webpack-dev-server: 5.2.3(debug@3.2.7)(tslib@2.8.1)(webpack-cli@6.0.1)(webpack@5.105.3)
-
   '@webpack-cli/serve@3.0.1(webpack-cli@6.0.1)(webpack-dev-server@5.2.3)(webpack@5.105.3)':
     dependencies:
       webpack: 5.105.3(webpack-cli@6.0.1)
@@ -10663,10 +10626,6 @@ snapshots:
     dependencies:
       axios: 0.27.2(debug@3.2.7)
 
-  axios-auth-refresh@3.3.6(axios@0.28.0(debug@3.2.7)):
-    dependencies:
-      axios: 0.28.0(debug@3.2.7)
-
   axios@0.21.4(debug@3.2.7):
     dependencies:
       follow-redirects: 1.15.11(debug@3.2.7)
@@ -10933,8 +10892,6 @@ snapshots:
 
   bluebird@3.7.2: {}
 
-  bn.js@4.12.3: {}
-
   body-parser@1.20.4:
     dependencies:
       bytes: 3.1.2
@@ -10992,8 +10949,6 @@ snapshots:
   braces@3.0.3:
     dependencies:
       fill-range: 7.1.1
-
-  brorand@1.1.0: {}
 
   browserslist@3.2.8:
     dependencies:
@@ -11774,16 +11729,6 @@ snapshots:
   ee-first@1.1.1: {}
 
   electron-to-chromium@1.5.302: {}
-
-  elliptic@6.6.1:
-    dependencies:
-      bn.js: 4.12.3
-      brorand: 1.1.0
-      hash.js: 1.1.7
-      hmac-drbg: 1.0.1
-      inherits: 2.0.4
-      minimalistic-assert: 1.0.1
-      minimalistic-crypto-utils: 1.0.1
 
   emittery@0.13.1: {}
 
@@ -12905,11 +12850,6 @@ snapshots:
 
   has@1.0.4: {}
 
-  hash.js@1.1.7:
-    dependencies:
-      inherits: 2.0.4
-      minimalistic-assert: 1.0.1
-
   hasha@5.2.2:
     dependencies:
       is-stream: 2.0.1
@@ -12929,12 +12869,6 @@ snapshots:
       tiny-invariant: 1.3.3
       tiny-warning: 1.0.3
       value-equal: 1.0.1
-
-  hmac-drbg@1.0.1:
-    dependencies:
-      hash.js: 1.1.7
-      minimalistic-assert: 1.0.1
-      minimalistic-crypto-utils: 1.0.1
 
   hoist-non-react-statics@3.3.2:
     dependencies:
@@ -14304,8 +14238,6 @@ snapshots:
       shallowequal: 1.1.0
 
   minimalistic-assert@1.0.1: {}
-
-  minimalistic-crypto-utils@1.0.1: {}
 
   minimatch@10.2.4:
     dependencies:
@@ -16792,26 +16724,6 @@ snapshots:
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
-
-  webpack-cli@6.0.1(webpack-bundle-analyzer@5.2.0)(webpack-dev-server@5.2.3(debug@3.2.7)(tslib@2.8.1)(webpack-cli@6.0.1)(webpack@5.105.3))(webpack@5.105.3):
-    dependencies:
-      '@discoveryjs/json-ext': 0.6.3
-      '@webpack-cli/configtest': 3.0.1(webpack-cli@6.0.1)(webpack@5.105.3)
-      '@webpack-cli/info': 3.0.1(webpack-cli@6.0.1)(webpack@5.105.3)
-      '@webpack-cli/serve': 3.0.1(webpack-cli@6.0.1)(webpack-dev-server@5.2.3(debug@3.2.7)(tslib@2.8.1)(webpack-cli@6.0.1)(webpack@5.105.3))(webpack@5.105.3)
-      colorette: 2.0.20
-      commander: 12.1.0
-      cross-spawn: 7.0.6
-      envinfo: 7.21.0
-      fastest-levenshtein: 1.0.16
-      import-local: 3.2.0
-      interpret: 3.1.1
-      rechoir: 0.8.0
-      webpack: 5.105.3(webpack-cli@6.0.1)
-      webpack-merge: 6.0.1
-    optionalDependencies:
-      webpack-bundle-analyzer: 5.2.0
-      webpack-dev-server: 5.2.3(debug@3.2.7)(tslib@2.8.1)(webpack-cli@6.0.1)(webpack@5.105.3)
 
   webpack-cli@6.0.1(webpack-bundle-analyzer@5.2.0)(webpack-dev-server@5.2.3)(webpack@5.105.3):
     dependencies:
