@@ -85,11 +85,29 @@ def send_test_mail(email=None):
 @manager.command("shell")
 @with_appcontext
 def shell():
-    import sys
+    """
+    A Python prompt with the application loaded.
+
+    ptpython if it is installed, and Python's own prompt if it is not --
+    which is the case in the released image, where ptpython is a development
+    dependency. Before this, `manage shell` was simply broken there:
+    ModuleNotFoundError, on the one command somebody reaches for when they
+    are already having a bad day.
+    """
+    import code
 
     from flask.globals import _app_ctx_stack
-    from ptpython import repl
 
     app = _app_ctx_stack.top.app
+    context = app.make_shell_context()
 
-    repl.embed(globals=app.make_shell_context())
+    try:
+        from ptpython import repl
+    except ImportError:
+        code.interact(
+            banner="SQLDesk shell. Available: {}".format(", ".join(sorted(context))),
+            local=context,
+            exitmsg="",
+        )
+    else:
+        repl.embed(globals=context)
