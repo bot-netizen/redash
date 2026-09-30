@@ -2,7 +2,6 @@ import { isEmpty } from "lodash";
 import React, { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 
-import routeWithApiKeySession from "@/components/ApplicationArea/routeWithApiKeySession";
 import BigMessage from "@/components/BigMessage";
 import DashboardGrid from "@/components/dashboards/DashboardGrid";
 import Filters from "@/components/Filters";
@@ -10,7 +9,6 @@ import Filters from "@/components/Filters";
 import { Auth } from "@/services/auth";
 import { Dashboard } from "@/services/dashboard";
 import location from "@/services/location";
-import routes from "@/services/routes";
 
 import useDashboard from "./hooks/useDashboard";
 import useWallTheme from "./hooks/useWallTheme";
@@ -154,14 +152,5 @@ function WallDashboardPage({ token }) {
 WallDashboardPage.propTypes = {
   token: PropTypes.string.isRequired,
 };
-
-routes.register(
-  "Dashboards.Wall",
-  routeWithApiKeySession({
-    path: "/wall/dashboards/:token",
-    render: (pageProps) => <WallDashboardPage {...pageProps} />,
-    getApiKey: (currentRoute) => currentRoute.routeParams.token,
-  })
-);
 
 export default WallDashboardPage;

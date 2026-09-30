@@ -4,7 +4,6 @@ import PropTypes from "prop-types";
 import cx from "classnames";
 
 import Button from "antd/lib/button";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import DynamicComponent from "@/components/DynamicComponent";
 import DashboardGrid from "@/components/dashboards/DashboardGrid";
 import Parameters from "@/components/Parameters";
@@ -13,7 +12,6 @@ import Filters from "@/components/Filters";
 import { Dashboard } from "@/services/dashboard";
 import recordEvent from "@/services/recordEvent";
 import resizeObserver from "@/services/resizeObserver";
-import routes from "@/services/routes";
 import location from "@/services/location";
 import url from "@/services/url";
 import useImmutableCallback from "@/lib/hooks/useImmutableCallback";
@@ -207,19 +205,4 @@ DashboardPage.defaultProps = {
   onError: PropTypes.func,
 };
 
-// route kept for backward compatibility
-routes.register(
-  "Dashboards.LegacyViewOrEdit",
-  routeWithUserSession({
-    path: "/dashboard/:dashboardSlug",
-    render: (pageProps) => <DashboardPage {...pageProps} />,
-  })
-);
-
-routes.register(
-  "Dashboards.ViewOrEdit",
-  routeWithUserSession({
-    path: "/dashboards/:dashboardId([^-]+)(-.*)?",
-    render: (pageProps) => <DashboardPage {...pageProps} />,
-  })
-);
+export default DashboardPage;

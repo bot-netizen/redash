@@ -1,14 +1,12 @@
 import React from "react";
 import PropTypes from "prop-types";
 
-import routeWithApiKeySession from "@/components/ApplicationArea/routeWithApiKeySession";
 import Link from "@/components/Link";
 import BigMessage from "@/components/BigMessage";
 import PageHeader from "@/components/PageHeader";
 import DashboardGrid from "@/components/dashboards/DashboardGrid";
 
 import { Dashboard } from "@/services/dashboard";
-import routes from "@/services/routes";
 
 import logoUrl from "@/assets/images/sqldesk_icon.svg";
 
@@ -113,11 +111,4 @@ class PublicDashboardPage extends React.Component {
   }
 }
 
-routes.register(
-  "Dashboards.ViewShared",
-  routeWithApiKeySession({
-    path: "/public/dashboards/:token",
-    render: (pageProps) => <PublicDashboardPage {...pageProps} />,
-    getApiKey: (currentRoute) => currentRoute.routeParams.token,
-  })
-);
+export default PublicDashboardPage;

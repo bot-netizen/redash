@@ -170,8 +170,8 @@
     ],
     "moduleNameMapper": {
       "\\.(svg|png|jpe?g|gif|webp|woff2?|ttf|eot)$": "<rootDir>/app/__tests__/fileMock.js",
-      "^@/(.*)": "<rootDir>/app/$1",
-      "\\.(css|less)$": "identity-obj-proxy"
+      "\\.(css|less)$": "identity-obj-proxy",
+      "^@/(.*)": "<rootDir>/app/$1"
     },
     "testPathIgnorePatterns": [
       "<rootDir>/app/__tests__/"
