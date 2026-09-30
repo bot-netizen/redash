@@ -1,36 +1,19 @@
+/*
+  Where the router learns what paths exist.
+
+  The pages somebody lands on are imported here directly, so they are in the
+  first download. Everything else is behind a `*.routes.jsx`, which registers
+  the paths and fetches the page when somebody goes to it -- see
+  `client/bundle-budget.js` for what that is worth, and
+  `services/routes.registration.test.js` for the list of paths this has to
+  produce either way.
+*/
 import "./home/Home";
-
-import "./mcp/McpHome";
-import "./admin/overview/Overview";
-import "./admin/Catalog";
-import "./admin/Jobs";
-import "./admin/OutdatedQueries";
-import "./admin/SystemStatus";
-
-import "./alerts/AlertsList";
-import "./alert/Alert";
-
 import "./dashboards/DashboardList";
-import "./dashboards/dashboards.routes";
-
-import "./data-sources/DataSourcesList";
-import "./data-sources/EditDataSource";
-
-import "./destinations/DestinationsList";
-import "./destinations/EditDestination";
-
-import "./groups/GroupsList";
-import "./groups/GroupDataSources";
-import "./groups/GroupMembers";
-
 import "./queries-list/QueriesList";
-import "./queries/QuerySource.routes";
-import "./queries/QueryView";
-import "./queries/VisualizationEmbed";
 
-import "./query-snippets/QuerySnippetsList";
-
-import "./settings/OrganizationSettings";
-
-import "./users/UsersList";
-import "./users/UserProfile";
+import "./dashboards/dashboards.routes";
+import "./queries/queries.routes";
+import "./alert/alerts.routes";
+import "./admin/admin.routes";
+import "./settings.routes";

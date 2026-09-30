@@ -3,7 +3,6 @@ import React from "react";
 import PropTypes from "prop-types";
 
 import Button from "antd/lib/button";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 import CardsList from "@/components/cards-list/CardsList";
 import LoadingState from "@/components/items-list/components/LoadingState";
@@ -14,7 +13,6 @@ import PlainButton from "@/components/PlainButton";
 
 import Destination, { IMG_ROOT } from "@/services/destination";
 import { policy } from "@/services/policy";
-import routes from "@/services/routes";
 
 class DestinationsList extends React.Component {
   static propTypes = {
@@ -131,30 +129,6 @@ class DestinationsList extends React.Component {
   }
 }
 
-const DestinationsListPage = wrapSettingsTab(
-  "AlertDestinations.List",
-  {
-    permission: "admin",
-    title: "Alert Destinations",
-    path: "destinations",
-    order: 4,
-  },
-  DestinationsList
-);
+const DestinationsListPage = wrapSettingsTab(DestinationsList);
 
-routes.register(
-  "AlertDestinations.List",
-  routeWithUserSession({
-    path: "/destinations",
-    title: "Alert Destinations",
-    render: (pageProps) => <DestinationsListPage {...pageProps} />,
-  })
-);
-routes.register(
-  "AlertDestinations.New",
-  routeWithUserSession({
-    path: "/destinations/new",
-    title: "Alert Destinations",
-    render: (pageProps) => <DestinationsListPage {...pageProps} isNewDestinationPage />,
-  })
-);
+export default DestinationsListPage;

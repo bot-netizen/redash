@@ -3,7 +3,6 @@ import React from "react";
 import PropTypes from "prop-types";
 
 import Button from "antd/lib/button";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 import CardsList from "@/components/cards-list/CardsList";
 import LoadingState from "@/components/items-list/components/LoadingState";
@@ -16,7 +15,6 @@ import PlainButton from "@/components/PlainButton";
 import DataSource, { IMG_ROOT } from "@/services/data-source";
 import { policy } from "@/services/policy";
 import recordEvent from "@/services/recordEvent";
-import routes from "@/services/routes";
 
 export function DataSourcesListComponent({ dataSources, onClickCreate }) {
   const items = dataSources.map((dataSource) => ({
@@ -158,30 +156,6 @@ class DataSourcesList extends React.Component {
   }
 }
 
-const DataSourcesListPage = wrapSettingsTab(
-  "DataSources.List",
-  {
-    permission: "admin",
-    title: "Data Sources",
-    path: "data_sources",
-    order: 1,
-  },
-  DataSourcesList
-);
+const DataSourcesListPage = wrapSettingsTab(DataSourcesList);
 
-routes.register(
-  "DataSources.List",
-  routeWithUserSession({
-    path: "/data_sources",
-    title: "Data Sources",
-    render: (pageProps) => <DataSourcesListPage {...pageProps} />,
-  })
-);
-routes.register(
-  "DataSources.New",
-  routeWithUserSession({
-    path: "/data_sources/new",
-    title: "Data Sources",
-    render: (pageProps) => <DataSourcesListPage {...pageProps} isNewDataSourcePage />,
-  })
-);
+export default DataSourcesListPage;

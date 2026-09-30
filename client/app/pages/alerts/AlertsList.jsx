@@ -1,6 +1,5 @@
 import { toUpper } from "lodash";
 import React from "react";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import Link from "@/components/Link";
 import { Shell, Header } from "@/components/items-list/components/ListPage";
 import Paginator from "@/components/Paginator";
@@ -15,7 +14,6 @@ import ListItemActions from "@/components/items-list/components/ListItemActions"
 
 import Alert from "@/services/alert";
 import { currentUser } from "@/services/auth";
-import routes from "@/services/routes";
 
 export const STATE_CLASS = {
   unknown: "label-warning",
@@ -167,11 +165,4 @@ const AlertsListPage = itemsList(
   () => new StateStorage({ orderByField: "created_at", orderByReverse: true, itemsPerPage: 20 })
 );
 
-routes.register(
-  "Alerts.List",
-  routeWithUserSession({
-    path: "/alerts",
-    title: "Alerts",
-    render: (pageProps) => <AlertsListPage {...pageProps} currentPage="alerts" />,
-  })
-);
+export default AlertsListPage;

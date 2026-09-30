@@ -11,8 +11,6 @@ import Link from "@/components/Link";
 import { axios } from "@/services/axios";
 import notification from "@/services/notification";
 import recordEvent from "@/services/recordEvent";
-import routes from "@/services/routes";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 
 import { pressure, formatBytes, formatElapsed, formatRatio, UNKNOWN } from "./pressure";
 
@@ -335,12 +333,3 @@ export default function Overview({ onError }) {
 
 Overview.propTypes = { onError: PropTypes.func };
 Overview.defaultProps = { onError: () => {} };
-
-routes.register(
-  "Admin.Overview",
-  routeWithUserSession({
-    path: "/admin/overview",
-    title: "Admin Overview",
-    render: (pageProps) => <Overview {...pageProps} />,
-  })
-);

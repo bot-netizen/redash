@@ -4,7 +4,6 @@ import PropTypes from "prop-types";
 
 import Button from "antd/lib/button";
 import Modal from "antd/lib/modal";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import Link from "@/components/Link";
 import Paginator from "@/components/Paginator";
 import DynamicComponent from "@/components/DynamicComponent";
@@ -29,7 +28,6 @@ import User from "@/services/user";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 import notification from "@/services/notification";
 import { absoluteUrl } from "@/services/utils";
-import routes from "@/services/routes";
 
 import CreateUserDialog from "./components/CreateUserDialog";
 
@@ -250,14 +248,6 @@ class UsersList extends React.Component {
 }
 
 const UsersListPage = wrapSettingsTab(
-  "Users.List",
-  {
-    permission: "list_users",
-    title: "Users",
-    path: "users",
-    isActive: (path) => path.startsWith("/users") && path !== "/users/me",
-    order: 2,
-  },
   itemsList(
     UsersList,
     () =>
@@ -285,35 +275,4 @@ const UsersListPage = wrapSettingsTab(
   )
 );
 
-routes.register(
-  "Users.New",
-  routeWithUserSession({
-    path: "/users/new",
-    title: "Users",
-    render: (pageProps) => <UsersListPage {...pageProps} currentPage="active" isNewUserPage />,
-  })
-);
-routes.register(
-  "Users.List",
-  routeWithUserSession({
-    path: "/users",
-    title: "Users",
-    render: (pageProps) => <UsersListPage {...pageProps} currentPage="active" />,
-  })
-);
-routes.register(
-  "Users.Pending",
-  routeWithUserSession({
-    path: "/users/pending",
-    title: "Pending Invitations",
-    render: (pageProps) => <UsersListPage {...pageProps} currentPage="pending" />,
-  })
-);
-routes.register(
-  "Users.Disabled",
-  routeWithUserSession({
-    path: "/users/disabled",
-    title: "Disabled Users",
-    render: (pageProps) => <UsersListPage {...pageProps} currentPage="disabled" />,
-  })
-);
+export default UsersListPage;

@@ -1,7 +1,6 @@
 import React from "react";
 
 import Button from "antd/lib/button";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import Link from "@/components/Link";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 import Paginator from "@/components/Paginator";
@@ -20,7 +19,6 @@ import wrapSettingsTab from "@/components/SettingsWrapper";
 
 import Group from "@/services/group";
 import { currentUser } from "@/services/auth";
-import routes from "@/services/routes";
 
 class GroupsList extends React.Component {
   static propTypes = {
@@ -129,13 +127,6 @@ class GroupsList extends React.Component {
 }
 
 const GroupsListPage = wrapSettingsTab(
-  "Groups.List",
-  {
-    permission: "list_users",
-    title: "Groups",
-    path: "groups",
-    order: 3,
-  },
   itemsList(
     GroupsList,
     () =>
@@ -152,11 +143,4 @@ const GroupsListPage = wrapSettingsTab(
   )
 );
 
-routes.register(
-  "Groups.List",
-  routeWithUserSession({
-    path: "/groups",
-    title: "Groups",
-    render: (pageProps) => <GroupsListPage {...pageProps} currentPage="groups" />,
-  })
-);
+export default GroupsListPage;

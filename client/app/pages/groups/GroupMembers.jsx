@@ -2,7 +2,6 @@ import { includes, map } from "lodash";
 import React from "react";
 import Button from "antd/lib/button";
 
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 import Paginator from "@/components/Paginator";
 
@@ -25,7 +24,6 @@ import notification from "@/services/notification";
 import { currentUser } from "@/services/auth";
 import Group from "@/services/group";
 import User from "@/services/user";
-import routes from "@/services/routes";
 
 class GroupMembers extends React.Component {
   static propTypes = {
@@ -190,8 +188,6 @@ class GroupMembers extends React.Component {
 }
 
 const GroupMembersPage = wrapSettingsTab(
-  "Groups.Members",
-  null,
   itemsList(
     GroupMembers,
     () =>
@@ -208,11 +204,4 @@ const GroupMembersPage = wrapSettingsTab(
   )
 );
 
-routes.register(
-  "Groups.Members",
-  routeWithUserSession({
-    path: "/groups/:groupId",
-    title: "Group Members",
-    render: (pageProps) => <GroupMembersPage {...pageProps} currentPage="users" />,
-  })
-);
+export default GroupMembersPage;

@@ -1,4 +1,4 @@
 {
-  "comment": "Kilobytes, gzipped, that the app entrypoint needs before anything draws. Measured 2026-09-29 at 743 KB, after the SQL editor moved out of the initial load. The headroom is deliberately small: a budget nobody ever reaches is a budget nobody notices breaking. Raising it is fine -- do it in the change that needs it, so somebody reviews the trade.",
-  "initialLoadKB": 780
+  "comment": "Kilobytes, gzipped, that the app entrypoint needs before anything draws. Measured 2026-09-29 at 522 KB, once every page but the three somebody lands on moved out of the initial load. The headroom is deliberately small: a budget nobody ever reaches is a budget nobody notices breaking. Raising it is fine -- do it in the change that needs it, so somebody reviews the trade.",
+  "initialLoadKB": 560
 }

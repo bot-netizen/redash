@@ -7,11 +7,9 @@ import Tag from "antd/lib/tag";
 import Tooltip from "@/components/Tooltip";
 
 import HelpTrigger from "@/components/HelpTrigger";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import TimeAgo from "@/components/TimeAgo";
 import { axios } from "@/services/axios";
 import { currentUser, clientConfig } from "@/services/auth";
-import routes from "@/services/routes";
 
 import "./mcp.less";
 
@@ -226,12 +224,3 @@ export default function McpHome({ onError }) {
 
 McpHome.propTypes = { onError: PropTypes.func };
 McpHome.defaultProps = { onError: () => {} };
-
-routes.register(
-  "Admin.MCP",
-  routeWithUserSession({
-    path: "/admin/mcp",
-    title: "MCP",
-    render: (pageProps) => <McpHome {...pageProps} />,
-  })
-);

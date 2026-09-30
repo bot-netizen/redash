@@ -9,7 +9,6 @@ import Dropdown from "antd/lib/dropdown";
 import Menu from "antd/lib/menu";
 import Tooltip from "@/components/Tooltip";
 import Link from "@/components/Link";
-import routeWithApiKeySession from "@/components/ApplicationArea/routeWithApiKeySession";
 import Parameters from "@/components/Parameters";
 import { Moment } from "@/components/proptypes";
 import TimeAgo from "@/components/TimeAgo";
@@ -29,7 +28,6 @@ import useImmutableCallback from "@/lib/hooks/useImmutableCallback";
 import { Query } from "@/services/query";
 import location from "@/services/location";
 import useScreenshotMode, { inScreenshotMode } from "@/lib/hooks/useScreenshotMode";
-import routes from "@/services/routes";
 
 import logoUrl from "@/assets/images/sqldesk_icon.svg";
 
@@ -290,11 +288,4 @@ VisualizationEmbed.defaultProps = {
   onError: () => {},
 };
 
-routes.register(
-  "Visualizations.ViewShared",
-  routeWithApiKeySession({
-    path: "/embed/query/:queryId/visualization/:visualizationId",
-    render: (pageProps) => <VisualizationEmbed {...pageProps} />,
-    getApiKey: () => location.search.api_key,
-  })
-);
+export default VisualizationEmbed;

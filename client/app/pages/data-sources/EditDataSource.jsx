@@ -3,7 +3,6 @@ import React from "react";
 import PropTypes from "prop-types";
 
 import Modal from "antd/lib/modal";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 import LoadingState from "@/components/items-list/components/LoadingState";
 import DynamicForm from "@/components/dynamic-form/DynamicForm";
@@ -13,7 +12,6 @@ import wrapSettingsTab from "@/components/SettingsWrapper";
 
 import DataSource, { IMG_ROOT } from "@/services/data-source";
 import notification from "@/services/notification";
-import routes from "@/services/routes";
 import UploadedFilesPanel from "./UploadedFilesPanel";
 
 const DESCRIPTION_FIELD = (dataSource) => ({
@@ -156,13 +154,6 @@ class EditDataSource extends React.Component {
   }
 }
 
-const EditDataSourcePage = wrapSettingsTab("DataSources.Edit", null, EditDataSource);
+const EditDataSourcePage = wrapSettingsTab(EditDataSource);
 
-routes.register(
-  "DataSources.Edit",
-  routeWithUserSession({
-    path: "/data_sources/:dataSourceId",
-    title: "Data Sources",
-    render: (pageProps) => <EditDataSourcePage {...pageProps} />,
-  })
-);
+export default EditDataSourcePage;

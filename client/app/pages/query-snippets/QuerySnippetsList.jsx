@@ -3,7 +3,6 @@ import React from "react";
 
 import Button from "antd/lib/button";
 import Modal from "antd/lib/modal";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 import Paginator from "@/components/Paginator";
 import QuerySnippetDialog from "@/components/query-snippets/QuerySnippetDialog";
@@ -21,7 +20,6 @@ import QuerySnippet from "@/services/query-snippet";
 import { currentUser } from "@/services/auth";
 import { policy } from "@/services/policy";
 import notification from "@/services/notification";
-import routes from "@/services/routes";
 
 import "./QuerySnippetsList.less";
 
@@ -192,13 +190,6 @@ class QuerySnippetsList extends React.Component {
 }
 
 const QuerySnippetsListPage = wrapSettingsTab(
-  "QuerySnippets.List",
-  {
-    permission: "create_query",
-    title: "Query Snippets",
-    path: "query_snippets",
-    order: 5,
-  },
   itemsList(
     QuerySnippetsList,
     () =>
@@ -215,19 +206,4 @@ const QuerySnippetsListPage = wrapSettingsTab(
   )
 );
 
-routes.register(
-  "QuerySnippets.List",
-  routeWithUserSession({
-    path: "/query_snippets",
-    title: "Query Snippets",
-    render: (pageProps) => <QuerySnippetsListPage {...pageProps} currentPage="query_snippets" />,
-  })
-);
-routes.register(
-  "QuerySnippets.NewOrEdit",
-  routeWithUserSession({
-    path: "/query_snippets/:querySnippetId",
-    title: "Query Snippets",
-    render: (pageProps) => <QuerySnippetsListPage {...pageProps} currentPage="query_snippets" isNewOrEditPage />,
-  })
-);
+export default QuerySnippetsListPage;

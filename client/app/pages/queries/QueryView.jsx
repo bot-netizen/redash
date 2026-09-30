@@ -7,7 +7,6 @@ import Button from "antd/lib/button";
 import FullscreenOutlinedIcon from "@ant-design/icons/FullscreenOutlined";
 import FullscreenExitOutlinedIcon from "@ant-design/icons/FullscreenExitOutlined";
 
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import EditInPlace from "@/components/EditInPlace";
 import Parameters from "@/components/Parameters";
 import DynamicComponent from "@/components/DynamicComponent";
@@ -15,7 +14,6 @@ import PlainButton from "@/components/PlainButton";
 
 import DataSource from "@/services/data-source";
 import { ExecutionStatus } from "@/services/query-result";
-import routes from "@/services/routes";
 import { policy } from "@/services/policy";
 
 import useQueryResultData from "@/lib/useQueryResultData";
@@ -240,10 +238,4 @@ QueryView.propTypes = { query: PropTypes.object.isRequired }; // eslint-disable-
 
 const QueryViewPage = wrapQueryPage(QueryView);
 
-routes.register(
-  "Queries.View",
-  routeWithUserSession({
-    path: "/queries/:queryId",
-    render: (pageProps) => <QueryViewPage {...pageProps} />,
-  })
-);
+export default QueryViewPage;

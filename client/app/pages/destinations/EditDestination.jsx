@@ -3,7 +3,6 @@ import React from "react";
 import PropTypes from "prop-types";
 
 import Modal from "antd/lib/modal";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 import LoadingState from "@/components/items-list/components/LoadingState";
 import DynamicForm from "@/components/dynamic-form/DynamicForm";
@@ -12,7 +11,6 @@ import wrapSettingsTab from "@/components/SettingsWrapper";
 
 import Destination, { IMG_ROOT } from "@/services/destination";
 import notification from "@/services/notification";
-import routes from "@/services/routes";
 
 class EditDestination extends React.Component {
   static propTypes = {
@@ -107,13 +105,6 @@ class EditDestination extends React.Component {
   }
 }
 
-const EditDestinationPage = wrapSettingsTab("AlertDestinations.Edit", null, EditDestination);
+const EditDestinationPage = wrapSettingsTab(EditDestination);
 
-routes.register(
-  "AlertDestinations.Edit",
-  routeWithUserSession({
-    path: "/destinations/:destinationId",
-    title: "Alert Destinations",
-    render: (pageProps) => <EditDestinationPage {...pageProps} />,
-  })
-);
+export default EditDestinationPage;

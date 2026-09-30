@@ -3,26 +3,19 @@ import React from "react";
 import PropTypes from "prop-types";
 
 import LoadingState from "@/components/items-list/components/LoadingState";
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 
 import { currentUser } from "@/services/auth";
 import notification from "@/services/notification";
 import AlertService from "@/services/alert";
 import { Query as QueryService } from "@/services/query";
-import routes from "@/services/routes";
 
 import MenuButton from "./components/MenuButton";
 import AlertView from "./AlertView";
 import AlertEdit from "./AlertEdit";
 import AlertNew from "./AlertNew";
 import notifications from "@/services/notifications";
-
-const MODES = {
-  NEW: 0,
-  VIEW: 1,
-  EDIT: 2,
-};
+import MODES from "./modes";
 
 const defaultNameBuilder = template("<%= query.name %>: <%= options.column %> <%= options.op %> <%= options.value %>");
 
@@ -273,27 +266,4 @@ class Alert extends React.Component {
   }
 }
 
-routes.register(
-  "Alerts.New",
-  routeWithUserSession({
-    path: "/alerts/new",
-    title: "New Alert",
-    render: (pageProps) => <Alert {...pageProps} mode={MODES.NEW} />,
-  })
-);
-routes.register(
-  "Alerts.View",
-  routeWithUserSession({
-    path: "/alerts/:alertId",
-    title: "Alert",
-    render: (pageProps) => <Alert {...pageProps} mode={MODES.VIEW} />,
-  })
-);
-routes.register(
-  "Alerts.Edit",
-  routeWithUserSession({
-    path: "/alerts/:alertId/edit",
-    title: "Alert",
-    render: (pageProps) => <Alert {...pageProps} mode={MODES.EDIT} />,
-  })
-);
+export default Alert;

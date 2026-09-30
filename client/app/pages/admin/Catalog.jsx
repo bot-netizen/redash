@@ -8,13 +8,11 @@ import Table from "antd/lib/table";
 import Tabs from "antd/lib/tabs";
 import Tag from "antd/lib/tag";
 
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import HelpTrigger from "@/components/HelpTrigger";
 import TimeAgo from "@/components/TimeAgo";
 import Tooltip from "@/components/Tooltip";
 import { axios } from "@/services/axios";
 import notification from "@/services/notification";
-import routes from "@/services/routes";
 
 import "./catalog.less";
 
@@ -579,12 +577,3 @@ export default function Catalog() {
     </React.Fragment>
   );
 }
-
-routes.register(
-  "Catalog",
-  routeWithUserSession({
-    path: "/catalog",
-    title: "Catalog",
-    render: (pageProps) => <Catalog {...pageProps} />,
-  })
-);

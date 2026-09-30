@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 
-import routeWithUserSession from "@/components/ApplicationArea/routeWithUserSession";
 import EmailSettingsWarning from "@/components/EmailSettingsWarning";
 import DynamicComponent from "@/components/DynamicComponent";
 import LoadingState from "@/components/items-list/components/LoadingState";
@@ -9,7 +8,6 @@ import wrapSettingsTab from "@/components/SettingsWrapper";
 
 import User from "@/services/user";
 import { currentUser } from "@/services/auth";
-import routes from "@/services/routes";
 import useImmutableCallback from "@/lib/hooks/useImmutableCallback";
 
 import EditableUserProfile from "./components/EditableUserProfile";
@@ -68,29 +66,6 @@ UserProfile.defaultProps = {
   onError: () => {},
 };
 
-const UserProfilePage = wrapSettingsTab(
-  "Users.Account",
-  {
-    title: "Account",
-    path: "users/me",
-    order: 7,
-  },
-  UserProfile
-);
+const UserProfilePage = wrapSettingsTab(UserProfile);
 
-routes.register(
-  "Users.Account",
-  routeWithUserSession({
-    path: "/users/me",
-    title: "Account",
-    render: (pageProps) => <UserProfilePage {...pageProps} />,
-  })
-);
-routes.register(
-  "Users.ViewOrEdit",
-  routeWithUserSession({
-    path: "/users/:userId",
-    title: "Users",
-    render: (pageProps) => <UserProfilePage {...pageProps} />,
-  })
-);
+export default UserProfilePage;

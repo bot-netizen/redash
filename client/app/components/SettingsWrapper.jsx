@@ -5,9 +5,16 @@ import Link from "@/components/Link";
 import location from "@/services/location";
 import settingsMenu from "@/services/settingsMenu";
 
-function wrapSettingsTab(id, options, WrappedComponent) {
-  settingsMenu.add(id, options);
+/*
+  The settings chrome -- the title and the row of tabs -- around a page.
 
+  It used to take the page's own menu entry as well and register it here, as a
+  side effect of importing the page. That stopped working the moment the pages
+  became lazily loaded, because the navbar needs the menu before any of them
+  has been fetched. The entries are in `pages/settings.menu.js` now, and this
+  only draws.
+*/
+function wrapSettingsTab(WrappedComponent) {
   return function SettingsTab(props) {
     const activeItem = settingsMenu.getActiveItem(location.path);
     return (
