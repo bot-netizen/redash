@@ -17,6 +17,86 @@ from sqldesk.utils.requests_session import (
 
 logger = logging.getLogger(__name__)
 
+
+class deferred:
+    """
+    A module, or a name from one, imported the first time it is used.
+
+    Every query runner is imported when the process starts, because that is
+    how each one registers its type. The *SDKs* they depend on do not need to
+    be: an install with a Postgres data source has no use for the Snowflake
+    connector, and a worker running one query has no use for the other
+    thirty-four.
+
+    Measured on the development cluster before this existed: 117 MB resident
+    with one runner, 273 MB with all of them -- 155 MB of SDKs, in every
+    gunicorn worker and every worker pod, for data sources most installs do
+    not have.
+
+    Used in place of the import, so the bodies that call it do not change:
+
+        pd = deferred("pandas")
+        ...
+        pd.read_csv(...)          # imported here, once
+
+        InfluxDBClient = deferred("influxdb", "InfluxDBClient")
+        ...
+        InfluxDBClient.from_dsn(...)
+
+    Attribute access and calling both resolve it. Anything that needs the
+    real object at *import* time -- a base class, a decorator, a tuple of
+    exception types -- must not use this.
+    """
+
+    def __init__(self, module, attr=None):
+        self._module = module
+        self._attr = attr
+        self._resolved = None
+
+    def _target(self):
+        if self._resolved is None:
+            import importlib
+
+            imported = importlib.import_module(self._module)
+            self._resolved = getattr(imported, self._attr) if self._attr else imported
+        return self._resolved
+
+    def __getattr__(self, name):
+        # Guard the privates so `copy`, `pickle` and the debugger cannot
+        # trigger an import by looking for `__deepcopy__` and friends.
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self._target(), name)
+
+    def __call__(self, *args, **kwargs):
+        return self._target()(*args, **kwargs)
+
+    def __repr__(self):
+        name = "{}.{}".format(self._module, self._attr) if self._attr else self._module
+        return "<deferred {} ({})>".format(name, "loaded" if self._resolved is not None else "not yet")
+
+
+def installed(*modules):
+    """
+    Whether these modules could be imported, without importing them.
+
+    What `enabled()` needs to answer: a runner whose SDK is not installed is
+    not offered. Asking the question by importing is what made every process
+    carry every SDK.
+    """
+    import importlib.util
+
+    for module in modules:
+        try:
+            if importlib.util.find_spec(module) is None:
+                return False
+        except (ImportError, ValueError):
+            # A parent package that is itself missing, or a name that cannot
+            # be a module. Either way: not available.
+            return False
+    return True
+
+
 __all__ = [
     "BaseQueryRunner",
     "BaseHTTPQueryRunner",

@@ -10,17 +10,16 @@ from sqldesk.query_runner import (
     TYPE_STRING,
     BaseSQLQueryRunner,
     InterruptException,
+    deferred,
+    installed,
     register,
 )
 
 logger = logging.getLogger(__name__)
 
-try:
-    import duckdb
+duckdb = deferred("duckdb")
 
-    enabled = True
-except ImportError:
-    enabled = False
+enabled = installed("duckdb")
 
 # Map DuckDB types to SQLDesk column types
 TYPES_MAP = {

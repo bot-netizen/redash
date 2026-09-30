@@ -8,31 +8,44 @@ from sqldesk.query_runner import (
     TYPE_STRING,
     BaseSQLQueryRunner,
     JobTimeoutException,
+    deferred,
+    installed,
     register,
 )
 
-try:
-    import oracledb
+oracledb = deferred("oracledb")
 
-    TYPES_MAP = {
-        oracledb.DATETIME: TYPE_DATETIME,
-        oracledb.CLOB: TYPE_STRING,
-        oracledb.LOB: TYPE_STRING,
-        oracledb.FIXED_CHAR: TYPE_STRING,
-        oracledb.FIXED_NCHAR: TYPE_STRING,
-        oracledb.INTERVAL: TYPE_DATETIME,
-        oracledb.LONG_STRING: TYPE_STRING,
-        oracledb.NATIVE_FLOAT: TYPE_FLOAT,
-        oracledb.NCHAR: TYPE_STRING,
-        oracledb.NUMBER: TYPE_FLOAT,
-        oracledb.ROWID: TYPE_INTEGER,
-        oracledb.STRING: TYPE_STRING,
-        oracledb.TIMESTAMP: TYPE_DATETIME,
-    }
+ENABLED = installed("oracledb")
 
-    ENABLED = True
-except ImportError:
-    ENABLED = False
+
+def _types_map():
+    """
+    Oracle's type constants, looked up the first time a column is described.
+
+    A module-level dict would read `oracledb.DATETIME` while this file is
+    being imported, which is the import this defers.
+    """
+    global _TYPES_MAP
+    if _TYPES_MAP is None:
+        _TYPES_MAP = {
+            oracledb.DATETIME: TYPE_DATETIME,
+            oracledb.CLOB: TYPE_STRING,
+            oracledb.LOB: TYPE_STRING,
+            oracledb.FIXED_CHAR: TYPE_STRING,
+            oracledb.FIXED_NCHAR: TYPE_STRING,
+            oracledb.INTERVAL: TYPE_DATETIME,
+            oracledb.LONG_STRING: TYPE_STRING,
+            oracledb.NATIVE_FLOAT: TYPE_FLOAT,
+            oracledb.NCHAR: TYPE_STRING,
+            oracledb.NUMBER: TYPE_FLOAT,
+            oracledb.ROWID: TYPE_INTEGER,
+            oracledb.STRING: TYPE_STRING,
+            oracledb.TIMESTAMP: TYPE_DATETIME,
+        }
+    return _TYPES_MAP
+
+
+_TYPES_MAP = None
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +65,7 @@ class Oracle(BaseSQLQueryRunner):
                 return TYPE_FLOAT
             return TYPE_INTEGER
         else:
-            return TYPES_MAP.get(col_type, None)
+            return _types_map().get(col_type, None)
 
     @classmethod
     def enabled(cls):

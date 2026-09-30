@@ -2,7 +2,13 @@ import logging
 
 import yaml
 
-from sqldesk.query_runner import BaseQueryRunner, NotSupported, register
+from sqldesk.query_runner import (
+    BaseQueryRunner,
+    NotSupported,
+    deferred,
+    installed,
+    register,
+)
 from sqldesk.utils.requests_session import (
     UnacceptableAddressException,
     requests_or_advocate,
@@ -10,15 +16,10 @@ from sqldesk.utils.requests_session import (
 
 logger = logging.getLogger(__name__)
 
-try:
-    import numpy as np
-    import openpyxl  # noqa: F401
-    import pandas as pd
-    import xlrd  # noqa: F401
+np = deferred("numpy")
+pd = deferred("pandas")
 
-    enabled = True
-except ImportError:
-    enabled = False
+enabled = installed("numpy", "pandas", "openpyxl", "xlrd")
 
 
 class Excel(BaseQueryRunner):

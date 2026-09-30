@@ -1,12 +1,3 @@
-try:
-    import snowflake.connector
-    from cryptography.hazmat.primitives.serialization import load_pem_private_key
-
-    enabled = True
-except ImportError:
-    enabled = False
-
-
 from base64 import b64decode
 
 from sqldesk import __version__
@@ -18,8 +9,19 @@ from sqldesk.query_runner import (
     TYPE_INTEGER,
     TYPE_STRING,
     BaseSQLQueryRunner,
+    deferred,
+    installed,
     register,
 )
+
+# The connector is 50 MB resident and this is the only runner that wants it.
+# See `deferred` in sqldesk/query_runner/__init__.py.
+connector = deferred("snowflake.connector")
+load_pem_private_key = deferred("cryptography.hazmat.primitives.serialization", "load_pem_private_key")
+
+# The top-level names, not `snowflake.connector`: `find_spec` on a dotted
+# name imports the parent package to look inside it.
+enabled = installed("snowflake", "cryptography")
 
 TYPES_MAP = {
     0: TYPE_INTEGER,
@@ -125,7 +127,7 @@ class Snowflake(BaseSQLQueryRunner):
         else:
             raise Exception("Neither password nor private_key_b64 is set.")
 
-        connection = snowflake.connector.connect(**params)
+        connection = connector.connect(**params)
 
         return connection
 

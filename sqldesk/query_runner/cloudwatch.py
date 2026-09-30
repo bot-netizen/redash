@@ -2,15 +2,12 @@ import datetime
 
 import yaml
 
-from sqldesk.query_runner import BaseQueryRunner, register
+from sqldesk.query_runner import BaseQueryRunner, deferred, installed, register
 from sqldesk.utils import parse_human_time
 
-try:
-    import boto3
+boto3 = deferred("boto3")
 
-    enabled = True
-except ImportError:
-    enabled = False
+enabled = installed("boto3")
 
 
 def parse_response(results):

@@ -26,18 +26,14 @@ from sqldesk.query_runner import (
     TYPE_INTEGER,
     TYPE_STRING,
     BaseQueryRunner,
+    deferred,
     register,
 )
-from sqldesk.utils.pandas import pandas_installed
+from sqldesk.utils.pandas import pandas_installed, pandas_to_result
 
-if pandas_installed:
-    import pandas as pd
+pd = deferred("pandas")
 
-    from sqldesk.utils.pandas import pandas_to_result
-
-    enabled = True
-else:
-    enabled = False
+enabled = pandas_installed
 
 
 logger = logging.getLogger(__name__)

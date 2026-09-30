@@ -5,18 +5,16 @@ from sqldesk.query_runner import (
     TYPE_INTEGER,
     TYPE_STRING,
     BaseQueryRunner,
+    deferred,
+    installed,
     register,
 )
 
 logger = logging.getLogger(__name__)
 
-try:
-    from influxdb import InfluxDBClient
+InfluxDBClient = deferred("influxdb", "InfluxDBClient")
 
-    enabled = True
-
-except ImportError:
-    enabled = False
+enabled = installed("influxdb")
 
 
 TYPES_MAP = {

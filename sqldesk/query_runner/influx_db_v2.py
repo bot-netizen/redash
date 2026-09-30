@@ -11,15 +11,14 @@ from sqldesk.query_runner import (
     TYPE_INTEGER,
     TYPE_STRING,
     BaseQueryRunner,
+    deferred,
+    installed,
     register,
 )
 
-try:
-    from influxdb_client import InfluxDBClient
+InfluxDBClient = deferred("influxdb_client", "InfluxDBClient")
 
-    enabled = True
-except ImportError:
-    enabled = False
+enabled = installed("influxdb_client")
 
 logger = logging.getLogger(__name__)
 

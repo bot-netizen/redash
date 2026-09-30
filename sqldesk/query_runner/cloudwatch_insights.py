@@ -3,16 +3,13 @@ import time
 
 import yaml
 
-from sqldesk.query_runner import BaseQueryRunner, register
+from sqldesk.query_runner import BaseQueryRunner, deferred, installed, register
 from sqldesk.utils import parse_human_time
 
-try:
-    import boto3
-    from botocore.exceptions import ParamValidationError  # noqa: F401
+boto3 = deferred("boto3")
+ParamValidationError = deferred("botocore.exceptions", "ParamValidationError")
 
-    enabled = True
-except ImportError:
-    enabled = False
+enabled = installed("boto3", "botocore")
 
 POLL_INTERVAL = 3
 TIMEOUT = 180

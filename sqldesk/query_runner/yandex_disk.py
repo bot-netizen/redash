@@ -1,30 +1,26 @@
 import logging
-from importlib.util import find_spec
 
 import requests
 import yaml
 
-from sqldesk.query_runner import BaseSQLQueryRunner, register
-from sqldesk.utils.pandas import pandas_installed
+from sqldesk.query_runner import BaseSQLQueryRunner, deferred, installed, register
+from sqldesk.utils.pandas import pandas_installed, pandas_to_result
 
-openpyxl_installed = find_spec("openpyxl")
+pd = deferred("pandas")
 
-if pandas_installed and openpyxl_installed:
-    import openpyxl  # noqa: F401
-    import pandas as pd
+enabled = pandas_installed and installed("openpyxl")
 
-    from sqldesk.utils.pandas import pandas_to_result
-
-    enabled = True
-
-    EXTENSIONS_READERS = {
-        "csv": pd.read_csv,
-        "tsv": pd.read_table,
-        "xls": pd.read_excel,
-        "xlsx": pd.read_excel,
-    }
-else:
-    enabled = False
+#: Extension to the pandas reader that handles it. Deferred rather than the
+#: functions themselves: naming `pd.read_csv` here would import pandas while
+#: this module is being imported, which is what this file avoids. Each entry
+#: is still callable, so callers -- and the tests that replace them with
+#: mocks -- see no difference.
+EXTENSIONS_READERS = {
+    "csv": deferred("pandas", "read_csv"),
+    "tsv": deferred("pandas", "read_table"),
+    "xls": deferred("pandas", "read_excel"),
+    "xlsx": deferred("pandas", "read_excel"),
+}
 
 logger = logging.getLogger(__name__)
 

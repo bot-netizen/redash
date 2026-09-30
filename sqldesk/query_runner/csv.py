@@ -3,7 +3,13 @@ import logging
 
 import yaml
 
-from sqldesk.query_runner import BaseQueryRunner, NotSupported, register
+from sqldesk.query_runner import (
+    BaseQueryRunner,
+    NotSupported,
+    deferred,
+    installed,
+    register,
+)
 from sqldesk.utils.requests_session import (
     UnacceptableAddressException,
     requests_or_advocate,
@@ -11,13 +17,12 @@ from sqldesk.utils.requests_session import (
 
 logger = logging.getLogger(__name__)
 
-try:
-    import numpy as np
-    import pandas as pd
+# pandas and numpy are 34 MB resident between them, wanted by four runners
+# and by no install that has none of those data sources.
+np = deferred("numpy")
+pd = deferred("pandas")
 
-    enabled = True
-except ImportError:
-    enabled = False
+enabled = installed("numpy", "pandas")
 
 
 class CSV(BaseQueryRunner):

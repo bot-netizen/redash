@@ -18,17 +18,19 @@ from sqldesk.query_runner import (
     BaseSQLQueryRunner,
     InterruptException,
     JobTimeoutException,
+    deferred,
+    installed,
     register,
 )
 
 logger = logging.getLogger(__name__)
 
-try:
-    import boto3
+# Only Redshift's IAM authentication wants boto3, and this is the runner every
+# install loads -- so importing it here set the floor for every process at
+# 16 MB it mostly never used.
+boto3 = deferred("boto3")
 
-    IAM_ENABLED = True
-except ImportError:
-    IAM_ENABLED = False
+IAM_ENABLED = installed("boto3")
 
 types_map = {
     20: TYPE_INTEGER,

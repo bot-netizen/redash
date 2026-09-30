@@ -4,7 +4,7 @@ Some test cases around the Glue catalog.
 
 from unittest import TestCase
 
-import botocore
+import botocore.session
 import mock
 from botocore.stub import Stubber
 

@@ -4,18 +4,14 @@ import ssl
 from base64 import b64decode
 from tempfile import NamedTemporaryFile
 
-from sqldesk.query_runner import BaseQueryRunner, register
+from sqldesk.query_runner import BaseQueryRunner, deferred, installed, register
 
 logger = logging.getLogger(__name__)
 
-try:
-    from cassandra.auth import PlainTextAuthProvider
-    from cassandra.cluster import Cluster
-    from cassandra.util import sortedset
+PlainTextAuthProvider = deferred("cassandra.auth", "PlainTextAuthProvider")
+Cluster = deferred("cassandra.cluster", "Cluster")
 
-    enabled = True
-except ImportError:
-    enabled = False
+enabled = installed("cassandra")
 
 
 def generate_ssl_options_dict(protocol, cert_path=None):
@@ -35,6 +31,10 @@ class Cassandra(BaseQueryRunner):
 
     @classmethod
     def custom_json_encoder(cls, dec, o):
+        # Imported here rather than proxied: `isinstance` needs the class
+        # itself, and a deferred stand-in is not one.
+        from cassandra.util import sortedset
+
         if isinstance(o, sortedset):
             return list(o)
         return None

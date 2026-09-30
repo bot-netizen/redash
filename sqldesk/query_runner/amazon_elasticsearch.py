@@ -1,13 +1,11 @@
-from . import register
+from . import deferred, installed, register
 from .elasticsearch2 import ElasticSearch2
 
-try:
-    from botocore import credentials, session
-    from requests_aws_sign import AWSV4Sign
+credentials = deferred("botocore.credentials")
+session = deferred("botocore.session")
+AWSV4Sign = deferred("requests_aws_sign", "AWSV4Sign")
 
-    enabled = True
-except ImportError:
-    enabled = False
+enabled = installed("botocore", "requests_aws_sign")
 
 
 class AmazonElasticsearchService(ElasticSearch2):

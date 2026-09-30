@@ -9,6 +9,8 @@ from sqldesk.query_runner import (
     TYPE_INTEGER,
     TYPE_STRING,
     BaseQueryRunner,
+    deferred,
+    installed,
     register,
 )
 from sqldesk.settings import parse_boolean
@@ -19,13 +21,10 @@ SHOW_EXTRA_SETTINGS = parse_boolean(os.environ.get("ATHENA_SHOW_EXTRA_SETTINGS",
 ASSUME_ROLE = parse_boolean(os.environ.get("ATHENA_ASSUME_ROLE", "false"))
 OPTIONAL_CREDENTIALS = parse_boolean(os.environ.get("ATHENA_OPTIONAL_CREDENTIALS", "true"))
 
-try:
-    import boto3
-    import pyathena
+boto3 = deferred("boto3")
+pyathena = deferred("pyathena")
 
-    enabled = True
-except ImportError:
-    enabled = False
+enabled = installed("boto3", "pyathena")
 
 
 _TYPE_MAPPINGS = {
