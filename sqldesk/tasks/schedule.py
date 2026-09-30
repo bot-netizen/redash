@@ -20,6 +20,7 @@ from sqldesk.tasks.queries import (
     refresh_schemas,
     remove_ghost_locks,
 )
+from sqldesk.tasks.subscriptions import send_due_subscriptions
 from sqldesk.tasks.worker import Queue
 
 logger = logging.getLogger(__name__)
@@ -135,6 +136,9 @@ def periodic_job_definitions():
             "interval": timedelta(minutes=settings.SCHEMAS_REFRESH_SCHEDULE),
         },
         {"func": sync_user_details, "timeout": 60, "interval": timedelta(minutes=1)},
+        # Which dashboard subscriptions are due. Every minute, and it does
+        # nothing at all where no renderer is configured.
+        {"func": send_due_subscriptions, "timeout": 60, "interval": timedelta(minutes=1)},
         {
             "func": send_aggregated_errors,
             "interval": timedelta(minutes=settings.SEND_FAILURE_EMAIL_INTERVAL),

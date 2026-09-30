@@ -35,6 +35,11 @@ READY_SELECTOR = "[data-rendered='true']"
 DASHBOARD = "dashboard"
 QUERY = "query"
 
+#: What the renderer may be asked for. An alert always wants a picture; a
+#: subscription may want a printable page instead.
+PNG = "png"
+PDF = "pdf"
+
 
 def enabled():
     return settings.FEATURE_ALERT_SCREENSHOTS and bool(settings.SCREENSHOT_URL)
@@ -80,7 +85,7 @@ def _renderer_headers():
     return {"X-Screenshot-Token": settings.SCREENSHOT_TOKEN} if settings.SCREENSHOT_TOKEN else {}
 
 
-def capture(kind, obj, viewer):
+def capture(kind, obj, viewer, fmt=PNG):
     """
     A PNG of one dashboard or query, or None.
 
@@ -119,9 +124,11 @@ def capture(kind, obj, viewer):
                 # working credential into their logs.
                 "headers": {"Authorization": f"Key {token}"},
                 "wait_for": READY_SELECTOR,
+                "format": fmt,
                 "timeout": settings.SCREENSHOT_TIMEOUT,
                 # A dashboard is usually taller than a window. The renderer
                 # captures the whole page rather than the first screen of it.
+                # A PDF paginates instead, so this says nothing about one.
                 "full_page": kind == DASHBOARD,
             },
             timeout=settings.SCREENSHOT_TIMEOUT + 5,
@@ -154,18 +161,32 @@ def _load(kind, object_id, org):
     return None
 
 
+def may_see_dashboard(dashboard, user):
+    """
+    Whether this person may see this dashboard.
+
+    Named and exported because two things ask it: an alert, about the person
+    it is drawing for, and a subscription, about its owner *and* every
+    recipient before each send.
+    """
+    return (
+        user.has_permission("admin")
+        or models.Dashboard.all(dashboard.org, user.group_ids, user.id)
+        .filter(models.Dashboard.id == dashboard.id)
+        .count()
+        > 0
+    )
+
+
 def _owner_may_see(kind, obj, owner):
     """
     Access is checked when an attachment is saved; it is checked again here
-    because access changes, and a picture rendered with the query's own key
-    would otherwise outlive the owner's right to look at it.
+    because access changes, and a picture drawn for somebody would otherwise
+    outlive their right to look at it.
     """
     if kind == QUERY:
         return has_access(obj, owner, view_only)
-    return (
-        owner.has_permission("admin")
-        or models.Dashboard.all(obj.org, owner.group_ids, owner.id).filter(models.Dashboard.id == obj.id).count() > 0
-    )
+    return may_see_dashboard(obj, owner)
 
 
 def for_alert(alert):
