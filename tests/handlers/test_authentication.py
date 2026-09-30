@@ -231,3 +231,13 @@ class TestSession(BaseTestCase):
     # really simple test just to trigger this route
     def test_get(self):
         self.make_request("get", "/default/api/session", user=self.factory.user, org=False)
+
+    def test_the_mcp_flag_is_sent_under_both_names(self):
+        # `aiEnabled` is the name this had before, and a browser holding the
+        # previous bundle reads it from a server already running the new one.
+        # Dropping it would blank the MCP menu for the length of an upgrade.
+        with mock.patch.object(settings, "FEATURE_AI", True):
+            rv = self.make_request("get", "/api/session", user=self.factory.user)
+
+        self.assertTrue(rv.json["client_config"]["mcpEnabled"])
+        self.assertTrue(rv.json["client_config"]["aiEnabled"])

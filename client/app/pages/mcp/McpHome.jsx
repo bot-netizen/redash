@@ -173,7 +173,7 @@ export default function McpHome({ onError }) {
         </p>
       </div>
 
-      {!clientConfig.aiEnabled && (
+      {!clientConfig.mcpEnabled && (
         <Alert
           className="m-b-15"
           type="warning"

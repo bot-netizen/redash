@@ -124,7 +124,7 @@ export default function DesktopNavbar() {
         connected and what they asked for, which is a thing an administrator
         checks, not a place anyone goes between queries.
       */}
-      {clientConfig.aiEnabled && (
+      {clientConfig.mcpEnabled && (
         <Menu.Item key="admin-mcp">
           <Link href="admin/mcp">MCP</Link>
         </Menu.Item>
@@ -153,7 +153,7 @@ export default function DesktopNavbar() {
         Reachable only from the Admin menu, nobody without super_admin could
         find it at all.
       */}
-      {clientConfig.aiEnabled && (
+      {clientConfig.mcpEnabled && (
         <Menu.Item key="mcp">
           <Link href="admin/mcp">Connect over MCP</Link>
         </Menu.Item>

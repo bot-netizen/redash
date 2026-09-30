@@ -54,7 +54,7 @@ export default function MobileNavbar({ getPopupContainer }) {
               </Menu.Item>
               {/* How to point a client at SQLDesk with your own API key --
                   every user's business, not only an administrator's. */}
-              {clientConfig.aiEnabled && (
+              {clientConfig.mcpEnabled && (
                 <Menu.Item key="mcp">
                   <Link href="admin/mcp">Connect over MCP</Link>
                 </Menu.Item>

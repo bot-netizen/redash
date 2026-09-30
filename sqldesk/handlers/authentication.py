@@ -302,7 +302,11 @@ def client_config():
         "pageSize": settings.PAGE_SIZE,
         "pageSizeOptions": settings.PAGE_SIZE_OPTIONS,
         "tableCellMaxJSONSize": settings.TABLE_CELL_MAX_JSON_SIZE,
-        # Gates the MCP pages and the admin catalog.
+        # Gates the MCP pages and the catalog.
+        "mcpEnabled": settings.FEATURE_AI,
+        # The name this had before, still sent: during an upgrade a browser
+        # holding the previous bundle reads it from a server already running
+        # the new one.
         "aiEnabled": settings.FEATURE_AI,
         # What an admin may grant a group, so the Group page does not keep
         # its own copy of the list and drift from it.
