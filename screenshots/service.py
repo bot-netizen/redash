@@ -65,7 +65,15 @@ def _origin(url):
     return (parts.scheme, parts.netloc)
 
 
-def _render(url, headers, wait_for, timeout_seconds, full_page):
+#: What a caller may ask for. PNG is a picture of the page; PDF is the page
+#: printed, so its text is text -- selectable, searchable, and legible when
+#: somebody zooms in, which a photograph of text is not.
+PNG = "png"
+PDF = "pdf"
+FORMATS = (PNG, PDF)
+
+
+def _render(url, headers, wait_for, timeout_seconds, full_page, fmt=PNG):
     timeout_ms = min(timeout_seconds, MAX_TIMEOUT_SECONDS) * 1000
 
     with sync_playwright() as playwright:
@@ -115,6 +123,28 @@ def _render(url, headers, wait_for, timeout_seconds, full_page):
                 # check captures for blank content afterwards.
                 page.wait_for_selector(wait_for, timeout=timeout_ms, state="attached")
 
+            if fmt == PDF:
+                # Chromium's own print output, so the text in a subscription's
+                # attachment is text rather than a photograph of text.
+                #
+                # `print_background` because a dashboard is mostly background:
+                # tile surfaces, chart fills, the page itself. Without it the
+                # PDF is an outline of a dashboard.
+                #
+                # A4 landscape, because the thing being made is an
+                # attachment somebody may print, and paper is a size. What
+                # keeps it to *one* page is the rule applied before any of
+                # this: a dashboard past twelve widgets, or taller than a
+                # page allows, is refused when the subscription is saved.
+                # If one arrives anyway it paginates rather than losing
+                # anything, and the caller counts the pages.
+                return page.pdf(
+                    print_background=True,
+                    format="A4",
+                    landscape=True,
+                    margin={"top": "10mm", "bottom": "10mm", "left": "10mm", "right": "10mm"},
+                )
+
             # The caller's timeout covers the capture too. Playwright's own
             # default is 30 seconds, and a full-page shot of a long dashboard
             # goes past it: one of 2800x21574 timed out here while the same
@@ -138,6 +168,10 @@ def screenshot():
     if refusal:
         return jsonify({"error": refusal}), 400
 
+    fmt = (body.get("format") or PNG).lower()
+    if fmt not in FORMATS:
+        return jsonify({"error": "Unknown format {!r}; expected one of {}.".format(fmt, ", ".join(FORMATS))}), 400
+
     try:
         image = _render(
             url,
@@ -145,6 +179,7 @@ def screenshot():
             body.get("wait_for"),
             int(body.get("timeout", 60)),
             bool(body.get("full_page")),
+            fmt,
         )
     except PlaywrightError as error:
         # The caller treats any failure the same way -- send the alert without
@@ -153,7 +188,7 @@ def screenshot():
         logging.exception("Could not render %s", url)
         return jsonify({"error": str(error)}), 502
 
-    return app.response_class(image, mimetype="image/png")
+    return app.response_class(image, mimetype="application/pdf" if fmt == PDF else "image/png")
 
 
 @app.get("/ping")
