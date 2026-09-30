@@ -15,6 +15,13 @@ ACCESS_TYPES = (ACCESS_TYPE_VIEW, ACCESS_TYPE_MODIFY, ACCESS_TYPE_DELETE)
 
 
 def has_access(obj, user, need_view_only):
+    if getattr(user, "is_render_pass", False):
+        # Imported here rather than at the top: render_pass reaches models,
+        # and models reaches this.
+        from sqldesk import render_pass
+
+        return render_pass.allows(obj, user, need_view_only)
+
     if hasattr(obj, "api_key") and user.is_api_user():
         return has_access_to_object(obj, user.id, need_view_only)
     else:

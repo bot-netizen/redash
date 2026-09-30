@@ -162,3 +162,37 @@ def withdraw(token):
         pass
     except Exception:
         logger.exception("Could not withdraw a render pass.")
+
+
+def allows(obj, user, need_view_only):
+    """
+    Whether this pass may see `obj`, read-only.
+
+    The set is exactly what the public link it replaces granted: the dashboard
+    the pass names, and the queries drawn on it. A dashboard's page fetches a
+    result for every widget, so without the second half the picture is a grid
+    of permission errors -- which is what the first version of this produced,
+    and what rendering one on the cluster showed.
+
+    Deliberately *not* narrowed to what the pass's owner may run. A public
+    link showed every widget on the dashboard to anybody who had it, so this
+    is the same reach with an expiry on it and nothing made public. Narrowing
+    it to the owner would quietly blank widgets in pictures that arrive today.
+
+    Never for writing: `need_view_only` false is somebody asking to change
+    something, and a pass exists to take a photograph.
+    """
+    if not need_view_only:
+        return False
+
+    target = getattr(user, "object", None)
+    if target is None:
+        return False
+
+    if type(obj) is type(target) and obj.id == target.id:
+        return True
+
+    if isinstance(target, models.Dashboard) and isinstance(obj, models.Query):
+        return target.id in obj.dashboard_ids
+
+    return False

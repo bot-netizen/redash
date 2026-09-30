@@ -1073,6 +1073,25 @@ class Query(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model):
         return ParameterizedQuery(self.query_text, self.parameters, self.org)
 
     @property
+    def dashboard_ids(self):
+        """
+        The dashboards this query is drawn on.
+
+        The same walk as `dashboard_api_keys` below, minus the api_keys table:
+        that one can only answer for dashboards somebody has shared, and a
+        render pass has to work for the ones nobody has.
+        """
+        rows = db.session.execute(
+            """SELECT DISTINCT dashboards.id
+               FROM dashboards
+               JOIN widgets ON dashboards.id = widgets.dashboard_id
+               JOIN visualizations ON widgets.visualization_id = visualizations.id
+               WHERE visualizations.query_id = :id""",
+            {"id": self.id},
+        ).fetchall()
+        return [row[0] for row in rows]
+
+    @property
     def dashboard_api_keys(self):
         query = """SELECT api_keys.api_key
                    FROM api_keys
