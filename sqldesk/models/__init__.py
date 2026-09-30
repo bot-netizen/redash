@@ -1999,6 +1999,92 @@ class NotificationDestination(BelongsToOrgMixin, db.Model):
         return self.destination.notify(alert, query, user, new_state, app, host, metadata, self.options)
 
 
+@generic_repr("id", "dashboard_id", "user_id", "format", "active")
+class DashboardSubscription(TimestampMixin, BelongsToOrgMixin, db.Model):
+    """
+    A dashboard, mailed to some people, on a schedule.
+
+    Named for the dashboard because `Alert.subscriptions` is already something
+    else -- who hears about an alert. These two have nothing to do with each
+    other and sharing a word would cost somebody an afternoon.
+
+    What it sends is the latest stored results, and the email says how old
+    they are. Refreshing every query first would turn a subscription into a
+    warehouse bill nobody asked for; an owner who wants fresh numbers gives
+    the queries a schedule.
+    """
+
+    PNG = "png"
+    PDF = "pdf"
+    FORMATS = (PNG, PDF)
+
+    id = primary_key("DashboardSubscription")
+    org_id = Column(key_type("Organization"), db.ForeignKey("organizations.id"))
+    org = db.relationship(Organization, backref="dashboard_subscriptions")
+
+    dashboard_id = Column(key_type("Dashboard"), db.ForeignKey("dashboards.id"))
+    dashboard = db.relationship(Dashboard, backref=backref("subscriptions", cascade="all, delete-orphan"))
+
+    #: Whose sight of the dashboard this is. The picture is rendered as them,
+    #: and it stops being sent if they lose access.
+    user_id = Column(key_type("User"), db.ForeignKey("users.id"))
+    user = db.relationship(User, backref="dashboard_subscriptions")
+
+    #: The same shape a query's schedule has -- interval, time, day_of_week --
+    #: so the two are described the same way in the interface and answered by
+    #: the same `should_schedule_next`.
+    schedule = Column(MutableDict.as_mutable(JSONB), nullable=True)
+
+    format = Column(db.String(10), default=PNG)
+
+    #: User ids, never addresses: a subscription that could name an address
+    #: would be a way to mail a dashboard's contents anywhere. Stored as a
+    #: list rather than a join table because the only question ever asked of
+    #: it is "who, now" -- and that has to be re-answered at send time anyway,
+    #: since access changes and people leave.
+    recipient_ids = Column(MutableList.as_mutable(JSONB), default=list)
+
+    active = Column(db.Boolean, default=True, nullable=False)
+    last_sent_at = Column(db.DateTime(True), nullable=True)
+
+    #: Why the last send did not happen, shown to the owner. Cleared by a send
+    #: that works, so it never describes a problem that has gone away.
+    last_error = Column(db.Text, nullable=True)
+
+    __tablename__ = "dashboard_subscriptions"
+
+    def __str__(self):
+        return "%s: %s" % (self.id, self.dashboard_id)
+
+    @classmethod
+    def all(cls, org):
+        return cls.query.filter(cls.org == org)
+
+    @classmethod
+    def for_dashboard(cls, dashboard):
+        return cls.query.filter(cls.dashboard_id == dashboard.id).order_by(cls.id)
+
+    def recipients(self):
+        """
+        The people who would be mailed, as they are now.
+
+        Resolved rather than stored, so somebody deleted or disabled since
+        simply stops being one. Whether each may *see* the dashboard is a
+        separate question, asked at send time by the sender -- this is only
+        who was asked for.
+        """
+        if not self.recipient_ids:
+            return []
+        return (
+            User.query.filter(
+                User.id.in_(self.recipient_ids),
+                User.org_id == self.org_id,
+            )
+            .order_by(User.id)
+            .all()
+        )
+
+
 @generic_repr("id", "user_id", "destination_id", "alert_id")
 class AlertSubscription(TimestampMixin, db.Model):
     id = primary_key("AlertSubscription")

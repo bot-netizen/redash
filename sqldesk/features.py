@@ -43,9 +43,17 @@ def _mcp_is_on():
     return settings.FEATURE_AI
 
 
+def _rendering_is_on():
+    # Nothing can send a dashboard without something to draw it, and the
+    # renderer is a separate, optional container. Offering the feature where
+    # there is no renderer would be offering a button that cannot work.
+    return settings.FEATURE_ALERT_SCREENSHOTS and bool(settings.SCREENSHOT_URL)
+
+
 USE_MCP = "use_mcp"
 MANAGE_CATALOG = "manage_catalog"
 MANAGE_LIVE_DASHBOARDS = "manage_live_dashboards"
+SEND_DASHBOARDS = "send_dashboards"
 
 #: Every feature, whether or not this install offers it.
 FEATURES = (
@@ -65,6 +73,12 @@ FEATURES = (
         "Curate the catalog",
         "Describe tables and agree the measures an AI client is told about.",
         enabled=_mcp_is_on,
+    ),
+    Feature(
+        SEND_DASHBOARDS,
+        "Send dashboards",
+        "Mail a dashboard to colleagues on a schedule, and share one to Slack.",
+        enabled=_rendering_is_on,
     ),
 )
 
