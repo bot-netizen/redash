@@ -86,6 +86,10 @@ from sqldesk.handlers.query_snippets import (
     QuerySnippetResource,
 )
 from sqldesk.handlers.settings import OrganizationSettings
+from sqldesk.handlers.subscriptions import (
+    DashboardSubscriptionListResource,
+    DashboardSubscriptionResource,
+)
 from sqldesk.handlers.uploads import (
     DataSourceUploadListResource,
     DataSourceUploadResource,
@@ -267,6 +271,16 @@ api.add_org_resource(
     QueryDropdownsResource,
     "/api/queries/<query_id>/dropdowns/<dropdown_query_id>",
     endpoint="query_result_dropdowns",
+)
+api.add_org_resource(
+    DashboardSubscriptionListResource,
+    "/api/dashboards/<dashboard_id>/subscriptions",
+    endpoint="dashboard_subscriptions",
+)
+api.add_org_resource(
+    DashboardSubscriptionResource,
+    "/api/subscriptions/<subscription_id>",
+    endpoint="dashboard_subscription",
 )
 api.add_org_resource(
     QueryResultResource,

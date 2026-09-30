@@ -62,6 +62,28 @@ def public_dashboard(dashboard):
     return dashboard_dict
 
 
+def serialize_dashboard_subscription(subscription):
+    """
+    A subscription as the dashboard page shows it.
+
+    Recipients are named rather than listed as ids: the page shows who gets
+    this, and it has to be readable. Resolved now, so somebody who has left
+    is simply not in the list.
+    """
+    return {
+        "id": subscription.id,
+        "dashboard_id": subscription.dashboard_id,
+        "user": subscription.user.to_dict() if subscription.user else None,
+        "schedule": subscription.schedule,
+        "format": subscription.format,
+        "recipients": [{"id": u.id, "name": u.name, "email": u.email} for u in subscription.recipients()],
+        "active": subscription.active,
+        "last_sent_at": subscription.last_sent_at,
+        "last_error": subscription.last_error,
+        "created_at": subscription.created_at,
+    }
+
+
 class Serializer:
     pass
 

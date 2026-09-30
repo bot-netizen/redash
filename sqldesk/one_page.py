@@ -73,6 +73,9 @@ def too_big_to_send(widgets):
     Kept word-for-word close to the client's message: somebody who has met
     one of these should recognise the other.
     """
+    # `dashboard.widgets` is a dynamic relationship, not a list, and a caller
+    # holding one should not have to remember that.
+    widgets = list(widgets)
     count = len(widgets)
     height = grid_height(widgets)
 
