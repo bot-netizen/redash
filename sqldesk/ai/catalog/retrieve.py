@@ -9,7 +9,14 @@ the work, which is why the harvester comes first.
 
 from sqlalchemy import or_
 
-from sqldesk.models import CatalogColumn, CatalogRelationship, CatalogTable, db
+from sqldesk.models import (
+    MEASURE_APPROVED,
+    CatalogColumn,
+    CatalogMeasure,
+    CatalogRelationship,
+    CatalogTable,
+    db,
+)
 
 DEFAULT_LIMIT = 8
 
@@ -152,5 +159,48 @@ def context_for(org, question, data_source=None, limit=DEFAULT_LIMIT, data_sourc
                 "joins": edges.get(table.name, []),
             }
             for table in ordered
-        ]
+        ],
+        "measures": approved_measures_for(ordered),
     }
+
+
+def approved_measures_for(tables):
+    """
+    The measures somebody has signed off on, for these tables.
+
+    Only approved ones. A proposed measure is a guess mined from somebody's
+    SQL, and a guess about what "revenue" means is worse than silence --
+    a wrong revenue number is still a revenue number, and it arrives with
+    the authority of having been asked for.
+    """
+    if not tables:
+        return []
+
+    by_source = {}
+    for table in tables:
+        by_source.setdefault(table.data_source_id, set()).add(table.name)
+
+    found = []
+    for source_id, names in by_source.items():
+        found.extend(
+            CatalogMeasure.query.filter(
+                CatalogMeasure.data_source_id == source_id,
+                CatalogMeasure.table_name.in_(names),
+                CatalogMeasure.status == MEASURE_APPROVED,
+            ).all()
+        )
+
+    # The ones most people compute first: a definition four teams wrote
+    # independently is a different proposition from one somebody tried once.
+    found.sort(key=lambda m: (-(m.usage_count or 0), m.name or ""))
+    return [
+        {
+            "name": measure.name,
+            "kind": measure.kind,
+            "column": measure.column_name,
+            "table": measure.table_name,
+            "description": measure.description,
+            "expression": "{}({})".format((measure.kind or "").upper(), measure.column_name),
+        }
+        for measure in found
+    ]

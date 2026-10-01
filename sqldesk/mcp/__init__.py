@@ -51,6 +51,10 @@ EXPLAIN_TIMEOUT = 20
 #: the web process, and every search term is another ILIKE.
 MAX_SQL = 100000
 MAX_TERMS = 12
+
+#: A client asking for every agreed measure should get a usable list, not a
+#: dump: past this the answer stops being something a model reads.
+MAX_MEASURES = 50
 MAX_NAMES = 20
 
 logger = logging.getLogger(__name__)
@@ -88,6 +92,26 @@ TOOLS = [
                 "data_source": {"type": "string", "description": "Restrict to one data source by name."},
             },
             "required": ["question"],
+        },
+    },
+    {
+        "name": "find_measures",
+        "title": "The numbers this organization has agreed on",
+        "description": (
+            "The measures a curator has signed off on -- what each one is called, what it computes and "
+            "which table it comes from. Ask before writing an aggregate of your own: if a measure exists "
+            "for what you need, using it is the difference between the organization's number and a "
+            "plausible one."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "question": {
+                    "type": "string",
+                    "description": "What you are trying to measure, in plain English. Omit for all of them.",
+                },
+                "data_source": {"type": "string", "description": "Restrict to one data source by name."},
+            },
         },
     },
     {
@@ -531,10 +555,89 @@ def tool_find_context(user, org, arguments):
     if source is not None and source.description:
         lines.append("-- {}".format(" ".join(source.description.split())))
         lines.append("")
+
+    # Then what the organization has agreed these numbers mean, before the
+    # tables they come from. A model that reads the schema first will write
+    # its own definition of revenue; one that is told the agreed definition
+    # first will use it. The ordering is the whole point -- a semantic layer
+    # that arrives after the raw columns is a footnote.
+    lines.extend(_measure_lines(found.get("measures")))
+
     for table in found["tables"]:
         lines.append(table["card"] or table["name"])
         lines.append("")
     return _text("\n".join(lines).strip())
+
+
+def _measure_lines(measures):
+    """Agreed measures, as a block a model reads before any schema."""
+    if not measures:
+        return []
+    lines = ["-- Agreed measures. Use these rather than writing your own."]
+    for measure in measures:
+        described = " -- {}".format(" ".join(measure["description"].split())) if measure.get("description") else ""
+        lines.append("{} = {} on {}{}".format(measure["name"], measure["expression"], measure["table"], described))
+    lines.append("")
+    return lines
+
+
+def tool_find_measures(user, org, arguments):
+    arguments = arguments or {}
+    question = arguments.get("question") or ""
+    if not isinstance(question, str):
+        raise McpError(INVALID_PARAMS, "`question` must be text.")
+    if len(question) > MAX_QUESTION:
+        raise McpError(INVALID_PARAMS, "`question` is over {} characters.".format(MAX_QUESTION))
+
+    source = _resolve_source(user, org, arguments.get("data_source"))
+    readable = [s.id for s in _readable_sources(user, org)]
+    if not readable:
+        return _text("You have access to no data sources.")
+
+    query = models.CatalogMeasure.query.filter(
+        models.CatalogMeasure.org == org,
+        models.CatalogMeasure.data_source_id.in_(readable),
+        models.CatalogMeasure.status == models.MEASURE_APPROVED,
+    )
+    if source is not None:
+        query = query.filter(models.CatalogMeasure.data_source_id == source.id)
+
+    # Matched on the words of the question, against the measure's own name
+    # and description -- which is what a curator wrote it for. A question
+    # with no words asks for all of them, which is a reasonable thing for a
+    # client to do once and keep.
+    terms = [word for word in re.findall(r"[a-zA-Z0-9_]+", question.lower()) if len(word) > 2][:MAX_TERMS]
+    if terms:
+        matches = [
+            models.db.or_(
+                models.CatalogMeasure.name.ilike("%{}%".format(term)),
+                models.CatalogMeasure.description.ilike("%{}%".format(term)),
+                models.CatalogMeasure.table_name.ilike("%{}%".format(term)),
+            )
+            for term in terms
+        ]
+        query = query.filter(models.db.or_(*matches))
+
+    found = query.order_by(models.CatalogMeasure.usage_count.desc().nullslast()).limit(MAX_MEASURES).all()
+    if not found:
+        return _text(
+            "No agreed measures match. A curator approves them on the Catalog page; "
+            "until then there are none to use, and you should write the aggregate yourself."
+        )
+
+    lines = []
+    for measure in found:
+        described = " -- {}".format(" ".join(measure.description.split())) if measure.description else ""
+        lines.append(
+            "{} = {}({}) on {}{}".format(
+                measure.name,
+                (measure.kind or "").upper(),
+                measure.column_name,
+                measure.table_name,
+                described,
+            )
+        )
+    return _text("\n".join(lines))
 
 
 def tool_expand_table(user, org, arguments):
@@ -957,6 +1060,7 @@ def tool_run_query(user, org, arguments):
 
 HANDLERS = {
     "find_context": tool_find_context,
+    "find_measures": tool_find_measures,
     "find_queries": tool_find_queries,
     "find_dashboards": tool_find_dashboards,
     "explain_query": tool_explain_query,

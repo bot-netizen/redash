@@ -1006,3 +1006,164 @@ class TestRunningNeedsWhatTheEditorNeeds(McpTestCase):
             body = self.call("run_query")
         self.assertIn("paused (migrating)", body["error"]["message"])
         worker.assert_not_called()
+
+
+class MeasureTestCase(McpTestCase):
+    """
+    The point of a semantic layer is that agreed meaning comes first. A model
+    that reads the schema before it reads the definitions will write its own
+    definition of revenue, and the wrong revenue number is still a revenue
+    number -- it arrives with all the authority of having been asked for.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.source = self.factory.data_source
+        table = models.CatalogTable(
+            org=self.factory.org,
+            data_source=self.source,
+            name="orders",
+            card="orders(id int, amount numeric, region text)",
+            usage_count=9,
+        )
+        models.db.session.add(table)
+        models.db.session.commit()
+
+    def call(self, name, arguments=None):
+        body = json.loads(self.post(rpc("tools/call", {"name": name, "arguments": arguments or {}})).data)
+        return body["result"]["content"][0]["text"]
+
+    def measure(self, name, status=models.MEASURE_APPROVED, **overrides):
+        fields = {
+            "org": self.factory.org,
+            "data_source": self.source,
+            "table_name": "orders",
+            "name": name,
+            "kind": "sum",
+            "column_name": "amount",
+            "usage_count": 3,
+            "status": status,
+        }
+        fields.update(overrides)
+        measure = models.CatalogMeasure(**fields)
+        models.db.session.add(measure)
+        models.db.session.commit()
+        return measure
+
+
+class TestFindContextLeadsWithAgreedMeasures(MeasureTestCase):
+    def test_an_agreed_measure_comes_before_the_schema(self):
+        self.measure("gross_revenue", description="Before refunds.")
+
+        text = self.call("find_context", {"question": "orders revenue"})
+
+        self.assertIn("gross_revenue", text)
+        self.assertLess(
+            text.index("gross_revenue"),
+            text.index("orders(id int"),
+            "the agreed measure has to be read before the columns, or it is a footnote",
+        )
+
+    def test_and_says_what_it_computes(self):
+        self.measure("gross_revenue", description="Before refunds.")
+
+        text = self.call("find_context", {"question": "orders revenue"})
+
+        self.assertIn("SUM(amount)", text)
+        self.assertIn("Before refunds.", text)
+
+    def test_a_merely_proposed_measure_is_not_offered(self):
+        # Mined from somebody's SQL and signed off by nobody. Silence beats a
+        # guess about what a number means.
+        self.measure("maybe_revenue", status=models.MEASURE_PROPOSED)
+
+        self.assertNotIn("maybe_revenue", self.call("find_context", {"question": "orders revenue"}))
+
+    def test_nor_is_a_denied_one(self):
+        self.measure("wrong_revenue", status=models.MEASURE_DENIED)
+
+        self.assertNotIn("wrong_revenue", self.call("find_context", {"question": "orders revenue"}))
+
+    def test_the_ones_most_people_compute_come_first(self):
+        # Named so that alphabetical order is the *opposite* of usage order.
+        # The first version of this test used `common_total` and `rare_total`,
+        # which sort the right way by accident -- it passed with the usage
+        # ranking replaced by a sort on the name.
+        self.measure("a_rare_total", usage_count=1)
+        self.measure("z_common_total", usage_count=40)
+
+        text = self.call("find_context", {"question": "orders revenue"})
+
+        self.assertLess(text.index("z_common_total"), text.index("a_rare_total"))
+
+
+class TestFindMeasures(MeasureTestCase):
+    def test_it_finds_one_by_what_it_is_called(self):
+        self.measure("gross_revenue")
+
+        self.assertIn("gross_revenue", self.call("find_measures", {"question": "revenue"}))
+
+    def test_and_by_what_the_curator_wrote_about_it(self):
+        # The description is where a curator says what the thing means, and a
+        # question will often use those words rather than the column's.
+        self.measure("gmv", description="Takings before refunds are deducted.")
+
+        self.assertIn("gmv", self.call("find_measures", {"question": "takings"}))
+
+    def test_with_no_question_it_lists_them_all(self):
+        self.measure("gross_revenue")
+        self.measure("order_count", kind="count", column_name="id")
+
+        text = self.call("find_measures", {})
+
+        self.assertIn("gross_revenue", text)
+        self.assertIn("order_count", text)
+
+    def test_a_proposed_one_is_never_listed(self):
+        self.measure("maybe_revenue", status=models.MEASURE_PROPOSED)
+
+        self.assertNotIn("maybe_revenue", self.call("find_measures", {}))
+
+    def test_the_ones_most_people_compute_are_listed_first(self):
+        # Alphabetically backwards on purpose: a list truncated at fifty has
+        # to drop the measures nobody computes, not the ones late in the
+        # alphabet.
+        self.measure("a_rare_total", usage_count=1)
+        self.measure("z_common_total", usage_count=40)
+
+        text = self.call("find_measures", {"question": "total"})
+
+        self.assertLess(text.index("z_common_total"), text.index("a_rare_total"))
+
+    def test_when_there_are_none_it_says_to_write_the_aggregate_yourself(self):
+        text = self.call("find_measures", {"question": "revenue"})
+
+        self.assertIn("No agreed measures", text)
+        self.assertIn("yourself", text)
+
+    def test_a_measure_on_a_source_this_person_cannot_read_is_not_shown(self):
+        # A measure names a table and a column, which is itself something a
+        # group may not be allowed to see.
+        other_group = self.factory.create_group(name="Theirs")
+        models.db.session.add(other_group)
+        models.db.session.commit()
+        theirs = self.factory.create_data_source(group=other_group, name="theirs")
+        models.db.session.add(
+            models.CatalogMeasure(
+                org=self.factory.org,
+                data_source=theirs,
+                table_name="secrets",
+                name="their_revenue",
+                kind="sum",
+                column_name="amount",
+                status=models.MEASURE_APPROVED,
+            )
+        )
+        models.db.session.commit()
+
+        self.assertNotIn("their_revenue", self.call("find_measures", {}))
+
+    def test_the_tool_is_offered_to_clients(self):
+        body = json.loads(self.post(rpc("tools/list")).data)
+
+        self.assertIn("find_measures", [tool["name"] for tool in body["result"]["tools"]])
