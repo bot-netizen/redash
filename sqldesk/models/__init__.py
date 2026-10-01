@@ -1774,6 +1774,51 @@ class CatalogMeasure(TimestampMixin, BelongsToOrgMixin, db.Model):
     )
 
 
+class CatalogVerifiedQuery(TimestampMixin, BelongsToOrgMixin, db.Model):
+    """
+    A saved query a curator says is the right answer to a question.
+
+    The strongest thing a catalog can offer. A measure says what a number
+    means; a verified query says "this whole question, including which rows
+    to exclude and which join is the right one, has been answered correctly,
+    and a person checked". Nothing a schema contains comes close.
+
+    Verification is of *particular SQL*, which is why `query_hash` is stored
+    alongside. A curator who verifies query #42 is making a claim about the
+    text they read. If somebody then edits it, the claim is about SQL that no
+    longer exists -- so the record stays, saying when it was made and about
+    what, and stops counting as verified until a person looks again. An
+    editable "verified" badge is worse than no badge: it is a claim with
+    nobody behind it.
+
+    `question` is the question in the curator's words, which is often not the
+    query's name. Names drift towards the technical ("daily_active_v3"); the
+    question is what somebody would type.
+    """
+
+    id = primary_key("CatalogVerifiedQuery")
+    org_id = Column(key_type("Organization"), db.ForeignKey("organizations.id"))
+    org = db.relationship(Organization, backref="verified_queries")
+    query_id = Column(key_type("Query"), db.ForeignKey("queries.id", ondelete="CASCADE"))
+    query_rel = db.relationship("Query", backref=db.backref("verification", uselist=False, cascade="all, delete"))
+    verified_by_id = Column(key_type("User"), db.ForeignKey("users.id"))
+    verified_by = db.relationship(User, foreign_keys=[verified_by_id])
+    verified_at = Column(db.DateTime(True), default=db.func.now(), nullable=False)
+    #: The query's hash when a person read it and said yes. Compared, never
+    #: trusted on its own.
+    query_hash = Column(db.String(32), nullable=False)
+    question = Column(db.Text, nullable=True)
+    note = Column(db.Text, nullable=True)
+
+    __tablename__ = "catalog_verified_queries"
+    __table_args__ = (db.Index("catalog_verified_queries_query_id", "query_id", unique=True),)
+
+    @property
+    def still_current(self):
+        """Whether the SQL is the SQL that was verified."""
+        return self.query_rel is not None and self.query_rel.query_hash == self.query_hash
+
+
 class CatalogRelationship(TimestampMixin, BelongsToOrgMixin, db.Model):
     """
     A join somebody actually wrote, and how often.

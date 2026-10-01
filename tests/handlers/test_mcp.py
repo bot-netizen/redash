@@ -1,3 +1,4 @@
+import datetime
 import json
 from unittest import mock
 
@@ -1167,3 +1168,241 @@ class TestFindMeasures(MeasureTestCase):
         body = json.loads(self.post(rpc("tools/list")).data)
 
         self.assertIn("find_measures", [tool["name"] for tool in body["result"]["tools"]])
+
+
+class TestVerifiedQueriesComeFirst(McpTestCase):
+    """
+    A verified query is a person saying "this whole question -- which rows to
+    exclude, which join is right -- has been answered correctly". Nothing a
+    schema contains comes close, so it has to outrank recency.
+    """
+
+    def call(self, name, arguments=None):
+        body = json.loads(self.post(rpc("tools/call", {"name": name, "arguments": arguments or {}})).data)
+        return body["result"]["content"][0]["text"]
+
+    def query(self, name, text="select 1", updated_days_ago=0):
+        """
+        A saved query, optionally aged.
+
+        Ageing matters: two queries created in one test share an `updated_at`
+        to the microsecond, so the recency tie breaks on physical row order
+        and an ordering test passes whatever the ORDER BY says. The first
+        version of the test below did exactly that -- it survived the ranking
+        being deleted. Written through SQL because `updated_at` carries an
+        `onupdate`, which would overwrite an assignment.
+        """
+        query = self.factory.create_query(name=name, query_text=text, is_draft=False)
+        models.db.session.commit()
+        if updated_days_ago:
+            models.db.session.execute(
+                "update queries set updated_at = now() - interval ':days days' where id = :id".replace(
+                    ":days", str(int(updated_days_ago))
+                ),
+                {"id": query.id},
+            )
+            models.db.session.commit()
+        return query
+
+    def verify(self, query, **fields):
+        # `query_id` rather than `query_rel`: assigning the relationship
+        # dirties the query, and the commit then bumps its `updated_at`. That
+        # made the confirmed query the most recent one too, so the ordering
+        # tests passed on recency alone and survived the ranking being deleted.
+        row = models.CatalogVerifiedQuery(
+            org=self.factory.org,
+            query_id=query.id,
+            verified_by=self.factory.user,
+            query_hash=query.query_hash,
+            **fields,
+        )
+        models.db.session.add(row)
+        models.db.session.commit()
+        return row
+
+    def test_it_outranks_a_more_recent_unverified_one(self):
+        confirmed = self.query("revenue by region, checked", updated_days_ago=30)
+        self.query("revenue by region, draft attempt")  # today, and nobody has read it
+        self.verify(confirmed)
+
+        text = self.call("find_queries", {"question": "revenue by region"})
+
+        self.assertLess(text.index("checked"), text.index("draft attempt"))
+
+    def test_a_confirmation_that_has_gone_stale_does_not_keep_the_top_spot(self):
+        # Ranking has to read the hash too, not only the id: a query confirmed
+        # a year ago and rewritten last week must take its place by date like
+        # anything else.
+        stale = self.query("revenue by region, once checked", text="select 1", updated_days_ago=30)
+        self.verify(stale)
+        stale.query_text = "select 2"
+        stale.query_hash = models.utils.gen_query_hash(stale.query_text)
+        models.db.session.commit()
+        self.query("revenue by region, newer")
+
+        text = self.call("find_queries", {"question": "revenue by region"})
+
+        self.assertLess(text.index("newer"), text.index("once checked"))
+
+    def test_nor_does_another_organisations_confirmation_win_it(self):
+        ours = self.query("revenue by region, ours", updated_days_ago=30)
+        other = self.factory.create_org()
+        models.db.session.add(
+            models.CatalogVerifiedQuery(
+                org=other,
+                query_id=ours.id,
+                verified_by=self.factory.user,
+                query_hash=ours.query_hash,
+            )
+        )
+        models.db.session.commit()
+        self.query("revenue by region, newer")
+
+        text = self.call("find_queries", {"question": "revenue by region"})
+
+        self.assertLess(text.index("newer"), text.index("ours"))
+
+    def test_and_says_so(self):
+        self.verify(self.query("revenue by region"))
+
+        self.assertIn("VERIFIED", self.call("find_queries", {"question": "revenue"}))
+
+    def test_an_unverified_one_is_not_labelled(self):
+        self.query("revenue by region")
+
+        self.assertNotIn("VERIFIED", self.call("find_queries", {"question": "revenue"}))
+
+    def test_it_names_who_confirmed_it(self):
+        self.verify(self.query("revenue by region"))
+
+        self.assertIn(self.factory.user.name, self.call("find_queries", {"question": "revenue"}))
+
+    def test_and_the_question_they_said_it_answers(self):
+        # The query's name drifts towards the technical; the question is what
+        # somebody would actually type.
+        self.verify(self.query("daily_active_v3"), question="How many people used it yesterday?")
+
+        text = self.call("find_queries", {"question": "daily_active_v3"})
+
+        self.assertIn("How many people used it yesterday?", text)
+
+    def test_a_query_edited_since_is_no_longer_verified(self):
+        query = self.query("revenue by region", text="select 1")
+        self.verify(query)
+        query.query_text = "select 2"
+        query.query_hash = models.utils.gen_query_hash(query.query_text)
+        models.db.session.commit()
+
+        self.assertNotIn("VERIFIED", self.call("find_queries", {"question": "revenue"}))
+
+    def test_and_is_not_described_as_stale_either(self):
+        # Same rule as the measures: a model cannot weigh "verified, but the
+        # SQL changed" -- it reads the first word. The curator is told, on a
+        # page where it can be acted on.
+        query = self.query("revenue by region", text="select 1")
+        self.verify(query, question="What did we take?")
+        query.query_text = "select 2"
+        query.query_hash = models.utils.gen_query_hash(query.query_text)
+        models.db.session.commit()
+
+        text = self.call("find_queries", {"question": "revenue"})
+
+        self.assertIn("revenue by region", text)
+        self.assertNotIn("What did we take?", text)
+
+    def test_another_organisations_confirmation_does_not_label_our_query(self):
+        query = self.query("revenue by region")
+        other = self.factory.create_org()
+        models.db.session.add(
+            models.CatalogVerifiedQuery(
+                org=other,
+                query_id=query.id,
+                verified_by=self.factory.user,
+                query_hash=query.query_hash,
+            )
+        )
+        models.db.session.commit()
+
+        self.assertNotIn("VERIFIED", self.call("find_queries", {"question": "revenue"}))
+
+
+class TestSayingTheCatalogIsOld(McpTestCase):
+    """
+    A stale catalog is dangerous in a way an empty one is not. Every card is
+    still there, perfectly formatted, describing last month's warehouse -- and
+    a model handed it writes confident SQL against a column that was renamed.
+    The error it gets back, if any, is about syntax rather than about the
+    catalog being old.
+    """
+
+    def call(self, name, arguments=None):
+        body = json.loads(self.post(rpc("tools/call", {"name": name, "arguments": arguments or {}})).data)
+        return body["result"]["content"][0]["text"]
+
+    def harvested(self, days_ago, source=None, name="orders"):
+        source = source or self.factory.data_source
+        models.db.session.add(
+            models.CatalogTable(
+                org=self.factory.org,
+                data_source=source,
+                name=name,
+                card="{}(id int, amount numeric)".format(name),
+                usage_count=5,
+                harvested_at=datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=days_ago),
+            )
+        )
+        models.db.session.commit()
+        return source
+
+    def test_a_fresh_catalog_says_nothing(self):
+        # A note on every single answer is a note nobody reads by the third.
+        with mock.patch("sqldesk.settings.CATALOG_HARVEST_SCHEDULE", 24):
+            self.harvested(0)
+
+            self.assertNotIn("Warning", self.call("find_context", {"question": "orders"}))
+
+    def test_an_old_one_warns_before_the_schema(self):
+        with mock.patch("sqldesk.settings.CATALOG_HARVEST_SCHEDULE", 24):
+            self.harvested(10)
+
+            text = self.call("find_context", {"question": "orders"})
+
+            self.assertIn("has not been harvested", text)
+            self.assertLess(text.index("Warning"), text.index("orders(id int"))
+
+    def test_and_says_how_long_and_which_source(self):
+        with mock.patch("sqldesk.settings.CATALOG_HARVEST_SCHEDULE", 24):
+            source = self.harvested(10)
+
+            text = self.call("find_context", {"question": "orders"})
+
+            self.assertIn("10 days", text)
+            self.assertIn(source.name, text)
+
+    def test_the_answer_itself_is_still_given(self):
+        # A warning that replaced the answer would be worse than no warning.
+        with mock.patch("sqldesk.settings.CATALOG_HARVEST_SCHEDULE", 24):
+            self.harvested(10)
+
+            self.assertIn("orders(id int", self.call("find_context", {"question": "orders"}))
+
+    def test_a_question_narrowed_to_a_fresh_source_is_not_warned(self):
+        # Warning about a stale source nobody asked about trains people to
+        # ignore the warning.
+        with mock.patch("sqldesk.settings.CATALOG_HARVEST_SCHEDULE", 24):
+            fresh = self.factory.create_data_source(name="Fresh", group=self.factory.default_group)
+            self.harvested(100)
+            self.harvested(0, source=fresh, name="invoices")
+
+            text = self.call("find_context", {"question": "invoices", "data_source": "Fresh"})
+
+            self.assertNotIn("Warning", text)
+
+    def test_a_broken_freshness_check_does_not_cost_the_answer(self):
+        with mock.patch("sqldesk.settings.CATALOG_HARVEST_SCHEDULE", 24):
+            self.harvested(10)
+            with mock.patch("sqldesk.ai.catalog.freshness.stale_sources", side_effect=RuntimeError("no")):
+                text = self.call("find_context", {"question": "orders"})
+
+            self.assertIn("orders(id int", text)
+            self.assertNotIn("Warning", text)

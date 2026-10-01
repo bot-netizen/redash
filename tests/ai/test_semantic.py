@@ -5,6 +5,7 @@ from unittest import mock
 import yaml
 from sqlalchemy import event
 
+from sqldesk import models
 from sqldesk.ai.catalog.harvest import harvest_data_source
 from sqldesk.ai.catalog.semantic import cube_type, export_catalog, import_catalog
 from sqldesk.models import (
@@ -380,3 +381,100 @@ class TestExportedFileShape(HarvestHelpers):
         description_lines = [line for line in text.splitlines() if line.strip().startswith("description:")]
         self.assertEqual(1, len(description_lines))
         self.assertIn(long_text, description_lines[0])
+
+
+class TestExportingVerifiedQueries(TestExport):
+    """
+    Beside the cubes, not inside them: cube has no idea of a reviewed answer,
+    and inventing a key in its namespace makes files that stop loading the
+    day cube uses that name for something else.
+    """
+
+    def _verified_file(self, directory):
+        for root, _dirs, names in os.walk(directory):
+            for name in names:
+                if name == "verified_queries.yml":
+                    with open(os.path.join(root, name)) as handle:
+                        return yaml.safe_load(handle)["verified_queries"]
+        return None
+
+    def _confirm(self, query, **fields):
+        row = models.CatalogVerifiedQuery(
+            org=self.factory.org,
+            query_id=query.id,
+            verified_by=self.factory.user,
+            query_hash=query.query_hash,
+            **fields,
+        )
+        db.session.add(row)
+        db.session.commit()
+        return row
+
+    def test_a_confirmed_query_is_written_with_its_sql(self):
+        source = self._harvest()
+        query = self._ran(source, "select region, sum(amount) from orders group by 1")
+        db.session.commit()
+        self._confirm(query, question="What did each region take?", note="Excludes internal orders.")
+
+        written = self._verified_file(self._export(source))
+
+        self.assertEqual(1, len(written))
+        self.assertEqual("What did each region take?", written[0]["question"])
+        self.assertEqual("Excludes internal orders.", written[0]["note"])
+        self.assertIn("sum(amount)", written[0]["sql"])
+        self.assertEqual(self.factory.user.name, written[0]["verified_by"])
+
+    def test_with_no_question_the_query_name_stands_in(self):
+        source = self._harvest()
+        query = self._ran(source, "select 1")
+        query.name = "Revenue by region"
+        db.session.commit()
+        self._confirm(query)
+
+        self.assertEqual("Revenue by region", self._verified_file(self._export(source))[0]["question"])
+
+    def test_no_file_is_written_when_nothing_is_confirmed(self):
+        # An empty file in a directory people read as a diff is noise that
+        # never goes away.
+        source = self._harvest()
+        self._ran(source, "select 1")
+        db.session.commit()
+
+        self.assertIsNone(self._verified_file(self._export(source)))
+
+    def test_a_query_edited_since_is_left_out(self):
+        # An export is something people approve. A line claiming a query is
+        # verified when it has been edited since would be the one claim in
+        # the file that is false.
+        source = self._harvest()
+        query = self._ran(source, "select 1")
+        db.session.commit()
+        self._confirm(query)
+        query.query_text = "select 2"
+        query.query_hash = models.utils.gen_query_hash(query.query_text)
+        db.session.commit()
+
+        self.assertIsNone(self._verified_file(self._export(source)))
+
+    def test_the_cube_files_are_untouched_by_it(self):
+        # The point of a separate file: adding this must not change a byte of
+        # what cube reads.
+        source = self._harvest()
+        query = self._ran(source, "select 1")
+        db.session.commit()
+        before = self._orders(self._export(source))
+
+        self._confirm(query, question="Anything")
+
+        self.assertEqual(before, self._orders(self._export(source)))
+
+    def test_it_is_valid_yaml_that_round_trips(self):
+        source = self._harvest()
+        query = self._ran(source, "select 'it''s'\n-- a comment with: a colon\nfrom orders")
+        db.session.commit()
+        self._confirm(query, question="Does quoting survive?")
+
+        written = self._verified_file(self._export(source))
+
+        self.assertIn("it''s", written[0]["sql"])
+        self.assertIn("a comment with: a colon", written[0]["sql"])

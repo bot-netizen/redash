@@ -15,6 +15,9 @@ from sqldesk.models import (
     CatalogMeasure,
     CatalogRelationship,
     CatalogTable,
+    CatalogVerifiedQuery,
+    Query,
+    Visualization,
     db,
 )
 
@@ -204,3 +207,53 @@ def approved_measures_for(tables):
         }
         for measure in found
     ]
+
+
+def find_saved_queries(org, question, data_source_ids, limit=10):
+    """
+    Saved queries that may already answer this, confirmed ones first.
+
+    Here rather than in the MCP handler because retrieval is retrieval: the
+    eval command has to measure what a client is actually given, and a copy
+    of the ranking in a second place is a copy that drifts. The handler turns
+    these rows into text; choosing them is this module's job.
+
+    "Confirmed" means a curator read *this* SQL -- the join matches the hash
+    as well as the id -- so a query somebody confirmed and then edited sorts
+    with the rest and is labelled like the rest.
+    """
+    readable = set(data_source_ids or [])
+    if not readable:
+        return []
+
+    matches = [
+        or_(
+            Query.name.ilike(like),
+            Query.description.ilike(like),
+            Query.visualizations.any(or_(Visualization.name.ilike(like), Visualization.description.ilike(like))),
+        )
+        for like in ("%{}%".format(term) for term in _terms(question))
+    ]
+    if not matches:
+        return []
+
+    return (
+        Query.query.outerjoin(
+            CatalogVerifiedQuery,
+            db.and_(
+                CatalogVerifiedQuery.query_id == Query.id,
+                CatalogVerifiedQuery.query_hash == Query.query_hash,
+                CatalogVerifiedQuery.org_id == org.id,
+            ),
+        )
+        .filter(
+            Query.org == org,
+            Query.is_archived.is_(False),
+            Query.is_draft.is_(False),
+            Query.data_source_id.in_(readable),
+            *matches,
+        )
+        .order_by(CatalogVerifiedQuery.id.isnot(None).desc(), Query.updated_at.desc())
+        .limit(limit)
+        .all()
+    )

@@ -8,12 +8,18 @@ from flask_restful import abort
 from rq.exceptions import NoSuchJobError
 
 from sqldesk import features, models, redis_connection, rq_redis_connection
+from sqldesk.ai.catalog.freshness import in_days, stale_sources
 from sqldesk.ai.catalog.semantic import catalog_documents
 from sqldesk.authentication import current_org
 from sqldesk.handlers import routes
 from sqldesk.handlers.base import json_response, record_event
 from sqldesk.monitor import get_overview, rq_status
-from sqldesk.permissions import require_feature, require_super_admin
+from sqldesk.permissions import (
+    require_access,
+    require_feature,
+    require_super_admin,
+    view_only,
+)
 from sqldesk.serializers import QuerySerializer
 from sqldesk.tasks import Job, Queue
 from sqldesk.tasks.catalog import enqueue_harvest, harvest_states
@@ -232,6 +238,9 @@ def catalog_sources():
         .group_by(models.CatalogTable.data_source_id)
     )
     states = harvest_states(source.id for source in sources)
+    # Which of them are old enough to matter, by the one policy -- rather than
+    # leaving the page to invent a threshold of its own from the timestamps.
+    stale = stale_sources(current_org, [source.id for source in sources])
 
     return json_response(
         {
@@ -244,6 +253,7 @@ def catalog_sources():
                     "tables": held.get(source.id, (0, None))[0],
                     "harvested_at": held.get(source.id, (0, None))[1],
                     "state": states.get(source.id),
+                    "stale_for": in_days(stale[source.id]) if source.id in stale else None,
                 }
                 for source in sources
             ]
@@ -426,6 +436,156 @@ def review_catalog_measure(measure_id):
     )
 
     return json_response({"id": measure.id, "status": measure.status, "description": measure.description})
+
+
+@routes.route("/api/catalog/queries", methods=["GET"])
+@login_required
+@require_feature(features.MANAGE_CATALOG)
+def catalog_verified_queries():
+    """
+    The queries somebody has confirmed, and the ones that have drifted.
+
+    Both in one list, because the drifted ones are the work: a verification
+    whose query has since been edited is a claim nobody currently stands
+    behind, it is hidden from every model until a person looks again, and
+    nothing else in the product will ever mention it. If this page does not
+    show it, re-confirming never happens.
+    """
+    rows = (
+        models.CatalogVerifiedQuery.query.filter(models.CatalogVerifiedQuery.org == current_org)
+        .order_by(models.CatalogVerifiedQuery.verified_at.desc())
+        .limit(200)
+        .all()
+    )
+
+    listed = []
+    for row in rows:
+        query = row.query_rel
+        if query is None or query.is_archived:
+            continue
+        listed.append(
+            {
+                "id": row.id,
+                "query_id": row.query_id,
+                "query_name": query.name,
+                "data_source_id": query.data_source_id,
+                "question": row.question,
+                "note": row.note,
+                "verified_by": row.verified_by.name if row.verified_by else None,
+                "verified_at": row.verified_at,
+                # The whole reason this endpoint exists rather than a flag on
+                # the query serializer.
+                "current": row.still_current,
+            }
+        )
+    return json_response({"queries": listed})
+
+
+@routes.route("/api/catalog/queries/<int:query_id>", methods=["GET", "POST", "DELETE"])
+@login_required
+@require_feature(features.MANAGE_CATALOG)
+def verify_catalog_query(query_id):
+    """
+    Confirm a saved query as the right answer to a question, or withdraw it.
+
+    The hash of the SQL is recorded with the confirmation, so the claim is
+    about the text the curator read. Re-confirming an edited query is the
+    same call again -- it rewrites the hash, which is the person saying they
+    have read the new version.
+    """
+    query = models.Query.query.filter(models.Query.id == query_id, models.Query.org == current_org).first()
+    if query is None:
+        abort(404)
+    # Curating the catalog is not a way to read a data source you are not in
+    # a group for, and confirming SQL you cannot see would be a signature on
+    # an unread document.
+    require_access(query, current_user._get_current_object(), view_only)
+
+    existing = models.CatalogVerifiedQuery.query.filter(
+        models.CatalogVerifiedQuery.query_id == query.id,
+        models.CatalogVerifiedQuery.org == current_org,
+    ).first()
+
+    if request.method == "GET":
+        # Asked by the query page, which needs to know whether to show the
+        # badge before anyone opens a menu. One row by a unique index.
+        if existing is None:
+            return json_response({"query_id": query_id, "verified": False})
+        return json_response(
+            {
+                "query_id": query_id,
+                "verified": True,
+                "question": existing.question,
+                "note": existing.note,
+                "verified_by": existing.verified_by.name if existing.verified_by else None,
+                "verified_at": existing.verified_at,
+                "current": existing.still_current,
+            }
+        )
+
+    if request.method == "DELETE":
+        if existing is not None:
+            models.db.session.delete(existing)
+            models.db.session.commit()
+        record_event(
+            current_org,
+            current_user._get_current_object(),
+            {"action": "unverify", "object_id": query_id, "object_type": "query"},
+        )
+        return json_response({"query_id": query_id, "verified": False})
+
+    body = request.get_json(force=True, silent=True) or {}
+    if not isinstance(body, dict):
+        abort(400, message="A JSON object is expected.")
+
+    if existing is None:
+        # `query_id`, not `query_rel`. Assigning the relationship marks the
+        # query dirty, so committing bumps `queries.updated_at` -- and then
+        # confirming a query makes it jump to the top of every "recently
+        # updated" list and the query page says it was edited just now.
+        # Confirming is a statement about a query, not a change to it.
+        existing = models.CatalogVerifiedQuery(org=current_org, query_id=query.id)
+        models.db.session.add(existing)
+    existing.verified_by = current_user._get_current_object()
+    existing.verified_at = models.db.func.now()
+    existing.query_hash = query.query_hash
+    if "question" in body:
+        existing.question = (body["question"] or "").strip() or None
+    if "note" in body:
+        existing.note = (body["note"] or "").strip() or None
+    models.db.session.commit()
+
+    record_event(
+        current_org,
+        current_user._get_current_object(),
+        {"action": "verify", "object_id": query_id, "object_type": "query"},
+    )
+    return json_response(
+        {
+            "query_id": query_id,
+            "verified": True,
+            "question": existing.question,
+            "note": existing.note,
+            "current": True,
+        }
+    )
+
+
+@routes.route("/api/catalog/score", methods=["GET"])
+@login_required
+@require_feature(features.MANAGE_CATALOG)
+def catalog_score():
+    """
+    The last retrieval score, if a nightly run has recorded one.
+
+    `null` where nothing has, which is the normal state: the score only exists
+    where somebody has written a questions file and pointed
+    `SQLDESK_CATALOG_EVAL_FILE` at it. The page shows nothing at all rather
+    than a widget saying "not set up", which is furniture nobody removes.
+    """
+    from sqldesk.ai.eval import last_score
+
+    return json_response({"score": last_score(current_org)})
 
 
 @routes.route("/api/catalog/export", methods=["GET"])

@@ -7,6 +7,7 @@ import yaml
 from rq.exceptions import NoSuchJobError
 
 from sqldesk import models, rq_redis_connection, utils
+from sqldesk.ai.eval import record_score
 from sqldesk.models import Event, db
 from sqldesk.tasks import Job
 from sqldesk.tasks.catalog import harvest_catalog, harvest_job_id
@@ -833,3 +834,255 @@ class TestCatalogDownload(CatalogTestCase):
         rv = self.make_request("get", "/api/catalog/export?data_source_id={}".format(theirs.id), user=admin, org=False)
 
         self.assertEqual(404, rv.status_code)
+
+
+class TestVerifyingASavedQuery(CatalogTestCase):
+    """
+    The strongest thing the catalog can offer a model, and the one part of it
+    nobody can mine: a person reads the SQL and says this is the right answer.
+    Which means the claim is about the SQL they read, and the tests below are
+    mostly about what happens when it changes underneath them.
+    """
+
+    def _curator(self):
+        group = self.factory.create_group(
+            name="Curators", permissions=models.Group.DEFAULT_PERMISSIONS + ["manage_catalog"]
+        )
+        db.session.add(group)
+        db.session.commit()
+        return self.factory.create_user(group_ids=[group.id, self.factory.default_group.id])
+
+    def _verify(self, query, user=None, **body):
+        return self.make_request(
+            "post",
+            "/api/catalog/queries/{}".format(query.id),
+            data=body,
+            user=user or self.factory.create_admin(),
+            org=False,
+        )
+
+    def test_a_curator_may_confirm_one(self):
+        query = self.factory.create_query()
+
+        rv = self._verify(query, user=self._curator(), question="What did we take last month?")
+
+        self.assertEqual(200, rv.status_code)
+        self.assertTrue(rv.json["verified"])
+        self.assertEqual("What did we take last month?", rv.json["question"])
+
+    def test_and_it_records_which_sql_was_read(self):
+        query = self.factory.create_query()
+
+        self._verify(query)
+
+        stored = models.CatalogVerifiedQuery.query.filter_by(query_id=query.id).one()
+        self.assertEqual(query.query_hash, stored.query_hash)
+        self.assertTrue(stored.still_current)
+
+    def test_editing_the_query_afterwards_stops_it_counting(self):
+        # The claim was about text that no longer exists. A badge somebody can
+        # edit the meaning out of is worse than no badge.
+        query = self.factory.create_query(query_text="select 1")
+        self._verify(query)
+
+        query.query_text = "select 2"
+        query.query_hash = models.utils.gen_query_hash(query.query_text)
+        db.session.commit()
+
+        stored = models.CatalogVerifiedQuery.query.filter_by(query_id=query.id).one()
+        self.assertFalse(stored.still_current)
+
+    def test_confirming_again_is_how_a_person_re_reads_it(self):
+        query = self.factory.create_query(query_text="select 1")
+        self._verify(query)
+        query.query_text = "select 2"
+        query.query_hash = models.utils.gen_query_hash(query.query_text)
+        db.session.commit()
+
+        self._verify(query)
+
+        stored = models.CatalogVerifiedQuery.query.filter_by(query_id=query.id).one()
+        self.assertTrue(stored.still_current)
+
+    def test_confirming_twice_does_not_make_two_records(self):
+        # Verified is a state, not a log.
+        query = self.factory.create_query()
+
+        self._verify(query)
+        self._verify(query)
+
+        self.assertEqual(1, models.CatalogVerifiedQuery.query.filter_by(query_id=query.id).count())
+
+    def test_withdrawing_it(self):
+        query = self.factory.create_query()
+        self._verify(query)
+
+        rv = self.make_request(
+            "delete", "/api/catalog/queries/{}".format(query.id), user=self.factory.create_admin(), org=False
+        )
+
+        self.assertEqual(200, rv.status_code)
+        self.assertFalse(rv.json["verified"])
+        self.assertEqual(0, models.CatalogVerifiedQuery.query.filter_by(query_id=query.id).count())
+
+    def test_withdrawing_one_that_was_never_confirmed_is_not_an_error(self):
+        # Two curators clicking the same button is not a failure.
+        query = self.factory.create_query()
+
+        rv = self.make_request(
+            "delete", "/api/catalog/queries/{}".format(query.id), user=self.factory.create_admin(), org=False
+        )
+
+        self.assertEqual(200, rv.status_code)
+
+    def test_somebody_without_the_feature_may_not(self):
+        query = self.factory.create_query()
+
+        rv = self._verify(query, user=self.factory.user)
+
+        self.assertEqual(403, rv.status_code)
+
+    def test_nor_may_a_curator_confirm_sql_they_cannot_read(self):
+        # Curating the catalog is not a way into a data source you are not in
+        # a group for, and signing an unread document is the thing being
+        # prevented.
+        other_group = self.factory.create_group(name="Theirs")
+        db.session.add(other_group)
+        db.session.commit()
+        theirs = self.factory.create_data_source(group=other_group, name="theirs")
+        query = self.factory.create_query(data_source=theirs)
+
+        rv = self._verify(query, user=self._curator())
+
+        self.assertEqual(403, rv.status_code)
+
+    def test_a_query_in_another_organisation_is_not_found(self):
+        other = self.factory.create_org()
+        query = self.factory.create_query(org=other, data_source=self.factory.create_data_source(org=other))
+
+        rv = self._verify(query)
+
+        self.assertEqual(404, rv.status_code)
+
+    def test_the_list_says_which_have_drifted(self):
+        # The drifted ones are the work: nothing else in the product will ever
+        # mention them, so if this page does not show them, re-confirming
+        # never happens.
+        current = self.factory.create_query(name="Still right", query_text="select 1")
+        drifted = self.factory.create_query(name="Edited since", query_text="select 2")
+        self._verify(current)
+        self._verify(drifted)
+        drifted.query_text = "select 3"
+        drifted.query_hash = models.utils.gen_query_hash(drifted.query_text)
+        db.session.commit()
+
+        rv = self.make_request("get", "/api/catalog/queries", user=self.factory.create_admin(), org=False)
+
+        self.assertEqual(200, rv.status_code)
+        state = {row["query_name"]: row["current"] for row in rv.json["queries"]}
+        self.assertEqual({"Still right": True, "Edited since": False}, state)
+
+    def test_an_archived_query_drops_off_the_list(self):
+        query = self.factory.create_query()
+        self._verify(query)
+        query.archive()
+        db.session.commit()
+
+        rv = self.make_request("get", "/api/catalog/queries", user=self.factory.create_admin(), org=False)
+
+        self.assertEqual([], rv.json["queries"])
+
+    def test_deleting_the_query_takes_the_confirmation_with_it(self):
+        query = self.factory.create_query()
+        self._verify(query)
+
+        db.session.delete(query)
+        db.session.commit()
+
+        self.assertEqual(0, models.CatalogVerifiedQuery.query.count())
+
+    def test_confirming_is_not_editing(self):
+        # Assigning the relationship rather than the id marks the query dirty,
+        # so the commit bumps `queries.updated_at` -- and then confirming a
+        # query makes it jump to the top of every "recently updated" list and
+        # its own page says it was edited just now. Found because it also hid
+        # a ranking bug: the confirmed query became the most recent one, so an
+        # ordering test passed on recency alone.
+        query = self.factory.create_query()
+        db.session.commit()
+        before = db.session.execute("select updated_at from queries where id = :id", {"id": query.id}).scalar()
+
+        self._verify(query)
+
+        after = db.session.execute("select updated_at from queries where id = :id", {"id": query.id}).scalar()
+        self.assertEqual(before, after)
+
+
+class TestTheRetrievalScoreOnThePage(CatalogTestCase):
+    def test_nothing_recorded_means_no_score(self):
+        # The page shows nothing at all rather than a widget saying "not set
+        # up", which is furniture nobody removes.
+        rv = self.make_request("get", "/api/catalog/score", user=self.factory.create_admin(), org=False)
+
+        self.assertEqual(200, rv.status_code)
+        self.assertIsNone(rv.json["score"])
+
+    def test_a_recorded_score_is_returned(self):
+        record_score(
+            self.factory.org,
+            {"questions": 4, "passed": 3, "score": 0.75, "results": [{"ask": "revenue", "passed": False}]},
+        )
+
+        rv = self.make_request("get", "/api/catalog/score", user=self.factory.create_admin(), org=False)
+
+        self.assertEqual(3, rv.json["score"]["passed"])
+        self.assertEqual(["revenue"], rv.json["score"]["missed"])
+
+    def test_somebody_without_the_feature_may_not_read_it(self):
+        rv = self.make_request("get", "/api/catalog/score", user=self.factory.user, org=False)
+
+        self.assertEqual(403, rv.status_code)
+
+
+class TestAskingWhetherOneQueryIsConfirmed(TestVerifyingASavedQuery):
+    """
+    The query page asks this before anyone opens a menu, so it has to answer
+    for an unconfirmed query too rather than 404.
+    """
+
+    def test_an_unconfirmed_query(self):
+        query = self.factory.create_query()
+
+        rv = self.make_request(
+            "get", "/api/catalog/queries/{}".format(query.id), user=self.factory.create_admin(), org=False
+        )
+
+        self.assertEqual(200, rv.status_code)
+        self.assertFalse(rv.json["verified"])
+
+    def test_a_confirmed_one_comes_back_with_who_and_what(self):
+        query = self.factory.create_query()
+        self._verify(query, question="What did we take?", note="Excludes internal.")
+
+        rv = self.make_request(
+            "get", "/api/catalog/queries/{}".format(query.id), user=self.factory.create_admin(), org=False
+        )
+
+        self.assertTrue(rv.json["verified"])
+        self.assertEqual("What did we take?", rv.json["question"])
+        self.assertEqual("Excludes internal.", rv.json["note"])
+        self.assertTrue(rv.json["current"])
+
+    def test_and_says_when_the_sql_has_moved_on(self):
+        query = self.factory.create_query(query_text="select 1")
+        self._verify(query)
+        query.query_text = "select 2"
+        query.query_hash = models.utils.gen_query_hash(query.query_text)
+        db.session.commit()
+
+        rv = self.make_request(
+            "get", "/api/catalog/queries/{}".format(query.id), user=self.factory.create_admin(), org=False
+        )
+
+        self.assertTrue(rv.json["verified"])
+        self.assertFalse(rv.json["current"])

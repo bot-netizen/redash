@@ -1,0 +1,46 @@
+# Questions the catalog has to keep answering.
+#
+# Run with `manage ai eval examples/catalog-eval.yml`. It exits non-zero when
+# anything listed here was not found, so it can gate a deploy.
+#
+# What this measures is retrieval, not SQL: whether the tables, measures and
+# saved queries a good answer needs were in what an AI client was handed. It
+# never calls a model, so two runs give the same answer and a drop in the
+# score is a fact about the catalog rather than about the weather.
+#
+# Write the questions people actually ask, in their words. Three or four is
+# already useful; the ones worth adding are the ones that have gone wrong.
+questions:
+  # The simplest and most valuable shape: a question, and the table without
+  # which no answer can be right.
+  - ask: How much did we take last month?
+    tables:
+      - orders
+
+  # Naming a measure checks that somebody's agreement is still in force. A
+  # measure denied by mistake stops reaching every model, silently, and
+  # nothing else in the product will tell you.
+  - ask: revenue by region
+    tables:
+      - orders
+    measures:
+      - gross_revenue
+
+  # Several tables, when the answer needs a join. This is the question that
+  # catches a harvest having dropped one of them.
+  - ask: Which customers ordered twice in a week?
+    tables:
+      - orders
+      - customers
+
+  # Restrict to one data source where the same table name exists in two.
+  - ask: daily active users
+    data_source: Warehouse
+    tables:
+      - events
+
+  # A confirmed query, by name or by id. This checks the thing a model is
+  # told to prefer over SQL of its own is still being found.
+  - ask: What did each region take last month?
+    queries:
+      - Revenue by region

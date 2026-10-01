@@ -141,3 +141,46 @@ def import_semantic(directory):
             result["tables"], result["columns"], result["measures"], result["skipped"]
         )
     )
+
+
+@manager.command(name="eval")
+@argument("path")
+@option("--quiet", is_flag=True, default=False, help="Only the score and the failures.")
+def eval_catalog(path, quiet):
+    """
+    Check the catalog still answers the questions in PATH.
+
+    Exits non-zero when anything expected was missed, so it can gate a deploy:
+    "the catalog got worse" is otherwise invisible until somebody notices a
+    wrong number weeks later.
+    """
+    from sqldesk.ai.eval import EvalFileError, load_questions, record_score, run_eval
+
+    org = _org()
+    try:
+        questions = load_questions(path)
+    except EvalFileError as error:
+        raise SystemExit(str(error))
+
+    report = run_eval(org, questions)
+    record_score(org, report)
+
+    for result in report["results"]:
+        if result["passed"]:
+            if not quiet:
+                print("ok      {}".format(result["ask"]))
+            continue
+        print("MISSED  {}".format(result["ask"]))
+        for kind, names in sorted(result["missing"].items()):
+            print("          no {}: {}".format(kind, ", ".join(names)))
+        # What it *did* find, because "orders was missing" and "we handed over
+        # order_archive_2019 instead" are different problems with different
+        # fixes, and the second one is the one that produces wrong numbers.
+        for kind, names in sorted(result["found"].items()):
+            if names:
+                print("          found {}: {}".format(kind, ", ".join(names[:8])))
+
+    print()
+    print("{} of {} questions answered ({:.0%}).".format(report["passed"], report["questions"], report["score"]))
+    if report["passed"] < report["questions"]:
+        raise SystemExit(1)

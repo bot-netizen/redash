@@ -27,7 +27,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 
 import sqlglot
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 from sqlalchemy.orm import load_only
 from sqlglot import exp
 from sqlglot.tokens import TokenType
@@ -142,7 +142,9 @@ TOOLS = [
             "Search saved queries by name and description, and by their charts' names and descriptions. "
             "Before writing SQL, look for the question already answered -- a saved query carries its "
             "author's understanding of the data, which no amount of schema does. Each result lists its "
-            "charts: what kind, which columns they plot, and what their author said they show."
+            "charts: what kind, which columns they plot, and what their author said they show. "
+            "Results marked [VERIFIED] have been read and confirmed by a person as the right answer to "
+            "their question; prefer one of those, unchanged, over SQL of your own."
         ),
         "inputSchema": {
             "type": "object",
@@ -556,6 +558,12 @@ def tool_find_context(user, org, arguments):
         lines.append("-- {}".format(" ".join(source.description.split())))
         lines.append("")
 
+    # Then how old this is, if it is old. A stale catalog is dangerous in a
+    # way an empty one is not: every card is still there, perfectly formatted,
+    # describing last month's warehouse. Said before the schema because it
+    # changes how much weight to put on what follows.
+    lines.extend(_staleness_lines(org, source, readable))
+
     # Then what the organization has agreed these numbers mean, before the
     # tables they come from. A model that reads the schema first will write
     # its own definition of revenue; one that is told the agreed definition
@@ -567,6 +575,43 @@ def tool_find_context(user, org, arguments):
         lines.append(table["card"] or table["name"])
         lines.append("")
     return _text("\n".join(lines).strip())
+
+
+def _staleness_lines(org, source, readable):
+    """
+    A warning when the catalog has not been harvested lately.
+
+    Only for the sources this answer could have drawn on, so a question
+    narrowed to a fresh source is not warned about a stale one nobody asked
+    about. Nothing is said when every source is current, because a note on
+    every single answer is a note nobody reads by the third one.
+    """
+    from sqldesk.ai.catalog.freshness import in_days, stale_sources
+
+    ids = [source.id] if source is not None else list(readable)
+    try:
+        stale = stale_sources(org, ids)
+    except Exception:
+        # A warning that cannot be produced must not cost the answer it was
+        # going to decorate.
+        logger.warning("could not work out catalog freshness", exc_info=True)
+        return []
+    if not stale:
+        return []
+
+    names = dict(
+        models.db.session.query(models.DataSource.id, models.DataSource.name).filter(
+            models.DataSource.id.in_(list(stale))
+        )
+    )
+    oldest = max(stale.values())
+    described = ", ".join(sorted(names.get(source_id, str(source_id)) for source_id in stale))
+    return [
+        "-- Warning: this catalog has not been harvested for {}. It describes {} as it was then, "
+        "so a column may have been renamed or dropped since. Check anything surprising against the "
+        "data source before relying on it.".format(in_days(oldest), described),
+        "",
+    ]
 
 
 def _measure_lines(measures):
@@ -809,15 +854,27 @@ def tool_find_queries(user, org, arguments):
         )
         for like in ("%{}%".format(term) for term in _terms(question))
     ]
+    # Verified first, and verified means *this* SQL: the join matches the
+    # hash as well as the id, so a query somebody verified and then edited
+    # sorts with the rest. Within each group, most recently updated first.
+    verified = models.CatalogVerifiedQuery
     found = (
-        models.Query.query.filter(
+        models.Query.query.outerjoin(
+            verified,
+            and_(
+                verified.query_id == models.Query.id,
+                verified.query_hash == models.Query.query_hash,
+                verified.org_id == org.id,
+            ),
+        )
+        .filter(
             models.Query.org == org,
             models.Query.is_archived.is_(False),
             models.Query.is_draft.is_(False),
             models.Query.data_source_id.in_(readable),
             *matches,
         )
-        .order_by(models.Query.updated_at.desc())
+        .order_by(verified.id.isnot(None).desc(), models.Query.updated_at.desc())
         .limit(10)
         .all()
     )
@@ -832,9 +889,14 @@ def tool_find_queries(user, org, arguments):
         if _worth_listing(visualization.type, visualization.description):
             charts.setdefault(visualization.query_id, []).append(visualization)
 
+    confirmed = _verifications_for(org, found)
+
     lines = []
     for query in found:
-        lines.append("#{} {}".format(query.id, query.name))
+        verification = confirmed.get(query.id)
+        lines.append("#{} {}{}".format(query.id, query.name, " [VERIFIED]" if verification is not None else ""))
+        if verification is not None:
+            lines.append("  {}".format(_verified_line(verification)))
         if query.description:
             lines.append("  {}".format(query.description.strip().replace("\n", " ")[:300]))
         lines.append(
@@ -852,6 +914,43 @@ def tool_find_queries(user, org, arguments):
             )
         lines.append("")
     return _text("\n".join(lines).strip())
+
+
+def _verifications_for(org, queries):
+    """
+    The verifications that are about the SQL these queries hold *now*.
+
+    A verification whose hash no longer matches is left out rather than
+    reported as stale. The rule is the same one the measures follow: a claim
+    nobody currently stands behind is worse than no claim, because a model
+    cannot weigh "verified, but the SQL changed" -- it reads the first word.
+    The curator sees it on the Catalog page, where it can be acted on.
+    """
+    if not queries:
+        return {}
+    by_id = {query.id: query for query in queries}
+    rows = models.CatalogVerifiedQuery.query.filter(
+        models.CatalogVerifiedQuery.query_id.in_(list(by_id)),
+        # Scoped like every other read of the catalog. A query belongs to one
+        # organisation, so a row saying otherwise is already wrong -- which is
+        # exactly the case where this check is the only thing standing there.
+        models.CatalogVerifiedQuery.org == org,
+    ).all()
+    return {row.query_id: row for row in rows if by_id[row.query_id].query_hash == row.query_hash}
+
+
+def _verified_line(verification):
+    """One line saying what was confirmed, by whom, and when."""
+    parts = ["verified"]
+    if verification.verified_by is not None:
+        parts.append("by {}".format(verification.verified_by.name))
+    if verification.verified_at is not None:
+        parts.append("on {}".format(verification.verified_at.date()))
+    said = "; ".join(
+        " ".join(text.split()) for text in (verification.question, verification.note) if text and text.strip()
+    )
+    line = " ".join(parts)
+    return "{} -- {}".format(line, said) if said else line
 
 
 def tool_find_dashboards(user, org, arguments):

@@ -194,6 +194,215 @@ function Measures({ sourceId }) {
 }
 
 /*
+  The last retrieval score, where somebody will see it.
+
+  The failure this guards against is quiet: a model that cannot find `orders`
+  writes something plausible against `order_archive_2019` and returns a
+  number, and nobody questions a number. A harvest dropping a table, a column
+  renamed upstream, a measure denied by mistake -- all of them look like
+  nothing until weeks later.
+
+  So: a number on this page, and the questions that failed by name, because
+  "eleven of twelve" with no list is a number nobody can act on. Nothing is
+  shown at all where no questions file is configured; an empty widget saying
+  "not set up" is a permanent piece of furniture nobody removes.
+*/
+function EvalScore() {
+  const [score, setScore] = useState(null);
+
+  useEffect(() => {
+    axios
+      .get("/api/catalog/score")
+      .then((data) => setScore(data.score))
+      // Silent. It decorates the page; failing to read it must never be the
+      // reason somebody cannot see their catalog.
+      .catch(() => {});
+  }, []);
+
+  if (!score || !score.questions) {
+    return null;
+  }
+
+  const missed = score.questions - score.passed;
+  return (
+    <Alert
+      className="catalog-score"
+      type={missed ? "warning" : "success"}
+      showIcon
+      message={
+        <span>
+          {score.passed} of {score.questions} questions answered from the catalog
+          {score.at && (
+            <span className="catalog-muted">
+              {" \u00b7 checked "}
+              <TimeAgo date={score.at} />
+            </span>
+          )}
+        </span>
+      }
+      description={
+        missed ? (
+          <span>
+            Not found for: {score.missed.join("; ")}. Nothing calls a model to decide this &mdash; these are questions
+            whose tables, measures or confirmed queries were simply not in what an AI client was handed.
+          </span>
+        ) : null
+      }
+    />
+  );
+}
+
+/*
+  The queries somebody has confirmed as the right answer to a question.
+
+  The strongest thing this page can give a model, and the one part of the
+  catalog that cannot be mined: a person reads the SQL and says yes. Which
+  makes it the one part that can go quietly wrong -- the claim is about the
+  text they read, so an edit afterwards leaves a signature on a document
+  nobody has seen.
+
+  Those come first here, and they are the reason the tab exists. Everywhere
+  else in the product they are invisible: the MCP tools drop them rather than
+  describe them as stale, because a model reading "verified, but" reads the
+  first word. So if this list does not put them in front of somebody,
+  re-confirming never happens.
+*/
+function VerifiedQueries() {
+  const [queries, setQueries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    axios
+      .get("/api/catalog/queries")
+      .then((data) => setQueries(data.queries))
+      .catch(() => notification.error("Could not load the confirmed queries."))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const withdraw = useCallback((row) => {
+    axios
+      .delete(`/api/catalog/queries/${row.query_id}`)
+      .then(() => {
+        setQueries((current) => current.filter((q) => q.query_id !== row.query_id));
+        notification.success(`${row.query_name} is no longer confirmed.`);
+      })
+      .catch(() => notification.error("Could not save that."));
+  }, []);
+
+  const reconfirm = useCallback((row) => {
+    // The same call that confirms it the first time. Rewriting the hash is
+    // the person saying they have read the new version -- which is why this
+    // button says "read it again" and not "refresh".
+    axios
+      .post(`/api/catalog/queries/${row.query_id}`, { question: row.question, note: row.note })
+      .then(() => {
+        setQueries((current) => current.map((q) => (q.query_id === row.query_id ? { ...q, current: true } : q)));
+        notification.success(`${row.query_name} confirmed again.`);
+      })
+      .catch(() => notification.error("Could not save that."));
+  }, []);
+
+  // Drifted first: they are the work. Within each group, most recent first,
+  // which is the order the server returns.
+  const ordered = useMemo(() => [...queries].sort((a, b) => Number(a.current) - Number(b.current)), [queries]);
+
+  const columns = [
+    {
+      title: "Question",
+      dataIndex: "question",
+      render: (question, row) => (
+        <span>
+          <a href={`queries/${row.query_id}`}>{question || row.query_name}</a>
+          {question && <div className="catalog-muted">{row.query_name}</div>}
+          {row.note && <div className="catalog-muted">{row.note}</div>}
+        </span>
+      ),
+    },
+    {
+      title: "Confirmed",
+      dataIndex: "verified_at",
+      width: 220,
+      render: (at, row) => (
+        <span className="catalog-muted">
+          {row.verified_by ? `${row.verified_by}, ` : ""}
+          <TimeAgo date={at} />
+        </span>
+      ),
+    },
+    {
+      title: "",
+      dataIndex: "current",
+      width: 240,
+      align: "right",
+      render: (current, row) =>
+        current ? (
+          <span className="catalog-review">
+            <Tag color="green">confirmed</Tag>
+            <Button size="small" onClick={() => withdraw(row)}>
+              Withdraw
+            </Button>
+          </span>
+        ) : (
+          <span className="catalog-review">
+            <Tooltip title="The SQL has changed since this was confirmed, so no model is being told about it.">
+              <Tag color="orange">edited since</Tag>
+            </Tooltip>
+            <Button size="small" type="primary" onClick={() => reconfirm(row)}>
+              I have read it again
+            </Button>
+          </span>
+        ),
+    },
+  ];
+
+  const drifted = queries.filter((row) => !row.current).length;
+
+  return (
+    <div>
+      <p className="catalog-muted">
+        Queries somebody has read and confirmed as the right answer to a question. An AI client is told to prefer one of
+        these, unchanged, over SQL of its own &mdash; it is the strongest thing this catalog carries.
+      </p>
+      {drifted > 0 && (
+        <Alert
+          type="warning"
+          showIcon
+          className="catalog-drifted"
+          // Not `plural`, which would say "querys".
+          message={
+            drifted === 1
+              ? "1 query has been edited since it was confirmed"
+              : `${drifted} queries have been edited since they were confirmed`
+          }
+          description="Nothing is being told they are confirmed while that is true. Read the SQL and confirm it again, or withdraw it."
+        />
+      )}
+      <div className="catalog-controls">
+        <Button size="small" onClick={load} loading={loading}>
+          Refresh
+        </Button>
+      </div>
+      <Table
+        dataSource={ordered}
+        columns={columns}
+        rowKey="query_id"
+        size="small"
+        loading={loading}
+        locale={{
+          emptyText: "Nothing confirmed yet. Open a query you trust and confirm it from its page.",
+        }}
+        pagination={{ pageSize: 20, showSizeChanger: false }}
+      />
+    </div>
+  );
+}
+
+/*
   Harvesting now rather than at the next scheduled run: for a data source
   added this morning, or a schema that changed an hour ago.
 
@@ -341,8 +550,29 @@ function Sources({ harvesting }) {
     {
       title: "Last harvested",
       dataIndex: "harvested_at",
-      width: 170,
-      render: (when) => (when ? <TimeAgo date={when} /> : <span className="catalog-muted">—</span>),
+      width: 230,
+      // "Stale" is the server's judgement, not a threshold invented here: it
+      // is the same policy the MCP tools warn a model with, and two places
+      // deciding it separately is two places that disagree after a settings
+      // change. A source never harvested is not stale -- there is nothing to
+      // be out of date, and the column already says "not harvested".
+      render: (when, row) =>
+        when ? (
+          <span>
+            <TimeAgo date={when} />
+            {row.stale_for && (
+              <Tooltip
+                title={`Nothing has been harvested for ${row.stale_for}. AI clients are being warned that what this describes may have changed.`}
+              >
+                <Tag color="orange" className="m-l-5">
+                  stale
+                </Tag>
+              </Tooltip>
+            )}
+          </span>
+        ) : (
+          <span className="catalog-muted">—</span>
+        ),
     },
     {
       title: "",
@@ -523,6 +753,8 @@ export default function Catalog() {
           </a>
         </div>
 
+        <EvalScore />
+
         <Tabs defaultActiveKey="tables" className="catalog-tabs">
           <Tabs.TabPane tab="Tables" key="tables">
             {!loading && tables.length === 0 && (
@@ -568,6 +800,9 @@ export default function Catalog() {
           </Tabs.TabPane>
           <Tabs.TabPane tab="Measures" key="measures">
             <Measures sourceId={sourceId} />
+          </Tabs.TabPane>
+          <Tabs.TabPane tab="Confirmed queries" key="verified">
+            <VerifiedQueries />
           </Tabs.TabPane>
           <Tabs.TabPane tab="Data sources" key="sources">
             <Sources harvesting={harvesting} />

@@ -4,9 +4,11 @@ import PropTypes from "prop-types";
 import Button from "antd/lib/button";
 import Dropdown from "antd/lib/dropdown";
 import Menu from "antd/lib/menu";
+import Tag from "antd/lib/tag";
 import EllipsisOutlinedIcon from "@ant-design/icons/EllipsisOutlined";
 import useMedia from "use-media";
 import Link from "@/components/Link";
+import Tooltip from "@/components/Tooltip";
 import EditInPlace from "@/components/EditInPlace";
 import FavoritesControl from "@/components/FavoritesControl";
 import { QueryTagsControl } from "@/components/tags-control/TagsControl";
@@ -21,6 +23,7 @@ import useRenameQuery from "../hooks/useRenameQuery";
 import useDuplicateQuery from "../hooks/useDuplicateQuery";
 import useApiKeyDialog from "../hooks/useApiKeyDialog";
 import usePermissionsEditorDialog from "../hooks/usePermissionsEditorDialog";
+import useVerifyQuery from "../hooks/useVerifyQuery";
 
 import "./QueryPageHeader.less";
 
@@ -81,6 +84,7 @@ export default function QueryPageHeader({
   const [isDuplicating, duplicateQuery] = useDuplicateQuery(query);
   const openApiKeyDialog = useApiKeyDialog(query, onChange);
   const openPermissionsEditorDialog = usePermissionsEditorDialog(query);
+  const verifying = useVerifyQuery(query);
 
   const moreActionsMenu = useMemo(
     () =>
@@ -122,6 +126,28 @@ export default function QueryPageHeader({
           },
         },
         {
+          // A curator confirms a query here rather than from a list, because
+          // confirming is reading the SQL and saying yes -- and this is the
+          // page where the SQL is on screen. Hidden entirely for anyone
+          // without the feature: it is not a thing to be told you cannot do.
+          confirmAnswer: {
+            isAvailable: !queryFlags.isNew && !queryFlags.isArchived && verifying.canVerify,
+            // Three states, because "confirmed" and "confirmed, then edited"
+            // are different situations and only one of them is a job.
+            title: !verifying.verification
+              ? "Confirm as the right answer"
+              : verifying.verification.current
+                ? "Edit what it answers"
+                : "Confirm again \u2014 the SQL has changed",
+            onClick: verifying.confirm,
+          },
+          withdrawAnswer: {
+            isAvailable: !queryFlags.isNew && verifying.canVerify && !!verifying.verification,
+            title: "No longer the right answer",
+            onClick: verifying.withdraw,
+          },
+        },
+        {
           showAPIKey: {
             // The key is a credential that outlives group membership, so the
             // server hands it only to people who may also regenerate it.
@@ -145,6 +171,10 @@ export default function QueryPageHeader({
       publishQuery,
       unpublishQuery,
       openApiKeyDialog,
+      verifying.canVerify,
+      verifying.verification,
+      verifying.confirm,
+      verifying.withdraw,
     ]
   );
 
@@ -167,7 +197,24 @@ export default function QueryPageHeader({
             canEdit={queryFlags.canEdit}
             getAvailableTags={getQueryTags}
             onEdit={updateTags}
-            tagsExtra={tagsExtra}
+            tagsExtra={
+              <React.Fragment>
+                {verifying.verification && (
+                  <Tooltip
+                    title={
+                      verifying.verification.current
+                        ? "A curator has read this and confirmed it answers its question. AI clients are told to prefer it."
+                        : "This was confirmed, but the SQL has changed since. Nothing is being told it is confirmed."
+                    }
+                  >
+                    <Tag color={verifying.verification.current ? "green" : "orange"}>
+                      {verifying.verification.current ? "confirmed" : "edited since confirmed"}
+                    </Tag>
+                  </Tooltip>
+                )}
+                {tagsExtra}
+              </React.Fragment>
+            }
           />
         </div>
       </div>

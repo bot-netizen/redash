@@ -9,7 +9,7 @@ from rq_scheduler import Scheduler
 
 from sqldesk import rq_redis_connection, settings
 from sqldesk.live import refresh_live_dashboards
-from sqldesk.tasks.catalog import harvest_catalogs
+from sqldesk.tasks.catalog import eval_catalog, harvest_catalogs
 from sqldesk.tasks.failure_report import send_aggregated_errors
 from sqldesk.tasks.general import sync_user_details, version_check
 from sqldesk.tasks.queries import (
@@ -154,6 +154,9 @@ def periodic_job_definitions():
                 "interval": timedelta(hours=settings.CATALOG_HARVEST_SCHEDULE),
             }
         )
+    # Scored daily, and only where somebody has written the questions down.
+    if settings.FEATURE_AI and settings.CATALOG_EVAL_FILE:
+        jobs.append({"func": eval_catalog, "interval": timedelta(days=1)})
     if settings.FEATURE_AI and settings.MCP_AUDIT_RETENTION_DAYS > 0:
         jobs.append({"func": cleanup_mcp_events, "interval": timedelta(hours=1)})
 

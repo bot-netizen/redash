@@ -30,7 +30,9 @@ from sqldesk.models import (
     CatalogMeasure,
     CatalogRelationship,
     CatalogTable,
+    CatalogVerifiedQuery,
     DataSource,
+    Query,
     db,
 )
 
@@ -123,6 +125,51 @@ def _joins_by_table(source):
     return edges
 
 
+def verified_queries_for(org, source):
+    """
+    The confirmed queries on this data source, as plain data.
+
+    Beside the cubes rather than inside them: cube has no idea of a reviewed
+    answer, and inventing a key in its namespace would make files that stop
+    loading the day cube uses that name for something else.
+
+    Exported, never imported. A verification names a query by id, and an id
+    means nothing in another install -- so this file is a record for people
+    to read in a diff ("we now stand behind this SQL for this question"), not
+    state to put back. Confirming is a person reading SQL and saying yes, and
+    a loader cannot do that on their behalf.
+
+    Only confirmations that still match their query's SQL. An export is
+    something people approve, and a line claiming a query is verified when it
+    has been edited since would be the one claim in the file that is false.
+    """
+    rows = (
+        CatalogVerifiedQuery.query.join(Query, Query.id == CatalogVerifiedQuery.query_id)
+        .filter(
+            CatalogVerifiedQuery.org == org,
+            Query.data_source_id == source.id,
+            Query.is_archived.is_(False),
+            Query.query_hash == CatalogVerifiedQuery.query_hash,
+        )
+        .order_by(Query.name)
+        .all()
+    )
+
+    listed = []
+    for row in rows:
+        query = row.query_rel
+        entry = {"question": row.question or query.name, "query_id": query.id, "name": query.name}
+        if row.note:
+            entry["note"] = row.note
+        if row.verified_by is not None:
+            entry["verified_by"] = row.verified_by.name
+        if row.verified_at is not None:
+            entry["verified_at"] = str(row.verified_at.date())
+        entry["sql"] = query.query_text
+        listed.append(entry)
+    return listed
+
+
 def catalog_documents(org, data_source=None):
     """
     Every table as a relative path and the YAML that goes in it.
@@ -172,6 +219,19 @@ def catalog_documents(org, data_source=None):
                     # of a description rewraps the lines after it and the
                     # diff shows four changed lines for one changed word --
                     # in a file whose whole purpose is being read as a diff.
+                    width=100000,
+                ),
+            )
+
+        confirmed = verified_queries_for(org, source)
+        if confirmed:
+            yield (
+                "{}/verified_queries.yml".format(_slug(source.name)),
+                yaml.safe_dump(
+                    {"verified_queries": confirmed},
+                    sort_keys=False,
+                    default_flow_style=False,
+                    allow_unicode=True,
                     width=100000,
                 ),
             )
