@@ -1,0 +1,304 @@
+"""
+Where a stream's events are kept: one DuckDB file per stream.
+
+Not Postgres. Postgres holds the users, the queries and the dashboards, and it
+has to stay small enough to back up -- putting fifty thousand rows a second
+through it would make the one database nobody can afford to lose also the one
+under the most write pressure. DuckDB is columnar, so a few million flattened
+events are cheap to store and cheaper to aggregate, truncation is a `DELETE`,
+and losing a stream's file costs a window nobody was promised.
+
+**No message is ever decoded in Python.** `append` takes the raw bytes the
+consumer collected and writes them straight to a file for DuckDB to parse with
+`read_json_auto`. That is the whole reason the ingest path can keep up: on two
+cores, `json.loads` one message at a time managed 250,000 events a second and
+DuckDB parsing the same batch managed 914,000. `tests/streams` has a test that
+fails if `json.loads` is reached while appending.
+
+The file lives under the same sandbox as uploads, so a stream's SQL cannot read
+anything else on the machine.
+"""
+
+import logging
+import os
+
+from sqldesk.query_runner import deferred
+
+logger = logging.getLogger(__name__)
+
+duckdb = deferred("duckdb")
+
+#: The arrival time, added by us. Not a timestamp out of the message: a topic
+#: may not have one, may have it in any format, and a producer's clock is not
+#: ours. "When SQLDesk saw it" is a fact we can state.
+RECEIVED = "_received_at"
+
+#: Rows that did not parse. Counted rather than kept: a malformed message is
+#: worth a number on the stream's page and nothing more, and a consumer that
+#: stopped for one would be a consumer somebody has to restart at 3am.
+MALFORMED = "_malformed"
+
+#: Columns DuckDB may not infer a name for, so they are ours.
+RESERVED = (RECEIVED,)
+
+
+class Store:
+    """
+    One stream's events. Cheap to construct; the file is opened on first use.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        self._connection = None
+
+    # --- the connection -----------------------------------------------------
+
+    @property
+    def connection(self):
+        if self._connection is None:
+            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            self._connection = duckdb.connect(self.path)
+            self._lock_down(self._connection)
+        return self._connection
+
+    def _lock_down(self, connection):
+        """
+        Take away everything this file's SQL does not need.
+
+        A stream's store is queried by people through the ordinary query
+        editor, so DuckDB's defaults -- `read_text` on any path, `glob` over
+        every organisation's uploads, `INSTALL httpfs` -- would be theirs. Same
+        reasoning and same settings as the uploads runner.
+
+        `allowed_directories` rather than switching external access off
+        outright, because the ingest path needs one file: the spill this writes
+        beside the database for `read_json_auto` to parse. Switching access off
+        entirely blocked that too, which is how the first version of this
+        refused every flush.
+        """
+        # With a trailing separator, as the uploads runner does. Without one
+        # DuckDB takes the entry for a file rather than a directory and refuses
+        # everything inside it -- which refused this store's own spill file and
+        # so every flush.
+        folder = os.path.join(os.path.dirname(self.path), "")
+        try:
+            connection.execute("SET allowed_directories = ?", [[folder]])
+        except Exception:
+            logger.warning("could not confine a stream store to %s", folder, exc_info=True)
+        for statement in (
+            "SET enable_external_access=false",
+            "SET autoinstall_known_extensions=false",
+            "SET autoload_known_extensions=false",
+            # And so the SQL being confined cannot simply switch it back.
+            "SET lock_configuration=true",
+        ):
+            try:
+                connection.execute(statement)
+            except Exception:
+                # An older DuckDB may not know one of these. Better to go on
+                # with the others than to refuse to open the file.
+                logger.warning("could not apply %r to a stream store", statement, exc_info=True)
+
+    def close(self):
+        if self._connection is not None:
+            self._connection.close()
+            self._connection = None
+
+    # --- writing ------------------------------------------------------------
+
+    def append(self, raw_messages):
+        """
+        Add a flush of raw message bytes. Returns `(added, malformed)`.
+
+        `raw_messages` is a list of `bytes`, one per message, exactly as they
+        came off the topic. They are joined with newlines and written to a
+        temporary file for DuckDB to parse -- a single write of a few megabytes
+        against a parse-per-message in Python, which is the trade this whole
+        design is built on.
+
+        The first flush also decides the columns. `read_json_auto` infers them,
+        which is a better guess than ours and the only one available before a
+        human has looked at the topic.
+        """
+        if not raw_messages:
+            return 0, 0
+
+        path, not_objects = self._spill(raw_messages)
+        try:
+            added, unparseable = self._load(path)
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+        return added, not_objects + unparseable
+
+    def _spill(self, raw_messages):
+        """
+        The flush, as newline-delimited JSON on disk. Returns `(path, dropped)`.
+
+        Messages that do not begin with `{` are left out and counted. That is a
+        **single byte comparison**, not a parse, and it is worth making because
+        of what `read_json_auto` does otherwise: handed one `[1,2,3]` or
+        `"a string"` in the first flush, it abandons column inference entirely
+        and gives one opaque `json` column for the life of the stream. One odd
+        message would decide the schema for every chart built on the topic.
+
+        A message that is not a JSON object is not an event anyway -- there are
+        no fields on it to group by or plot.
+
+        A fixed name beside the database, overwritten every flush, rather than
+        a `tempfile`. Three reasons, and the third is not optional:
+
+        - One file, so nothing accumulates whatever happens.
+        - No `mkstemp`, on a path that runs once a second.
+        - **DuckDB 1.3.2 refuses to open a path containing `tmp`** once the
+          database's own `<db>.tmp/` directory is on the allowed list -- and
+          `tempfile` always produces `tmp`-prefixed names, so the first version
+          of this refused every single flush with a permission error naming a
+          file that was sitting in an allowed directory.
+
+        One consumer per stream, so there is nothing to contend with. Two would
+        need a lock, and would have a worse problem than this file.
+        """
+        path = self.path + ".flush.ndjson"
+        kept = 0
+        with open(path, "wb") as handle:
+            # `writelines` over a generator rather than one big join: the
+            # buffer is already the largest thing in memory on this path and
+            # doubling it to add newlines would be the wrong place to save a
+            # syscall.
+            for line in _objects_only(raw_messages):
+                handle.write(line)
+                handle.write(b"\n")
+                kept += 1
+        return path, len(raw_messages) - kept
+
+    def _load(self, path):
+        """
+        Parse and insert. Returns `(added, unparseable)`.
+
+        `ignore_errors` keeps a consumer running past a message DuckDB cannot
+        read -- but it does not *skip* that message, it inserts a row of nulls.
+        Left alone, a topic with a broken producer would quietly fill with
+        empty rows while the malformed counter read zero, which is worse than
+        either failing or counting. So all-null rows are excluded here and
+        counted instead.
+
+        The columns are the table's, chosen once from the first flush and then
+        fixed. A field the producer drops arrives as null; a field it adds is
+        **ignored** until somebody re-infers the schema. That is deliberate: a
+        chart should not change shape because a producer shipped a new field,
+        and a stream whose columns moved on their own would make every saved
+        query on it a guess. See `sqldesk/streams` on freezing a schema.
+        """
+        quoted = path.replace("'", "''")
+        reader = "read_json_auto('{}', format='newline_delimited', ignore_errors=true)".format(quoted)
+
+        if not self._has_table():
+            self.connection.execute(
+                "CREATE TABLE events AS SELECT now() AS {}, * FROM {} LIMIT 0".format(RECEIVED, reader)
+            )
+
+        # The columns *this flush* has, not the table's. A producer that drops
+        # a field leaves the table with a column the reader knows nothing
+        # about, and naming it here is a binder error rather than a null.
+        arriving = [row[0] for row in self.connection.execute("DESCRIBE SELECT * FROM {}".format(reader)).fetchall()]
+        arriving = [name for name in arriving if name not in RESERVED]
+        if not arriving:
+            # Nothing inferred at all, which means the flush held nothing a
+            # reader could make columns out of.
+            return 0, 0
+
+        empty = " AND ".join('"{}" IS NULL'.format(name) for name in arriving)
+
+        # One expression per column the table has: the flush's value where it
+        # sent one, NULL where it did not. Explicit rather than `*` so neither
+        # a dropped field nor an added one is a binder error.
+        wanted = [name for name, _kind in self.columns() if name not in RESERVED]
+        chosen = ", ".join('"{}"'.format(name) if name in arriving else 'NULL AS "{}"'.format(name) for name in wanted)
+
+        before = self.rows()
+        self.connection.execute(
+            "INSERT INTO events BY NAME SELECT now() AS {}, {} FROM {} WHERE NOT ({})".format(
+                RECEIVED, chosen, reader, empty
+            )
+        )
+        added = self.rows() - before
+
+        unparseable = self.connection.execute("SELECT count(*) FROM {} WHERE {}".format(reader, empty)).fetchone()[0]
+        return added, int(unparseable or 0)
+
+    def _has_table(self):
+        found = self.connection.execute(
+            "SELECT count(*) FROM information_schema.tables WHERE table_name = 'events'"
+        ).fetchone()
+        return bool(found and found[0])
+
+    # --- reading and trimming ----------------------------------------------
+
+    def rows(self):
+        if not self._has_table():
+            return 0
+        return int(self.connection.execute("SELECT count(*) FROM events").fetchone()[0])
+
+    def columns(self):
+        """The columns `read_json_auto` settled on, ours last."""
+        if not self._has_table():
+            return []
+        described = self.connection.execute("DESCRIBE events").fetchall()
+        theirs = [(name, kind) for name, kind, *_rest in described if name not in RESERVED]
+        ours = [(name, kind) for name, kind, *_rest in described if name in RESERVED]
+        return theirs + ours
+
+    def truncate(self, window_seconds):
+        """
+        Drop everything older than the window. Returns how many went.
+
+        A `DELETE`, which in a columnar store this size is cheap, and the only
+        thing standing between a busy topic and a full disk. It runs on the
+        flush rather than on a timer: a timer that stopped would be a disk
+        filling with nobody watching.
+        """
+        if not self._has_table():
+            return 0
+        before = self.rows()
+        self.connection.execute(
+            "DELETE FROM events WHERE {} < now() - INTERVAL '{} seconds'".format(RECEIVED, int(window_seconds))
+        )
+        return before - self.rows()
+
+    def size_bytes(self):
+        try:
+            return os.path.getsize(self.path)
+        except OSError:
+            return 0
+
+    def observed_rate(self, over_seconds=60):
+        """
+        Events a second, measured over the last minute of arrivals.
+
+        Measured rather than configured, because the whole window calculation
+        depends on it and a topic's rate is not a thing anybody knows in
+        advance. Over a minute rather than a second so one quiet moment does
+        not open the window to half an hour and one burst does not slam it
+        shut.
+        """
+        if not self._has_table():
+            return 0.0
+        counted = self.connection.execute(
+            "SELECT count(*) FROM events WHERE {} >= now() - INTERVAL '{} seconds'".format(RECEIVED, int(over_seconds))
+        ).fetchone()
+        return (counted[0] or 0) / float(over_seconds)
+
+
+def _objects_only(raw_messages):
+    """
+    The messages that are JSON objects, by their first non-space byte.
+
+    One byte compared per message. Not a parse, not a decode -- which is the
+    rule the whole ingest path is built on.
+    """
+    for message in raw_messages:
+        if message and message.lstrip()[:1] == b"{":
+            yield message
