@@ -38,6 +38,54 @@ def _stream(data_source_id, org, user):
     return stream
 
 
+class StreamListResource(BaseResource):
+    """
+    Every stream in the organisation, for the page that watches them.
+
+    Admin, because the page it feeds carries the pin and the budgets. A reader
+    who may use one stream has no business knowing what else is configured.
+
+    The `quiet` sentence is the field this page exists for: three different
+    situations look identical on an empty chart -- nobody has looked at it
+    lately, the consumer stopped with an error, or the topic genuinely has
+    nothing on it -- and only one of them is somebody's problem.
+    """
+
+    @require_admin
+    def get(self):
+        streams = models.Stream.query.filter(models.Stream.org == self.current_org).order_by(models.Stream.topic).all()
+        names = dict(
+            models.db.session.query(models.DataSource.id, models.DataSource.name).filter(
+                models.DataSource.org == self.current_org
+            )
+        )
+        return {
+            "streams": [
+                {
+                    "id": stream.id,
+                    "data_source_id": stream.data_source_id,
+                    "data_source_name": names.get(stream.data_source_id),
+                    "topic": stream.topic,
+                    "active": activity.is_active(stream),
+                    "pinned": stream.pinned,
+                    "quiet": activity.why_it_is_quiet(stream),
+                    "rows": stream.rows,
+                    "malformed": stream.malformed,
+                    "observed_rate": round(stream.observed_rate or 0, 1),
+                    "window_seconds": stream.window_seconds,
+                    "sample_rate": stream.sample_rate,
+                    "sampled": stream.sampled,
+                    "describes": window.describe(stream.window_seconds, stream.rows),
+                    "schema_state": stream.schema_state,
+                    "columns": len(stream.columns or []),
+                    "has_rollup": bool(stream.measures),
+                    "last_flush_at": stream.last_flush_at,
+                }
+                for stream in streams
+            ]
+        }
+
+
 class StreamResource(BaseResource):
     def get(self, data_source_id):
         """

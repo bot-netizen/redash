@@ -28,6 +28,9 @@ export default function Layout({ activeTab, children }) {
             <Menu.Item key="storage">
               <Link href="admin/storage">Storage</Link>
             </Menu.Item>
+            <Menu.Item key="streams">
+              <Link href="admin/streams">Streams</Link>
+            </Menu.Item>
           </Menu>
           {children}
         </div>

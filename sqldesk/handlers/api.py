@@ -91,7 +91,11 @@ from sqldesk.handlers.slack import (
     SlackChannelsResource,
     SlackSettingsResource,
 )
-from sqldesk.handlers.streams import StreamResource, StreamRollupResource
+from sqldesk.handlers.streams import (
+    StreamListResource,
+    StreamResource,
+    StreamRollupResource,
+)
 from sqldesk.handlers.subscriptions import (
     DashboardSubscriptionListResource,
     DashboardSubscriptionResource,
@@ -198,6 +202,7 @@ api.add_org_resource(
     endpoint="data_source_upload_keep",
 )
 
+api.add_org_resource(StreamListResource, "/api/streams", endpoint="streams")
 api.add_org_resource(StreamResource, "/api/data_sources/<data_source_id>/stream", endpoint="data_source_stream")
 api.add_org_resource(
     StreamRollupResource,
