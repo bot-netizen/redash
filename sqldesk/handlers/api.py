@@ -86,6 +86,11 @@ from sqldesk.handlers.query_snippets import (
     QuerySnippetResource,
 )
 from sqldesk.handlers.settings import OrganizationSettings
+from sqldesk.handlers.slack import (
+    DashboardSlackShareResource,
+    SlackChannelsResource,
+    SlackSettingsResource,
+)
 from sqldesk.handlers.subscriptions import (
     DashboardSubscriptionListResource,
     DashboardSubscriptionResource,
@@ -190,6 +195,14 @@ api.add_org_resource(
     DataSourceUploadKeepResource,
     "/api/data_sources/<data_source_id>/uploads/<upload_id>/keep",
     endpoint="data_source_upload_keep",
+)
+
+api.add_org_resource(SlackSettingsResource, "/api/settings/slack", endpoint="slack_settings")
+api.add_org_resource(SlackChannelsResource, "/api/slack/channels", endpoint="slack_channels")
+api.add_org_resource(
+    DashboardSlackShareResource,
+    "/api/dashboards/<dashboard_id>/share/slack",
+    endpoint="dashboard_share_slack",
 )
 
 api.add_org_resource(GroupListResource, "/api/groups", endpoint="groups")

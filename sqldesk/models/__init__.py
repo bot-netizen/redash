@@ -23,7 +23,7 @@ from sqlalchemy.orm import (
     subqueryload,
 )
 from sqlalchemy.orm.exc import NoResultFound  # noqa: F401
-from sqlalchemy_utils import generic_relationship
+from sqlalchemy_utils import EncryptedType, generic_relationship
 from sqlalchemy_utils.models import generic_repr
 from sqlalchemy_utils.types import TSVectorType
 from sqlalchemy_utils.types.encrypted.encrypted_type import FernetEngine
@@ -1676,6 +1676,58 @@ def _token_digest(value):
     is no dictionary to stretch against, and the lookup has to be by index.
     """
     return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+
+
+class SlackWorkspace(TimestampMixin, BelongsToOrgMixin, db.Model):
+    """
+    The Slack app an administrator installed, and its bot token.
+
+    One per organisation, which is why `org_id` is unique: a second token for
+    the same workspace would be two answers to "who are we posting as", and
+    SQLDesk has nothing useful to do with the second one.
+
+    The token is encrypted with the same key as a data source's credentials.
+    It is exactly that kind of secret -- it posts as the app in every channel
+    the app is in, and it does not expire -- so storing it in the
+    organisation's JSONB settings, which every settings read hands back in
+    plain text, would have been the wrong place by a wide margin.
+
+    Why a bot token at all rather than a public link Slack previews: an install
+    on a VPN is not reachable from Slack's servers, so a preview would show a
+    bare URL. SQLDesk draws the picture and uploads it, and then nothing has to
+    reach in.
+    """
+
+    id = primary_key("SlackWorkspace")
+    org_id = Column(key_type("Organization"), db.ForeignKey("organizations.id"), nullable=False)
+    org = db.relationship(Organization, backref=db.backref("slack", uselist=False))
+    bot_token = Column(
+        "encrypted_bot_token",
+        EncryptedType(db.Text, settings.DATASOURCE_SECRET_KEY, FernetEngine),
+        nullable=False,
+    )
+    #: What Slack said the workspace and the app are called, so the settings
+    #: page can show which workspace this is without another API call.
+    team_name = Column(db.String(255), nullable=True)
+    app_name = Column(db.String(255), nullable=True)
+    installed_by_id = Column(key_type("User"), db.ForeignKey("users.id"), nullable=True)
+    installed_by = db.relationship(User, foreign_keys=[installed_by_id])
+    #: The last thing Slack refused, and when we last asked. A token that has
+    #: been revoked in Slack looks identical to a working one from here until
+    #: something is sent, so the failure is kept where somebody can see it
+    #: rather than only in a worker's log.
+    last_error = Column(db.Text, nullable=True)
+    last_checked_at = Column(db.DateTime(True), nullable=True)
+
+    __tablename__ = "slack_workspaces"
+    __table_args__ = (db.Index("slack_workspaces_org_id", "org_id", unique=True),)
+
+    def __str__(self):
+        return self.team_name or "Slack"
+
+    @property
+    def working(self):
+        return self.last_error is None
 
 
 class OAuthClient(TimestampMixin, db.Model):

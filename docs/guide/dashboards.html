@@ -148,6 +148,28 @@ with the reason shown beside the subscription.</p>
 <p>Every email carries an unsubscribe link of its own, and your mail client&rsquo;s own Unsubscribe button
 works too. Taking yourself off leaves everybody else on it.</p>
 
+<h2 id="slack">Sending it to Slack</h2>
+<p><strong>Share &rarr; Send to Slack</strong> posts a picture of the dashboard to a channel, with a line
+of your own text and an <strong>Open dashboard</strong> button. It needs the same renderer and the same
+<em>Send dashboards</em> permission as a schedule, plus a Slack app connected by an administrator.</p>
+<p><strong>SQLDesk draws the picture and uploads it</strong> rather than letting Slack fetch a link, which
+is what makes this work on an install behind a VPN: Slack never has to reach in. A pasted link would
+unfurl into a bare URL and nothing else.</p>
+<p>The channel list comes from Slack, so you pick rather than type. A private channel appears once the app
+has been invited to it; one it has not been invited to cannot be posted to, so it is not offered.</p>
+<p>The button opens the <strong>public link</strong> where the dashboard has one, so anybody in the channel
+can open it without an account here. Where it has not been shared &mdash; or where public links are off for
+the whole instance &mdash; the button opens the dashboard&rsquo;s own address, and people sign in. Turning
+the public link off later is how a button that has already been sent stops working.</p>
+<p>The same one-page rule applies as for a schedule: up to twelve widgets, one page. A bigger dashboard is
+refused before anything is drawn.</p>
+<p><em>Setting it up, once:</em> create a Slack app in your workspace, give it <code>chat:write</code>,
+<code>files:write</code>, <code>channels:read</code> and <code>groups:read</code>, install it, and paste
+its bot token under <strong>Settings &rarr; Slack</strong>. The token is checked with Slack before it is
+stored, and kept encrypted with the same key as your data source credentials. If it is ever revoked, the
+settings page says so &mdash; from here a revoked token looks exactly like a working one until something
+is sent.</p>
+
 <h2>On a wall</h2>
 <p>A dashboard can be made <strong>live</strong>: the server refreshes it every 30 seconds to 5 minutes,
 once for everyone looking, and only while somebody has it open. <code>/wall/dashboards/&lt;token&gt;</code>

@@ -61,6 +61,27 @@ def require_access(obj, user, need_view_only):
         abort(403)
 
 
+def can_see_dashboard(dashboard_id, org, user):
+    """
+    Whether this person may see this dashboard at all.
+
+    Not `has_access`, which reads `obj.groups` -- a Dashboard has none. What
+    decides it is whether the dashboard appears in the list this person is
+    shown, which `Dashboard.all` already works out from the data sources behind
+    its widgets. Here rather than beside one of the features that asks, because
+    two now do: subscribing somebody to a dashboard and sending one to Slack
+    are both "may you hand its contents to other people", and the answer has to
+    be the same.
+    """
+    # Imported here: models reaches this module.
+    from sqldesk import models
+
+    return (
+        user.has_permission("admin")
+        or models.Dashboard.all(org, user.group_ids, user.id).filter(models.Dashboard.id == dashboard_id).count() > 0
+    )
+
+
 class require_permissions:
     def __init__(self, permissions, allow_one=False):
         self.permissions = permissions

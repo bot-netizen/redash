@@ -10,18 +10,20 @@ import LinkOutlinedIcon from "@ant-design/icons/LinkOutlined";
 import FilePdfOutlinedIcon from "@ant-design/icons/FilePdfOutlined";
 import FileImageOutlinedIcon from "@ant-design/icons/FileImageOutlined";
 import MailOutlinedIcon from "@ant-design/icons/MailOutlined";
+import SlackOutlinedIcon from "@ant-design/icons/SlackOutlined";
 import PlainButton from "@/components/PlainButton";
 import notification from "@/services/notification";
-import { currentUser } from "@/services/auth";
+import { currentUser, clientConfig } from "@/services/auth";
 import SubscribeDashboardDialog from "./SubscribeDashboardDialog";
+import SendToSlackDialog from "./SendToSlackDialog";
 import { exportSizeProblem, renderDashboardToPng, renderDashboardToPdf, downloadBlob, filenameFor } from "../export";
 
 /*
   The dashboard's share surface.
 
   Deliberately its own button rather than another entry in the overflow
-  menu: sharing is a primary action, and this is where posting a snapshot
-  to Slack will live once the server can render a dashboard headlessly.
+  menu: sharing is a primary action, and everything that hands this dashboard
+  to somebody else lives here -- a link, a schedule, a Slack channel, a file.
 
   Export runs against a DOM element the caller supplies, so what gets
   captured is the dashboard grid rather than the whole page — no header,
@@ -111,6 +113,14 @@ export default function ShareDashboardButton({ dashboard, getExportTarget, onSho
 
   const subscribe = useCallback(() => SubscribeDashboardDialog.showModal({ dashboard }), [dashboard]);
 
+  // Same permission as mailing it, and the same reason: both hand the
+  // dashboard's contents to people who are not looking at SQLDesk. Offered
+  // only where an administrator has connected a workspace, because the dialog's
+  // first act is to ask Slack for channels.
+  const canSlack = canSubscribe && clientConfig.slackConfigured;
+
+  const sendToSlack = useCallback(() => SendToSlackDialog.showModal({ dashboard }), [dashboard]);
+
   return (
     <Dropdown
       trigger={["click"]}
@@ -138,7 +148,15 @@ export default function ShareDashboardButton({ dashboard, getExportTarget, onSho
               </PlainButton>
             </Menu.Item>
           )}
-          {(onShowPublicLink || canSubscribe) && <Menu.Divider />}
+          {canSlack && (
+            <Menu.Item key="slack">
+              <PlainButton onClick={sendToSlack} data-test="SendToSlackButton">
+                <SlackOutlinedIcon className="m-r-5" aria-hidden="true" />
+                Send to Slack&hellip;
+              </PlainButton>
+            </Menu.Item>
+          )}
+          {(onShowPublicLink || canSubscribe || canSlack) && <Menu.Divider />}
           <Menu.Item key="pdf" disabled={!!busy}>
             <PlainButton onClick={exportPdf} data-test="ExportPdfButton">
               <FilePdfOutlinedIcon className="m-r-5" aria-hidden="true" />

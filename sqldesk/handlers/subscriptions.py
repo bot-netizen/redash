@@ -21,7 +21,7 @@ from flask_restful import abort
 from sqldesk import features, models, one_page
 from sqldesk.handlers.base import BaseResource, get_object_or_404
 from sqldesk.models import db
-from sqldesk.permissions import require_feature
+from sqldesk.permissions import can_see_dashboard, require_feature
 from sqldesk.serializers import serialize_dashboard_subscription
 
 #: The shapes a schedule may take, which are the ones a query's schedule
@@ -29,12 +29,8 @@ from sqldesk.serializers import serialize_dashboard_subscription
 MIN_INTERVAL = 3600
 
 
-def _visible(dashboard_id, org, user):
-    """Whether this person may see this dashboard at all."""
-    return (
-        user.has_permission("admin")
-        or models.Dashboard.all(org, user.group_ids, user.id).filter(models.Dashboard.id == dashboard_id).count() > 0
-    )
+#: Moved to sqldesk.permissions, where sharing to Slack asks the same question.
+_visible = can_see_dashboard
 
 
 def _check_schedule(schedule):

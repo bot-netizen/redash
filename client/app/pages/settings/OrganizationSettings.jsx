@@ -11,6 +11,7 @@ import { getHorizontalFormProps, getHorizontalFormItemWithoutLabelProps } from "
 import useOrganizationSettings from "./hooks/useOrganizationSettings";
 import GeneralSettings from "./components/GeneralSettings";
 import AuthSettings from "./components/AuthSettings";
+import SlackSettings from "./components/SlackSettings";
 
 function OrganizationSettings({ onError }) {
   const { settings, currentValues, isLoading, isSaving, handleSubmit, handleChange } = useOrganizationSettings(onError);
@@ -30,6 +31,12 @@ function OrganizationSettings({ onError }) {
             )}
           </Form.Item>
         </Form>
+        {/*
+          Outside the form on purpose. Everything above is a preference saved
+          together; a Slack token is checked against Slack before it is stored,
+          so it has its own button and its own answer.
+        */}
+        <SlackSettings />
       </div>
     </div>
   );

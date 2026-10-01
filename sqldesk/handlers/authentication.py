@@ -347,6 +347,18 @@ def null_value_config():
     }
 
 
+def _slack_is_connected():
+    """
+    Whether this organisation has a Slack token stored.
+
+    One indexed row by org, asked on every page load alongside the rest of the
+    client config -- which is why it is a count and not the row itself: nothing
+    here needs the token, and a config endpoint is the last place it should be
+    able to reach.
+    """
+    return models.SlackWorkspace.query.filter(models.SlackWorkspace.org_id == current_org.id).count() > 0
+
+
 def client_config():
     if not current_user.is_api_user() and current_user.is_authenticated:
         client_config = {
@@ -387,6 +399,11 @@ def client_config():
         "mcpEnabled": settings.FEATURE_AI,
         # So the MCP page can offer signing in rather than only a pasted key.
         "mcpOAuthEnabled": settings.FEATURE_AI and settings.MCP_OAUTH_ENABLED,
+        # Whether an administrator has connected a Slack workspace. The Share
+        # menu asks, because its dialog's first act is to ask Slack for
+        # channels -- offering it with nothing connected is offering a dialog
+        # whose only content is an error.
+        "slackConfigured": _slack_is_connected(),
         # The name this had before, still sent: during an upgrade a browser
         # holding the previous bundle reads it from a server already running
         # the new one.
