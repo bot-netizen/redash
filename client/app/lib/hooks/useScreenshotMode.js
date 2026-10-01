@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { has } from "lodash";
+import { chartsMounted, chartsStillDrawing } from "@sqldesk/viz/lib/services/charts";
 import { isDeferringOffscreenCharts } from "@sqldesk/viz/lib/services/offscreen";
 import location from "@/services/location";
 
@@ -102,7 +103,13 @@ function layoutFingerprint() {
   const canvases = Array.prototype.map
     .call(document.querySelectorAll("canvas"), (canvas) => `${canvas.width}x${canvas.height}`)
     .join(",");
-  return `${document.documentElement.scrollHeight}|${document.documentElement.scrollWidth}|${canvases}`;
+  // The number of charts is part of what "has anything moved" means. Without
+  // it, the moment before any chart container has mounted looks exactly like
+  // the moment after they have all finished: nothing pending, nothing
+  // changing. That is the moment the blank captures were taken in.
+  return [document.documentElement.scrollHeight, document.documentElement.scrollWidth, chartsMounted(), canvases].join(
+    "|"
+  );
 }
 
 /**
@@ -141,7 +148,13 @@ export default function useScreenshotMode(ready) {
       // has, most of this page is empty rectangles that are perfectly still.
       // Stillness alone said "drawn" to that, which is how a capture of an
       // eighty-widget dashboard came back with five charts on it.
-      const stillWaitingForCharts = isDeferringOffscreenCharts();
+      //
+      // And then the charts themselves say when they have rendered, which is
+      // the only answer that is not a guess about pixels. Stillness, the
+      // settling floor and the deferral check are all still here -- they
+      // cover a page with no ECharts on it at all, which has nothing to
+      // report.
+      const stillWaitingForCharts = isDeferringOffscreenCharts() || chartsStillDrawing() > 0;
 
       if ((agreed >= STABLE_SAMPLES && elapsed >= MIN_SETTLE_MS && !stillWaitingForCharts) || elapsed > DEADLINE_MS) {
         markDrawn();
@@ -158,16 +171,38 @@ export default function useScreenshotMode(ready) {
     // eslint-disable-next-line compat/compat
     const fonts = document.fonts ? document.fonts.ready : Promise.resolve();
 
-    fonts.then(() => {
-      if (cancelled) {
-        return;
-      }
+    const settle = () => {
+      clearTimeout(timer);
+      document.documentElement.removeAttribute(SCREENSHOT_ATTRIBUTE);
       waitForStillness(null, 0, Date.now());
+    };
+
+    fonts.then(() => {
+      if (!cancelled) {
+        settle();
+      }
     });
+
+    /*
+      Saying it again after the window changes size.
+
+      A full-page capture is not a photograph of the page as it stands: the
+      renderer stretches the viewport to the whole document height and then
+      shoots. That resize re-lays-out every chart, and ECharts redraws
+      asynchronously -- so the picture was taken while fifty-four canvases
+      were mid-repaint, and came back with the tiles drawn and the charts
+      missing. Nothing about the page's own readiness was wrong, which is why
+      three attempts at making *that* stricter changed nothing.
+
+      So a resize withdraws "drawn" and settles again, and the renderer waits
+      for it a second time after it has resized.
+    */
+    window.addEventListener("resize", settle);
 
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      window.removeEventListener("resize", settle);
       document.documentElement.removeAttribute(SCREENSHOT_ATTRIBUTE);
     };
   }, [ready]);

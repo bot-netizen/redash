@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import resizeObserver from "@/services/resizeObserver";
 import whenOnScreen from "@/services/offscreen";
+import { chartDrawn, chartMounted } from "@/services/charts";
 import echarts from ".";
 
 function prefersReducedMotion(): boolean {
@@ -46,6 +47,7 @@ export default function useEChart(option: any, signature: string): UseEChartResu
   // Latches: a chart that has been on screen once is never un-created.
   const [onScreen, setOnScreen] = useState(false);
   const signatureRef = useRef<string | null>(null);
+  const tokenRef = useRef<symbol | null>(null);
 
   useEffect(() => {
     if (!container || onScreen) {
@@ -53,6 +55,21 @@ export default function useEChart(option: any, signature: string): UseEChartResu
     }
     return whenOnScreen(container, () => setOnScreen(true));
   }, [container, onScreen]);
+
+  // Counted from the moment the container exists rather than from when the
+  // chart is created, because a chart still waiting to come on screen is
+  // still one the page is waiting for. See `services/charts`.
+  useEffect(() => {
+    if (!container) {
+      return;
+    }
+    const { token, dispose } = chartMounted();
+    tokenRef.current = token;
+    return () => {
+      tokenRef.current = null;
+      dispose();
+    };
+  }, [container]);
 
   useEffect(() => {
     if (!container || !onScreen) {
@@ -64,9 +81,20 @@ export default function useEChart(option: any, signature: string): UseEChartResu
     signatureRef.current = null;
     setChart(instance);
 
+    // `finished` is ECharts saying it has rendered, animation included. It is
+    // the only honest answer to "has this drawn"; everything else is reading
+    // the page and guessing.
+    const reportDrawn = () => {
+      if (tokenRef.current) {
+        chartDrawn(tokenRef.current);
+      }
+    };
+    instance.on("finished", reportDrawn);
+
     const unwatch = resizeObserver(container, () => instance.resize());
     return () => {
       unwatch();
+      instance.off("finished", reportDrawn);
       instance.dispose();
     };
   }, [container, onScreen]);

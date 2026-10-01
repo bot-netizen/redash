@@ -40,6 +40,12 @@ VIEWPORT = {
 #: Above this, stop waiting and say so.
 MAX_TIMEOUT_SECONDS = int(os.environ.get("SCREENSHOT_MAX_TIMEOUT", "120"))
 
+#: A ceiling on the window a full-page capture stretches to. A dashboard long
+#: enough to exceed this is one the one-page rule should already have refused;
+#: this is here so a runaway page cannot ask for a window measured in tens of
+#: thousands of pixels and take the browser down with it.
+MAX_CAPTURE_HEIGHT = int(os.environ.get("SCREENSHOT_MAX_HEIGHT", "30000"))
+
 # Two things keep this from being a browser anyone on the network can point
 # anywhere -- at a cloud metadata address, an internal admin page, or SQLDesk
 # itself with a header of their choosing. The caller shows a token, and the
@@ -122,6 +128,23 @@ def _render(url, headers, wait_for, timeout_seconds, full_page, fmt=PNG):
                 # failure Superset's own docs warn about, and the reason they
                 # check captures for blank content afterwards.
                 page.wait_for_selector(wait_for, timeout=timeout_ms, state="attached")
+
+            if full_page and fmt == PNG:
+                # Stretch the window to the whole document, *then* ask again.
+                #
+                # `screenshot(full_page=True)` does this resize itself and
+                # shoots immediately after, which is too early: a resize
+                # re-lays-out every chart and ECharts redraws asynchronously,
+                # so a dashboard of fifty-four charts came back about a
+                # quarter of the time with its tiles drawn and its charts
+                # blank. The page withdraws its "drawn" attribute when the
+                # window changes size, so waiting for it a second time waits
+                # for the redraw that the resize caused.
+                height = min(int(page.evaluate("document.documentElement.scrollHeight")), MAX_CAPTURE_HEIGHT)
+                if height > VIEWPORT["height"]:
+                    page.set_viewport_size({"width": VIEWPORT["width"], "height": height})
+                    if wait_for:
+                        page.wait_for_selector(wait_for, timeout=timeout_ms, state="attached")
 
             if fmt == PDF:
                 # Chromium's own print output, so the text in a subscription's
