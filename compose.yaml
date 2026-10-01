@@ -62,6 +62,30 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_HOST_AUTH_METHOD: "trust"
+  # A broker to run the stream tests against. Redpanda rather than Kafka: one
+  # process, no ZooKeeper, and it speaks the same protocol -- which is the only
+  # thing being tested here, since SQLDesk talks to it through librdkafka like
+  # any other client.
+  #
+  # Behind a profile, so an ordinary `make up` does not start it. The stream
+  # tests that need it skip themselves when it is not there; see
+  # tests/streams/test_broker.py.
+  broker:
+    image: redpandadata/redpanda:v24.2.7
+    profiles: ["streams"]
+    command:
+      - redpanda
+      - start
+      - --smp=1
+      - --memory=512M
+      - --overprovisioned
+      - --node-id=0
+      - --check=false
+      - --kafka-addr=PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr=PLAINTEXT://broker:9092
+    ports:
+      - "19092:9092"
+    restart: unless-stopped
   email:
     image: maildev/maildev
     ports:

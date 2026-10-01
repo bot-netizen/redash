@@ -58,7 +58,7 @@ worker:
   # queue and its own workers, so it cannot starve the rest. MCP's queue is
   # added at the end when MCP is on without a worker of its own, so it is
   # never left with nobody to take it.
-  queues: "queries,scheduled_queries,schemas,periodic,emails,default"
+  queues: "queries,scheduled_queries,schemas,streams,periodic,emails,default"
   workersCount: 2
   resources:
     requests: { cpu: 200m, memory: 512Mi }

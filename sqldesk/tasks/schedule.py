@@ -20,6 +20,7 @@ from sqldesk.tasks.queries import (
     refresh_schemas,
     remove_ghost_locks,
 )
+from sqldesk.tasks.streams import roll_up_streams, supervise_streams
 from sqldesk.tasks.subscriptions import send_due_subscriptions
 from sqldesk.tasks.uploads import manage_uploads
 from sqldesk.tasks.worker import Queue
@@ -166,6 +167,14 @@ def periodic_job_definitions():
     # people with eleven hours' notice or none.
     if settings.UPLOAD_LIFETIME_DAYS > 0 or settings.UPLOAD_UNLOAD_AFTER_DAYS > 0:
         jobs.append({"func": manage_uploads, "interval": timedelta(hours=1)})
+
+    # Streams. A supervisor every minute to start consumers for the streams
+    # somebody is watching, and a rollup every minute over rows that had to be
+    # stored anyway. Off entirely where the active window is 0, which is how an
+    # install says it does not want streams running.
+    if settings.STREAM_ACTIVE_MINUTES > 0:
+        jobs.append({"func": supervise_streams, "timeout": 60, "interval": timedelta(minutes=1)})
+        jobs.append({"func": roll_up_streams, "timeout": 300, "interval": timedelta(minutes=1)})
 
     if settings.VERSION_CHECK:
         jobs.append({"func": version_check, "interval": timedelta(days=1)})

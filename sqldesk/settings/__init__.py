@@ -399,6 +399,7 @@ default_query_runners = [
     "sqldesk.query_runner.risingwave",
     "sqldesk.query_runner.d1",
     "sqldesk.query_runner.duckdb",
+    "sqldesk.query_runner.kafka_stream",
 ]
 
 enabled_query_runners = array_from_string(
@@ -524,6 +525,41 @@ MCP_OAUTH_ENABLED = parse_boolean(os.environ.get("SQLDESK_MCP_OAUTH_ENABLED", "t
 #: somebody has to turn on, rather than code that quietly decides http is fine
 #: when it recognises the hostname.
 MCP_OAUTH_ALLOW_HTTP = parse_boolean(os.environ.get("SQLDESK_MCP_OAUTH_ALLOW_HTTP", "false"))
+
+# --- Streams ---------------------------------------------------------------
+#
+# A stream is a window, not a pipeline: SQLDesk keeps minutes of raw events and
+# rolls the rest up. For history, land the topic in a warehouse and point
+# SQLDesk at that. See sqldesk/streams.
+
+#: Rows of raw events to keep per stream. The *window* follows from this and
+#: the rate observed, which is the only honest way round: a fixed window is
+#: gigabytes for a busy topic and an empty chart for a quiet one.
+STREAM_ROW_BUDGET = int(os.environ.get("SQLDESK_STREAM_ROW_BUDGET", "5000000"))
+
+#: Events a second SQLDesk will store from one stream. Past it, events are
+#: sampled and every chart says so. 0 removes the ceiling, which is how a
+#: worker ends up the slowest part of somebody's cluster.
+STREAM_EVENTS_PER_SECOND = int(os.environ.get("SQLDESK_STREAM_EVENTS_PER_SECOND", "5000"))
+
+#: And across every stream together, so five busy topics cannot do between them
+#: what one was not allowed to do alone.
+STREAM_GLOBAL_EVENTS_PER_SECOND = int(os.environ.get("SQLDESK_STREAM_GLOBAL_EVENTS_PER_SECOND", "20000"))
+
+#: How long the per-minute rollups are kept, in hours. These are what a
+#: question about this morning reads; they are small, so a day is cheap.
+STREAM_ROLLUP_HOURS = int(os.environ.get("SQLDESK_STREAM_ROLLUP_HOURS", "24"))
+
+#: A stream is consumed while something using it has been looked at this
+#: recently, or while an administrator has pinned it. Always-on burns a worker
+#: and a disk for a dashboard nobody has open; consuming only while a dashboard
+#: is literally open means arriving to an empty chart every time.
+STREAM_ACTIVE_MINUTES = int(os.environ.get("SQLDESK_STREAM_ACTIVE_MINUTES", "15"))
+
+#: How often the consumer hands its buffer to DuckDB. One second is the bound
+#: that makes "never buffer the overflow" true: whatever arrives in a second is
+#: either written or sampled away within it.
+STREAM_FLUSH_SECONDS = float(os.environ.get("SQLDESK_STREAM_FLUSH_SECONDS", "1"))
 # Which queue an MCP-issued query goes on. Empty means the data source's own,
 # which is also where dashboards go -- so a model exploring competes with the
 # people waiting for a dashboard to load. Name a queue here and give it

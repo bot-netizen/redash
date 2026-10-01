@@ -1678,6 +1678,135 @@ def _token_digest(value):
     return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
 
 
+#: What a stream's schema is: inferred from the first flush, or settled by a
+#: person. A frozen schema is not re-inferred, which is the point -- a chart
+#: should not change shape because a producer shipped a field.
+SCHEMA_INFERRED = "inferred"
+SCHEMA_FROZEN = "frozen"
+
+
+class Stream(TimestampMixin, BelongsToOrgMixin, db.Model):
+    """
+    A Kafka topic, as a data source.
+
+    One row per topic, alongside the `DataSource` that holds the broker and its
+    credentials -- the data source is what a person picks in the query editor
+    and what the permission system already understands; this is the state that
+    is only a stream's: its window, the rate it is doing, whether anybody is
+    watching, and what its columns are.
+
+    Everything here is a window onto now. The raw events live in DuckDB and are
+    truncated continuously; these columns are the numbers a page reads and the
+    settings a person sets. Nothing in this table is the data.
+    """
+
+    id = primary_key("Stream")
+    org_id = Column(key_type("Organization"), db.ForeignKey("organizations.id"), nullable=False)
+    org = db.relationship(Organization)
+    data_source_id = Column(
+        key_type("DataSource"), db.ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    data_source = db.relationship(DataSource, backref=db.backref("stream", uselist=False, cascade="all, delete"))
+    topic = Column(db.String(255), nullable=False)
+
+    #: Overrides for this stream alone, where 0 means "use the install's".
+    row_budget = Column(db.Integer, nullable=False, default=0)
+    events_per_second = Column(db.Integer, nullable=False, default=0)
+
+    #: What the consumer last measured and decided. Read by the page and by the
+    #: chart's "last 6 minutes · 4.9M events" line; written once a flush.
+    observed_rate = Column(DOUBLE_PRECISION, nullable=False, default=0)
+    window_seconds = Column(db.Integer, nullable=False, default=0)
+    sample_rate = Column(db.Integer, nullable=False, default=1)
+    rows = Column(db.BigInteger, nullable=False, default=0)
+    #: Counted, never kept. A malformed message is worth a number on the page
+    #: and nothing more; a consumer that stopped for one is a consumer somebody
+    #: restarts at 3am.
+    malformed = Column(db.BigInteger, nullable=False, default=0)
+
+    #: The columns, as `[{"name": ..., "type": ...}]`, and whether a person has
+    #: settled them.
+    columns = Column(MutableList.as_mutable(JSONB), nullable=True)
+    schema_state = Column(db.String(16), nullable=False, default=SCHEMA_INFERRED)
+
+    #: The rollup: which columns to group by and what to measure. Empty means
+    #: no rollup, which is a reasonable thing for a stream nobody charts over
+    #: time.
+    group_by = Column(MutableList.as_mutable(ARRAY(db.Unicode)), nullable=True)
+    measures = Column(MutableList.as_mutable(JSONB), nullable=True)
+
+    #: When something using this stream was last looked at. The consumer runs
+    #: while this is recent, or while `pinned` is set.
+    last_viewed_at = Column(db.DateTime(True), nullable=True)
+    pinned = Column(db.Boolean, nullable=False, default=False)
+    #: Set when the consumer stops for a reason that is not inactivity, so the
+    #: page can say why rather than looking merely quiet.
+    last_error = Column(db.Text, nullable=True)
+    last_flush_at = Column(db.DateTime(True), nullable=True)
+
+    __tablename__ = "streams"
+    __table_args__ = (db.Index("streams_data_source_id", "data_source_id", unique=True),)
+
+    def __str__(self):
+        return self.topic
+
+    @property
+    def budget(self):
+        return self.row_budget or settings.STREAM_ROW_BUDGET
+
+    @property
+    def ceiling(self):
+        return self.events_per_second or settings.STREAM_EVENTS_PER_SECOND
+
+    @property
+    def frozen(self):
+        return self.schema_state == SCHEMA_FROZEN
+
+    @property
+    def sampled(self):
+        return (self.sample_rate or 1) > 1
+
+    def directory(self):
+        """Where its DuckDB file lives: under the uploads sandbox, like an upload."""
+        return os.path.join(settings.UPLOAD_ROOT, str(self.org_id), "streams")
+
+    def store_path(self):
+        return os.path.join(self.directory(), "stream-{}.duckdb".format(self.id))
+
+
+class StreamRollup(TimestampMixin, db.Model):
+    """
+    One minute of one stream, per group.
+
+    In Postgres rather than beside the raw events, because this is the part that
+    outlives a restart and the part a question about this morning reads. It is
+    small by construction -- 1,440 rows a day per group, and the group count is
+    capped -- which is what makes keeping it in the application's own database
+    reasonable where keeping the raw events there would not be.
+    """
+
+    id = primary_key("StreamRollup")
+    stream_id = Column(key_type("Stream"), db.ForeignKey("streams.id", ondelete="CASCADE"), nullable=False)
+    stream = db.relationship(Stream, backref=db.backref("rollups", cascade="all, delete-orphan", lazy="dynamic"))
+    minute = Column(db.DateTime(True), nullable=False)
+    #: The group's values, in the stream's `group_by` order. A dict so a chart
+    #: can name them, and because the columns are the stream's own.
+    group_key = Column(JSONB, nullable=True)
+    #: Whether this row is the capped tail rather than one group. Shown on the
+    #: chart, never hidden: a total missing its tail is wrong while looking
+    #: right.
+    is_other = Column(db.Boolean, nullable=False, default=False)
+    #: The measures, by name.
+    values = Column(JSONB, nullable=True)
+    #: What the stream was sampling at when this minute was rolled up, so a
+    #: count can be scaled back up honestly -- and so a chart can say it is an
+    #: estimate rather than quietly multiplying.
+    sample_rate = Column(db.Integer, nullable=False, default=1)
+
+    __tablename__ = "stream_rollups"
+    __table_args__ = (db.Index("stream_rollups_stream_minute", "stream_id", "minute"),)
+
+
 class SlackWorkspace(TimestampMixin, BelongsToOrgMixin, db.Model):
     """
     The Slack app an administrator installed, and its bot token.

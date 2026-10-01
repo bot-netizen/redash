@@ -100,6 +100,11 @@ all_ds = [
     "boto3==1.28.8",
     "botocore==1.31.8",
     "cassandra-driver==3.29.3",
+    # Kafka streams. librdkafka behind a C extension, so it is here with every
+    # other data source's SDK rather than in the base image: an install with no
+    # streams should not carry it, and `kafka_stream` simply does not register
+    # where it is absent.
+    "confluent-kafka==2.6.1",
     "certifi>=2019.9.11",
     "cmem-cmempy==21.2.3",
     "databend-py==0.4.6",

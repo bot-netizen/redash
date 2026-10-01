@@ -141,7 +141,25 @@ development machine it filled the disk and took Postgres with it.</p>
   <tr><td>Public URLs</td><td>Can be disabled instance-wide if shared links are not acceptable.</td></tr>
   <tr><td><code>SQLDESK_UPLOAD_QUOTA_MB</code></td><td>A ceiling on uploaded files, 5 GB by default. <code>0</code> removes it, and removing it is how a disk fills.</td></tr>
   <tr><td><code>SQLDESK_UPLOAD_LIFETIME_DAYS</code></td><td>How long an uploaded file is kept, 7 by default. <code>0</code> keeps everything forever.</td></tr>
+  <tr><td><code>SQLDESK_STREAM_ROW_BUDGET</code></td><td>Rows of raw events kept per stream, 5 million by default. The window follows from this and the rate.</td></tr>
+  <tr><td><code>SQLDESK_STREAM_EVENTS_PER_SECOND</code></td><td>Events a second stored from one stream, 5,000 by default. Past it they are sampled and every chart says so. <code>0</code> removes the ceiling, which is how a worker becomes the slowest part of a cluster.</td></tr>
+  <tr><td><code>SQLDESK_STREAM_ACTIVE_MINUTES</code></td><td>How long after somebody last looked a stream keeps consuming, 15 by default. <code>0</code> turns streams off entirely.</td></tr>
 </table>
+
+<h2 id="streams">Streams, operationally</h2>
+<p>What a stream costs is different in kind from everything else here: a query costs when somebody runs it,
+and a stream costs continuously. So the two numbers worth knowing are the <strong>row budget</strong> (how
+much disk a stream may take) and the <strong>events-per-second ceiling</strong> (how much work it may make a
+worker do). Past the ceiling events are sampled rather than queued &mdash; an unbounded queue in front of a
+slow writer is the crash, not the protection against it.</p>
+<p>A stream holds a worker while it is consuming, so give streams a queue of their own
+(<code>SQLDESK_STREAM_QUEUE</code> is not a setting yet &mdash; the jobs go on <code>streams</code>, and a
+worker whose <code>QUEUES</code> names it is what keeps a consumer out of the way of the queries people are
+waiting for). One worker per active stream, and only while somebody is watching: see
+<a href="connectors.html#streams">a stream is a window</a>.</p>
+<p>Raw events live in a DuckDB file per stream, under the same volume as uploaded files &mdash; so the
+uploads volume is what fills if a budget is set too high. The per-minute rollups live in Postgres, because
+they are small by construction and are the part that has to survive a restart.</p>
 <div class="doc-next"><a class="btn btn-ghost" href="mcp.html">&larr; MCP</a><a class="btn btn-primary" href="deploying.html">Deploying &rarr;</a></div>
   </main>
 </div>

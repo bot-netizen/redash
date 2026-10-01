@@ -8,7 +8,12 @@ from sqldesk import rq_redis_connection, settings
 from sqldesk.tasks.worker import Queue as SQLDeskQueue
 
 default_operational_queues = ["periodic", "emails", "default"]
-default_query_queues = ["scheduled_queries", "queries", "schemas"]
+# `streams` is here so a default install works at all: a consumer enqueued onto
+# a queue no worker takes from is a stream that never consumes and a chart that
+# is always empty, with nothing in any log to say why. A busy install should
+# give it a worker of its own -- a consumer holds one for minutes at a time, and
+# behind the queries people are waiting for is the wrong place for that.
+default_query_queues = ["scheduled_queries", "queries", "schemas", "streams"]
 default_queues = default_operational_queues + default_query_queues
 
 

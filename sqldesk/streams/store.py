@@ -56,10 +56,22 @@ class Store:
     @property
     def connection(self):
         if self._connection is None:
-            os.makedirs(os.path.dirname(self.path), exist_ok=True)
+            self._ensure_directory()
             self._connection = duckdb.connect(self.path)
             self._lock_down(self._connection)
         return self._connection
+
+    def _ensure_directory(self):
+        """
+        The folder the database and its spill live in.
+
+        Called from both the connection and the spill, because the spill is
+        written *first* -- `append` has the bytes before it has any reason to
+        open the database -- and relying on the connection to have made the
+        folder meant the very first flush of a new stream failed on a missing
+        directory.
+        """
+        os.makedirs(os.path.dirname(self.path), exist_ok=True)
 
     def _lock_down(self, connection):
         """
@@ -161,6 +173,7 @@ class Store:
         One consumer per stream, so there is nothing to contend with. Two would
         need a lock, and would have a worse problem than this file.
         """
+        self._ensure_directory()
         path = self.path + ".flush.ndjson"
         kept = 0
         with open(path, "wb") as handle:

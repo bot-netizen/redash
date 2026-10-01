@@ -1,4 +1,4 @@
-.PHONY: compose_build up test_db create_database clean down tests lint backend-unit-tests frontend-unit-tests test build watch start redis-cli bash
+.PHONY: compose_build up test_db create_database clean down tests lint backend-unit-tests stream-tests frontend-unit-tests test build watch start redis-cli bash
 
 compose_build: .env
 	COMPOSE_DOCKER_CLI_BUILD=1 DOCKER_BUILDKIT=1 docker compose build
@@ -52,6 +52,20 @@ lint:
 
 backend-unit-tests: up test_db
 	docker compose run --rm --name tests server tests
+
+# The stream tests that need a real broker. Everything else about streams is
+# driven by a fake that returns bytes; what this covers is whether librdkafka
+# behaves as `sqldesk.streams.consumer.Broker` assumes -- above all that a
+# consumer group which has run before still starts at the end of the topic,
+# since `auto.offset.reset` does not apply once a group has an offset.
+#
+# Redpanda rather than Kafka: one process, no ZooKeeper, same protocol. The
+# tests skip themselves (loudly) when no broker is running, so an ordinary
+# `make backend-unit-tests` does not need one.
+stream-tests: up test_db
+	docker compose --profile streams up -d broker
+	docker compose run --rm -e SQLDESK_DATABASE_URL=postgresql://postgres@postgres/tests server \
+	  bash -c "pip install -q confluent-kafka==2.6.1 && pytest tests/streams -q"
 
 frontend-unit-tests:
 	CYPRESS_INSTALL_BINARY=0 PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=1 pnpm install --frozen-lockfile

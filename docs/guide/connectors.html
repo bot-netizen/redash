@@ -88,6 +88,62 @@ able to write new queries against the source.</p>
   <tr><td>Query Results</td><td>Not external at all: query the results of other queries, in SQLite. Useful for joining across sources.</td></tr>
 </table>
 
+<h2 id="streams">Kafka: a stream is a window</h2>
+<p>A topic is a data source like any other, but what you query is not the topic &mdash; it is the window
+SQLDesk is holding. It keeps the <strong>last few minutes of raw events</strong> and rolls everything
+older into <strong>per-minute buckets</strong> it keeps for a day. A dashboard asking &ldquo;what is
+happening now&rdquo; reads the raw window; one asking &ldquo;how does now compare to this morning&rdquo;
+reads the rollup.</p>
+<p><strong>For history, land the topic in your warehouse</strong> with Kafka Connect or Flink and point
+SQLDesk at the warehouse. That is not a limitation being apologised for &mdash; a broker already has
+retention and a warehouse already has history, and a dashboard tool that tried to be either would be a
+worse version of both while being the thing that falls over.</p>
+
+<h3>The window sizes itself</h3>
+<p>You set a budget in <strong>rows</strong>, not minutes, and the window is whatever that buys at the rate
+the topic is actually doing. A fixed window is wrong in both directions: thirty minutes of a 50,000/s topic
+is gigabytes, five minutes of a 3/s topic is a chart with nine points on it. A quiet topic gets the full
+half hour; a busy one settles at five minutes. The chart says which: <em>&ldquo;last 6 minutes &middot;
+4.9M events&rdquo;</em>.</p>
+
+<h3>Over the ceiling, it samples &mdash; and says so</h3>
+<p>Past the events-per-second ceiling, events are kept one in N and every chart carries the figure. The
+decision is a hash of the message <strong>key</strong>, so the same keys stay in from one second to the
+next and a per-key count can be scaled back up honestly &mdash; random sampling would give you a different
+set of users every second and no count worth reporting. A topic with no keys is sampled by position
+instead, which is still one in N.</p>
+<p><strong>Nothing is ever buffered on the way in.</strong> An unbounded queue in front of a slow writer is
+the crash, not the protection against it. Whatever arrives in a second is either written or sampled away
+within that second.</p>
+
+<h3>Rollups, and the tail</h3>
+<p>A rollup names the columns to group by and what to measure. Distinct groups are capped at a thousand and
+everything past the cap lands in one <strong>other</strong> bucket the chart shows rather than hides: a
+chart that silently dropped the long tail would make a total wrong and look right. Grouped by something
+like a user id on a ten-million-user stream, a rollup is not a rollup &mdash; it is the stream again with
+extra steps, which is what the cap is for.</p>
+<p>Distinct counts are approximate by default (HyperLogLog), because an exact distinct over a minute of a
+busy topic can cost more than everything else together. Ask for exact on the one measure that needs it.</p>
+
+<h3>It only runs while somebody is watching</h3>
+<p>A stream is consumed while something that uses it has been looked at in the last fifteen minutes, or
+while an administrator has <strong>pinned</strong> it. Always-on burns a worker and a disk for a dashboard
+nobody has open &mdash; a stream is the one thing here that costs money continuously rather than per query
+&mdash; and consuming only while a dashboard is literally open means arriving to an empty chart every
+time. The pin covers the few streams that genuinely have to be there at 3am.</p>
+<p><strong>On resume it starts from now</strong>, not from where it left off. The window is &ldquo;now&rdquo;,
+so replaying an hour of backlog to fill five minutes would stamp hour-old events with an arrival time of
+now and draw a chart that is a lie.</p>
+
+<h3>Schema</h3>
+<p>The columns are inferred from the first flush and then left alone; an administrator corrects and freezes
+them. A field a producer adds later is ignored until somebody re-infers, deliberately: a chart should not
+change shape because a producer shipped a field. A message SQLDesk cannot read increments a malformed
+counter on the stream's page and never stops the consumer. <strong>JSON only</strong> for now &mdash; Avro
+and Protobuf need a schema registry, which is its own connection and its own credentials.</p>
+<p>Needs <code>confluent-kafka</code>, which is in the optional data-source dependency group with every
+other SDK. Without it the connector does not appear, which is the same as every other optional one.</p>
+
 <h2>Schema and autocomplete</h2>
 <p>SQLDesk periodically reads the table and column list and caches it in Redis so the editor can
 autocomplete. It is refreshed on a schedule and can be refreshed by hand from the editor. A missing table
