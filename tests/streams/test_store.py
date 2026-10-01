@@ -142,6 +142,30 @@ class TestWhatGoesIn(StoreTestCase):
         self.assertEqual(2, added)
         self.assertEqual(2, malformed)
 
+    def test_a_message_with_one_real_value_is_kept(self):
+        # The case that actually occurs: a producer omitting some fields.
+        self.store.append(events({"region": "eu", "amount": 1}))
+
+        added, malformed = self.store.append(events({"region": None, "amount": 1}))
+
+        self.assertEqual(1, added)
+        self.assertEqual(0, malformed)
+
+    def test_but_a_message_with_no_values_at_all_is_counted_as_malformed(self):
+        """
+        A known consequence, pinned here so it is a decision rather than a
+        surprise. A row of nothing but nulls is what `ignore_errors=true`
+        produces for a line DuckDB could not read, and a message carrying no
+        non-null value produces the same thing -- there is no way to tell them
+        apart. For an event stream, that message has no data in it.
+        """
+        self.store.append(events({"region": "eu", "amount": 1}))
+
+        added, malformed = self.store.append(events({"region": None}))
+
+        self.assertEqual(0, added)
+        self.assertEqual(1, malformed)
+
     def test_a_flush_of_nothing_but_rubbish_is_survivable(self):
         added, malformed = self.store.append([b"nope", b"also nope"])
 

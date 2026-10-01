@@ -185,6 +185,14 @@ class Store:
         either failing or counting. So all-null rows are excluded here and
         counted instead.
 
+        **The known consequence**, stated because it is a real one: a message
+        that carries no non-null value at all -- `{"a": null}` on a stream
+        whose other columns it omits -- is indistinguishable from a line
+        DuckDB could not read, and is counted as malformed. For an event
+        stream that is a message with no data in it. A message with one
+        non-null field and the rest null is kept, which is the case that
+        actually occurs.
+
         The columns are the table's, chosen once from the first flush and then
         fixed. A field the producer drops arrives as null; a field it adds is
         **ignored** until somebody re-infers the schema. That is deliberate: a
