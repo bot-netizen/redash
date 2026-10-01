@@ -6,7 +6,7 @@ from funcy import flatten, partial, project
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm.exc import NoResultFound
 
-from sqldesk import features, limiter, models, settings
+from sqldesk import features, limiter, models, oauth, settings
 from sqldesk.authentication.account import (
     invite_link_for_user,
     send_invite_email,
@@ -359,6 +359,13 @@ class UserDisableResource(BaseResource):
             )
         user.disable()
         models.db.session.commit()
+        # Disabling an account has to end its connected MCP clients, not only
+        # its ability to sign in. `/mcp` refuses a disabled user's token
+        # anyway, so this is not what makes it safe -- it is what makes the
+        # person's "Connected apps" list and the admin list honest, and it
+        # removes the refresh token so a client cannot sit holding a grant
+        # against the account being enabled again.
+        oauth.revoke_for_user(user, "account disabled")
 
         return user.to_dict(with_api_key=is_admin_or_owner(user_id))
 

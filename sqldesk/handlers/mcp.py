@@ -22,7 +22,7 @@ import uuid
 from flask import jsonify, request
 from sqlalchemy.orm.exc import NoResultFound
 
-from sqldesk import features, models, redis_connection, settings
+from sqldesk import features, models, oauth, redis_connection, settings
 from sqldesk.authentication import current_org
 from sqldesk.handlers.base import BaseResource, routes
 from sqldesk.mcp import (
@@ -99,31 +99,49 @@ def _refusal_worth_recording():
         return True
 
 
-def _user_from_request(org):
+def _bearer():
     """
-    The user behind the API key, or None.
+    The credential the client presented, however it presented it.
 
-    A user's own key, not a query's: a query API key is scoped to one query's
-    results and would be a strange thing to hand a tool server. The header is
-    preferred over a query parameter because a URL is logged by every proxy
-    between here and the client.
+    The header is preferred over the query parameter because a URL is logged by
+    every proxy between here and the client; the parameter stays for the
+    scripts that already use it.
     """
     header = request.headers.get("Authorization", "")
-    api_key = None
     if header.lower().startswith("bearer "):
-        api_key = header[7:].strip()
-    elif header.lower().startswith("key "):
-        api_key = header[4:].strip()
-    if not api_key:
-        api_key = request.args.get("api_key")
-    if not api_key:
-        return None
+        return header[7:].strip()
+    if header.lower().startswith("key "):
+        return header[4:].strip()
+    return request.args.get("api_key")
+
+
+def _identify(org):
+    """
+    Who is calling: `(user, oauth_token)`, either part possibly None.
+
+    Two credentials are accepted and they are not equivalent. An OAuth token
+    expires, can be revoked from a profile page, and names the client that
+    holds it. An API key does none of those things -- it is the same secret
+    forever, and it is kept because scripts and headless setups need one.
+
+    The prefix decides which table to look in, so the common case is one
+    indexed lookup rather than two. A credential with our prefix is never
+    tried as an API key: a token that has been revoked must be refused, not
+    quietly re-interpreted.
+    """
+    credential = _bearer()
+    if not credential:
+        return None, None
+
+    if oauth.looks_like_an_oauth_token(credential):
+        token = oauth.token_for_bearer(credential, org)
+        return (token.user if token else None), token
 
     try:
-        user = models.User.get_by_api_key_and_org(api_key, org)
+        user = models.User.get_by_api_key_and_org(credential, org)
     except NoResultFound:
-        return None
-    return None if user.is_disabled else user
+        return None, None
+    return (None if user.is_disabled else user), None
 
 
 def _client_name(message):
@@ -175,17 +193,15 @@ def mcp_endpoint():
     session_id = request.headers.get(SESSION_HEADER)
     if session_id and not SESSION_ID.fullmatch(session_id):
         session_id = None
-    user = _user_from_request(org)
+    user, token = _identify(org)
 
     if user is None:
-        # Recorded before anything else: a key that does not work, tried
-        # repeatedly, is the thing an audit exists to show -- up to a point.
+        # Recorded before anything else: a credential that does not work,
+        # tried repeatedly, is the thing an audit exists to show -- up to a
+        # point.
         if _refusal_worth_recording():
-            _record(org, None, session_id, None, "authenticate", None, "refused", "no or unknown API key", started)
-        response = jsonify(_error(UNAUTHORIZED, "A SQLDesk API key is required: Authorization: Bearer <key>."))
-        response.status_code = 401
-        response.headers["WWW-Authenticate"] = "Bearer"
-        return response
+            _record(org, None, session_id, None, "authenticate", None, "refused", "no or unknown credential", started)
+        return _challenge()
 
     if not features.can(user, features.USE_MCP):
         # A working key belonging to somebody who may not use MCP. Recorded
@@ -215,8 +231,14 @@ def mcp_endpoint():
         _record(org, user, session_id, None, "batch", None, "refused", detail, started)
         return jsonify(_error(INVALID_REQUEST, "A batch holds 1 to {} messages.".format(MAX_BATCH))), 400
 
+    if token is not None:
+        # Written at most once a minute per token; see sqldesk.oauth. This is
+        # what makes "last used" on somebody's profile worth reading, and the
+        # difference between a client they still use and one they forgot.
+        oauth.note_used(token)
+
     with time_budget(settings.MCP_TIME_BUDGET):
-        replies, issued_session = _answer(messages, org, user, session_id)
+        replies, issued_session = _answer(messages, org, user, session_id, token=token)
 
     if not replies:
         response = jsonify(None)
@@ -229,8 +251,61 @@ def mcp_endpoint():
     return response
 
 
-def _answer(messages, org, user, session_id):
+def _registered_client_name(token):
+    """
+    What the client holding this token registered as.
+
+    Preferred over the name a client gives at `initialize`, which is whatever
+    it chose to say this minute. This one was recorded when somebody agreed to
+    it on a consent page, so an audit row says which connection was used.
+    """
+    if token is None:
+        return None
+    client = models.OAuthClient.query.filter(models.OAuthClient.client_id == token.client_id).first()
+    return client.name if client is not None else None
+
+
+def _challenge():
+    """
+    401, and where to go next.
+
+    `resource_metadata` is how a client discovers that OAuth exists here: RFC
+    9728 says the resource points at its own metadata document from this
+    header, and an MCP client reads it, follows it to the authorization
+    server, and starts the flow. Without this parameter a client has no way to
+    find any of it and the only route left is a pasted API key.
+
+    Built from the request so a client reached on a port-forward or behind a
+    different name is sent somewhere it can actually open.
+    """
+    if settings.MCP_OAUTH_ENABLED and settings.FEATURE_AI:
+        message = (
+            "Authentication is required. Sign in through the OAuth flow advertised in WWW-Authenticate, "
+            "or send a SQLDesk API key as Authorization: Bearer <key>."
+        )
+    else:
+        message = "A SQLDesk API key is required: Authorization: Bearer <key>."
+
+    response = jsonify(_error(UNAUTHORIZED, message))
+    response.status_code = 401
+    if settings.MCP_OAUTH_ENABLED and settings.FEATURE_AI:
+        root = request.url_root.rstrip("/")
+        slug = (request.view_args or {}).get("org_slug")
+        origin = "{}/{}".format(root, slug) if slug else root
+        response.headers[
+            "WWW-Authenticate"
+        ] = 'Bearer resource_metadata="{}/.well-known/oauth-protected-resource"'.format(origin)
+    else:
+        response.headers["WWW-Authenticate"] = "Bearer"
+    return response
+
+
+def _answer(messages, org, user, session_id, token=None):
     replies, issued_session = [], None
+    # The registered name of the client holding the token, where there is one.
+    # A client that authenticated with OAuth is identified even before it says
+    # anything about itself at initialize -- and it cannot lie about this one.
+    granted_to = _registered_client_name(token)
     for message in messages:
         message_started = time.time()
         message_id = message.get("id") if isinstance(message, dict) else None
@@ -250,7 +325,15 @@ def _answer(messages, org, user, session_id):
             result = handle(message, user, org)
         except McpError as error:
             _record(
-                org, user, session_id, _client_name(message), method, tool, "error", error.message, message_started
+                org,
+                user,
+                session_id,
+                granted_to or _client_name(message),
+                method,
+                tool,
+                "error",
+                error.message,
+                message_started,
             )
             replies.append(_error(error.code, error.message, message_id))
             continue
@@ -266,7 +349,15 @@ def _answer(messages, org, user, session_id):
         else:
             outcome = "error" if isinstance(result, dict) and result.get("isError") else "ok"
         _record(
-            org, user, session_id, _client_name(message), method, tool, outcome, _summary(message), message_started
+            org,
+            user,
+            session_id,
+            granted_to or _client_name(message),
+            method,
+            tool,
+            outcome,
+            _summary(message),
+            message_started,
         )
         if result is not None:
             replies.append({"jsonrpc": "2.0", "id": message_id, "result": result})

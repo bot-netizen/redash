@@ -9,6 +9,7 @@ import Tooltip from "@/components/Tooltip";
 import HelpTrigger from "@/components/HelpTrigger";
 import TimeAgo from "@/components/TimeAgo";
 import { axios } from "@/services/axios";
+import notification from "@/services/notification";
 import { currentUser, clientConfig } from "@/services/auth";
 
 import "./mcp.less";
@@ -35,13 +36,29 @@ function ConnectPanel({ origin }) {
         Connecting a client <HelpTrigger type="MCP_CONNECT" />
       </h3>
       <p className="mcp-muted">
-        One endpoint, authenticated with a SQLDesk API key &mdash; the one on your profile page. Every call runs as that
-        user and sees only the data sources that user can read.
+        One endpoint. Every call runs as the person who authorized it and sees only the data sources that person can
+        read.
       </p>
-      <pre className="mcp-pre">{`${origin}/mcp
-
-Authorization: Bearer <your SQLDesk API key>`}</pre>
-      <p className="mcp-muted">With Claude Code:</p>
+      <pre className="mcp-pre">{`${origin}/mcp`}</pre>
+      {clientConfig.mcpOAuthEnabled && (
+        <React.Fragment>
+          {/*
+            Signing in first, because it is the better answer and most clients
+            do it by themselves: they call the endpoint, get a 401 that names
+            the discovery document, and open a browser. Nothing is pasted, the
+            token expires, and it is listed on the person's own profile.
+          */}
+          <p className="mcp-muted">
+            <strong>Signing in</strong> is the recommended way. Add the endpoint and the client will open a browser; you
+            sign in the way you always do, and it gets a token that expires and can be disconnected from your profile.
+          </p>
+          <pre className="mcp-pre">{`claude mcp add --transport http sqldesk ${origin}/mcp`}</pre>
+        </React.Fragment>
+      )}
+      <p className="mcp-muted">
+        <strong>An API key</strong> &mdash; the one on your profile page &mdash; is still accepted, and is what a script
+        or a headless setup should use.
+      </p>
       <pre className="mcp-pre">{`claude mcp add --transport http sqldesk ${origin}/mcp \\
   --header "Authorization: Bearer <your API key>"`}</pre>
       {/*
@@ -137,6 +154,104 @@ const COLUMNS = [
   { title: "Detail", dataIndex: "detail", render: (detail) => <span className="mcp-detail">{detail}</span> },
 ];
 
+/*
+  Every connected client in the organisation, and a way to end any of them.
+
+  The administrator's half of "Connected apps". It exists for the question an
+  API key cannot answer: when somebody leaves, or a laptop goes missing, which
+  clients are holding a credential for this install and whose. Revoked rows
+  stay, because "did that client have access last Tuesday" is a question that
+  gets asked after the fact.
+*/
+function ConnectionsPanel() {
+  const [tokens, setTokens] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    axios
+      .get("api/admin/oauth/tokens")
+      .then((data) => setTokens(data.tokens))
+      .catch(() => setTokens([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const revoke = useCallback((token) => {
+    axios
+      .delete(`api/admin/oauth/tokens/${token.id}`)
+      .then(() => {
+        setTokens((current) =>
+          current.map((item) => (item.id === token.id ? { ...item, revoked_at: new Date().toISOString() } : item))
+        );
+        notification.success(`${token.client_name} can no longer reach ${token.user_name}'s data.`);
+      })
+      .catch(() => notification.error("Could not revoke that."));
+  }, []);
+
+  if (loading || !tokens || tokens.length === 0) {
+    return null;
+  }
+
+  const columns = [
+    {
+      title: "App",
+      dataIndex: "client_name",
+      // The app's own claim about its name, as on the consent page.
+      render: (name) => <strong>{name}</strong>,
+    },
+    { title: "As", dataIndex: "user_name", width: 180 },
+    {
+      title: "Connected",
+      dataIndex: "connected_at",
+      width: 150,
+      render: (at) => <TimeAgo date={at} />,
+    },
+    {
+      title: "Last used",
+      dataIndex: "last_used_at",
+      width: 150,
+      // The never-used ones are the ones worth removing, so they say so.
+      render: (at) => (at ? <TimeAgo date={at} /> : <span className="mcp-muted">never</span>),
+    },
+    {
+      title: "",
+      dataIndex: "revoked_at",
+      width: 120,
+      align: "right",
+      render: (revokedAt, row) =>
+        revokedAt ? (
+          <Tooltip title="Kept so you can see it had access, and when that ended.">
+            <Tag>revoked</Tag>
+          </Tooltip>
+        ) : (
+          <Button size="small" danger onClick={() => revoke(row)}>
+            Revoke
+          </Button>
+        ),
+    },
+  ];
+
+  return (
+    <React.Fragment>
+      <h3 className="mcp-section-title">
+        Connected apps{" "}
+        <Button size="small" onClick={load} loading={loading}>
+          Refresh
+        </Button>
+      </h3>
+      <p className="mcp-muted">
+        Clients holding a token for this organisation. Revoking one stops it immediately; the person has to connect it
+        again. Disabling an account revokes everything it holds.
+      </p>
+      <Table dataSource={tokens} columns={columns} rowKey="id" size="small" pagination={{ pageSize: 10 }} />
+    </React.Fragment>
+  );
+}
+
 export default function McpHome({ onError }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -193,6 +308,8 @@ export default function McpHome({ onError }) {
       )}
 
       {isAdmin && data && <ActivePanel active={data.active} minutes={data.active_minutes} />}
+
+      {isAdmin && clientConfig.mcpOAuthEnabled && <ConnectionsPanel />}
 
       {isAdmin && (
         <React.Fragment>

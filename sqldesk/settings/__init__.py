@@ -484,6 +484,23 @@ CATALOG_USAGE_WINDOW_HOURS = int(os.environ.get("SQLDESK_CATALOG_USAGE_WINDOW_HO
 #: is scheduled -- the command still works for anyone running it in CI, which
 #: is where most of its value is.
 CATALOG_EVAL_FILE = os.environ.get("SQLDESK_CATALOG_EVAL_FILE", "")
+
+#: OAuth for MCP clients. On by default where MCP itself is on: a client that
+#: can discover the endpoints uses them, and the alternative is a personal API
+#: key living in a config file outside SSO. Turn it off to keep API keys as the
+#: only way in -- the endpoints then answer 404 rather than refusing, so a
+#: client falls back instead of looping on an error it cannot act on.
+MCP_OAUTH_ENABLED = parse_boolean(os.environ.get("SQLDESK_MCP_OAUTH_ENABLED", "true"))
+
+#: Whether the OAuth endpoints may be used over plain http.
+#:
+#: Off, because an authorization code and a bearer token crossing a network in
+#: the clear is the thing the whole flow exists to avoid. On for a local
+#: install reached through a port-forward with no TLS anywhere, which is a real
+#: way people try this out -- and the only honest way to allow it is a setting
+#: somebody has to turn on, rather than code that quietly decides http is fine
+#: when it recognises the hostname.
+MCP_OAUTH_ALLOW_HTTP = parse_boolean(os.environ.get("SQLDESK_MCP_OAUTH_ALLOW_HTTP", "false"))
 # Which queue an MCP-issued query goes on. Empty means the data source's own,
 # which is also where dashboards go -- so a model exploring competes with the
 # people waiting for a dashboard to load. Name a queue here and give it

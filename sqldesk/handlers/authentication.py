@@ -345,6 +345,8 @@ def client_config():
         "tableCellMaxJSONSize": settings.TABLE_CELL_MAX_JSON_SIZE,
         # Gates the MCP pages and the catalog.
         "mcpEnabled": settings.FEATURE_AI,
+        # So the MCP page can offer signing in rather than only a pasted key.
+        "mcpOAuthEnabled": settings.FEATURE_AI and settings.MCP_OAUTH_ENABLED,
         # The name this had before, still sent: during an upgrade a browser
         # holding the previous bundle reads it from a server already running
         # the new one.

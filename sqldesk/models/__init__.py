@@ -1,5 +1,6 @@
 import calendar
 import datetime
+import hashlib
 import logging
 import numbers
 import os
@@ -83,6 +84,7 @@ from sqldesk.utils import (
     mustache_render,
     mustache_render_escape,
     sentry,
+    utcnow,
 )
 from sqldesk.utils.configuration import ConfigurationContainer
 
@@ -1578,6 +1580,208 @@ class Visualization(TimestampMixin, BelongsToOrgMixin, db.Model):
             "description": self.description,
             "options": self.options,
         }
+
+
+#: What an MCP client is allowed to ask for. One scope, because the tools are
+#: read-only and a scope a person cannot reason about is a consent screen
+#: nobody reads. If a writing tool is ever added it gets its own scope and
+#: existing tokens cannot reach it, which is the point of naming this one.
+OAUTH_SCOPE = "mcp:read"
+
+#: How long an access token lasts. Short, because it travels in every request
+#: and the refresh token is there to make shortness cheap.
+OAUTH_ACCESS_TOKEN_SECONDS = 3600
+
+#: And a refresh token. Sliding: used within the window, it is replaced and
+#: the window starts again, so an active client never asks anyone to sign in
+#: again and an abandoned one stops working within a month.
+OAUTH_REFRESH_TOKEN_SECONDS = 60 * 60 * 24 * 30
+
+
+def _token_digest(value):
+    """
+    A bearer token as stored.
+
+    Hashed, because a token is a password: it is presented as proof, so
+    anything that can read the table can authenticate as its owner. Plain
+    SHA-256 with no salt on purpose -- the value is 32 random bytes, so there
+    is no dictionary to stretch against, and the lookup has to be by index.
+    """
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+
+
+class OAuthClient(TimestampMixin, db.Model):
+    """
+    An MCP client that may ask a person for access.
+
+    Public clients only: a desktop or CLI client cannot keep a secret, and the
+    MCP specification says so plainly. What stands in for one is PKCE -- the
+    client proves on the token request that it is the same software that
+    started the flow -- which is why `code_challenge` is required rather than
+    optional below.
+
+    Not scoped to an organisation. The same client software is used by
+    everybody, registration carries no authority on its own, and what a
+    registration *can* reach is decided entirely by whose token it holds.
+    """
+
+    id = primary_key("OAuthClient")
+    #: What the client calls itself at registration. Shown on the consent
+    #: page, and therefore never trusted: anyone may register anything, so
+    #: the page says the name is the client's own claim.
+    name = Column(db.String(255), nullable=False)
+    client_id = Column(db.String(48), unique=True, nullable=False)
+    #: Where a code may be sent back. Exact string matching, no wildcards and
+    #: no prefix rules: a loose redirect URI is how an authorization code is
+    #: handed to somebody else.
+    redirect_uris = Column(MutableList.as_mutable(ARRAY(db.Unicode)), nullable=False)
+    client_uri = Column(db.String(1024), nullable=True)
+    #: Where the registration came from, for an administrator reading the list.
+    registered_from = Column(db.String(64), nullable=True)
+
+    __tablename__ = "oauth_clients"
+
+    def __str__(self):
+        return self.name
+
+    # --- the interface authlib's grants ask for -----------------------------
+
+    def get_client_id(self):
+        return self.client_id
+
+    def get_default_redirect_uri(self):
+        return self.redirect_uris[0] if self.redirect_uris else None
+
+    def get_allowed_scope(self, scope):
+        # One scope, and asking for anything else gets nothing rather than an
+        # error: a client that asks for too much still works, read-only.
+        requested = set((scope or "").split())
+        return OAUTH_SCOPE if OAUTH_SCOPE in requested or not requested else ""
+
+    def check_redirect_uri(self, redirect_uri):
+        return redirect_uri in (self.redirect_uris or [])
+
+    def check_client_secret(self, secret):
+        # There is no secret. Saying so is not the same as accepting any.
+        return False
+
+    def check_endpoint_auth_method(self, method, endpoint):
+        return method == "none"
+
+    def check_response_type(self, response_type):
+        return response_type == "code"
+
+    def check_grant_type(self, grant_type):
+        return grant_type in ("authorization_code", "refresh_token")
+
+
+class OAuthAuthorizationCode(TimestampMixin, db.Model):
+    """
+    A code issued at the end of the consent page, exchanged once for a token.
+
+    Hashed and single-use, like the tokens. Five minutes, which is the
+    specification's recommendation and about as long as a redirect back to a
+    waiting client can honestly take.
+    """
+
+    id = primary_key("OAuthAuthorizationCode")
+    code_digest = Column(db.String(64), unique=True, nullable=False)
+    client_id = Column(db.String(48), nullable=False)
+    user_id = Column(key_type("User"), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user = db.relationship(User)
+    redirect_uri = Column(db.String(1024), nullable=True)
+    scope = Column(db.String(255), nullable=True)
+    #: PKCE. Required, not optional: without it an intercepted code can be
+    #: spent by whoever intercepted it.
+    code_challenge = Column(db.String(128), nullable=False)
+    code_challenge_method = Column(db.String(10), nullable=False)
+    expires_at = Column(db.DateTime(True), nullable=False)
+
+    __tablename__ = "oauth_authorization_codes"
+
+    def is_expired(self):
+        return self.expires_at <= utcnow()
+
+    def get_redirect_uri(self):
+        return self.redirect_uri
+
+    def get_scope(self):
+        return self.scope or ""
+
+    def get_nonce(self):
+        # OpenID Connect only. We are not an identity provider.
+        return None
+
+    def get_auth_time(self):
+        return None
+
+
+class OAuthToken(TimestampMixin, db.Model):
+    """
+    A token a client holds on somebody's behalf.
+
+    One row per grant rather than one per access token: refreshing replaces
+    the pair in place, so "Connected apps" lists the connections a person has
+    made and not a log of every hour since. Revoking is a column rather than a
+    delete, so an administrator asking "did that client have access last
+    Tuesday" has an answer.
+    """
+
+    id = primary_key("OAuthToken")
+    client_id = Column(db.String(48), nullable=False)
+    #: Carried for the audit and the admin list. A token's authority comes
+    #: from the user, so this is never consulted to decide anything.
+    org_id = Column(key_type("Organization"), db.ForeignKey("organizations.id"), nullable=False)
+    org = db.relationship(Organization)
+    user_id = Column(key_type("User"), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user = db.relationship(User, backref=db.backref("oauth_tokens", cascade="all, delete-orphan"))
+    access_token_digest = Column(db.String(64), unique=True, nullable=False)
+    refresh_token_digest = Column(db.String(64), unique=True, nullable=True)
+    scope = Column(db.String(255), nullable=True)
+    access_expires_at = Column(db.DateTime(True), nullable=False)
+    refresh_expires_at = Column(db.DateTime(True), nullable=True)
+    revoked_at = Column(db.DateTime(True), nullable=True)
+    #: So a person can tell a client they still use from one they forgot.
+    #: Written at most once a minute; see sqldesk.oauth.
+    last_used_at = Column(db.DateTime(True), nullable=True)
+
+    __tablename__ = "oauth_tokens"
+
+    # --- the interface authlib asks for -------------------------------------
+
+    def get_client_id(self):
+        return self.client_id
+
+    def check_client(self, client):
+        """
+        Whether this token belongs to the client presenting it.
+
+        Asked on a refresh, and it is the check that stops one registered
+        client refreshing another's token -- registration is open, so without
+        it anybody could register a client and extend somebody else's grant
+        with a refresh token they got hold of.
+        """
+        return self.client_id == client.get_client_id()
+
+    def get_scope(self):
+        return self.scope or ""
+
+    def get_expires_in(self):
+        return OAUTH_ACCESS_TOKEN_SECONDS
+
+    def is_expired(self):
+        return self.access_expires_at <= utcnow()
+
+    def is_revoked(self):
+        return self.revoked_at is not None
+
+    @property
+    def refresh_token_expired(self):
+        return self.refresh_expires_at is not None and self.refresh_expires_at <= utcnow()
+
+    def revoke(self):
+        if self.revoked_at is None:
+            self.revoked_at = utcnow()
 
 
 class McpEvent(TimestampMixin, BelongsToOrgMixin, db.Model):

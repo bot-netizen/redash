@@ -1,0 +1,45 @@
+{% set hide_page_header = true %}
+
+{% extends "layouts/signed_out.html" %}
+
+{% block title %}Connect an app{% endblock %}
+
+{% block content %}
+<div class="fixed-width-page">
+  <div class="bg-white tiled m-t-0" style="padding: 24px">
+    <h4 class="m-t-0">Let this app read your data?</h4>
+
+    {#
+      The name is the client's own claim. Anybody may register a client, so
+      presenting the name as though SQLDesk vouched for it would be the one
+      lie on this page -- and it is exactly the lie a phishing client needs.
+      Said plainly instead, with the address it will be sent back to, which
+      is the part a person can actually check.
+    #}
+    <p>
+      An app calling itself <strong>{{ client.name }}</strong> is asking to connect to
+      <strong>{{ org.name }}</strong> as <strong>{{ user.name }}</strong>.
+    </p>
+
+    <p class="text-muted">
+      SQLDesk did not write this app and cannot vouch for its name. If you did not just
+      start this from the app yourself, close this page.
+    </p>
+
+    <ul class="text-muted">
+      <li>It will be able to <strong>read</strong> what you can read: your data sources' table and column
+        names, saved queries and dashboards, and query results.</li>
+      <li>It will <strong>not</strong> be able to change anything, run anything you have not asked it to,
+        or see anything your account cannot.</li>
+      <li>You can disconnect it at any time from your profile, and it stops working immediately.</li>
+    </ul>
+
+    <form method="POST" action="?{{ query }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="btn btn-primary" type="submit" name="agree" value="yes">Connect</button>
+      {# A denial is a real answer: the app is told, rather than left waiting. #}
+      <button class="btn btn-default m-l-5" type="submit" name="agree" value="no">Cancel</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -17,7 +17,24 @@ class SQLDesk(Flask):
         )
         super(SQLDesk, self).__init__(__name__, *args, **kwargs)
         # Make sure we get the right referral address even behind proxies like nginx.
-        self.wsgi_app = ProxyFix(self.wsgi_app, x_for=settings.PROXIES_COUNT, x_host=1)
+        #
+        # `x_proto` is stated rather than left to werkzeug, which already
+        # defaults it to 1. Two reasons to write it down: OAuth for MCP depends
+        # on it -- authlib refuses an authorization request whose URL does not
+        # look like https, so behind a TLS-terminating proxy the whole flow
+        # rests on `X-Forwarded-Proto` being read -- and it keeps the forwarded
+        # scheme in step with the forwarded address where two proxies are in
+        # front, which the default does not.
+        #
+        # `PROXIES_COUNT` says how many proxies there are, and a header from
+        # further away than that is ignored; where nothing is in front, nothing
+        # sets these headers.
+        self.wsgi_app = ProxyFix(
+            self.wsgi_app,
+            x_for=settings.PROXIES_COUNT,
+            x_proto=settings.PROXIES_COUNT,
+            x_host=1,
+        )
         # Configure SQLDesk using our settings
         self.config.from_object("sqldesk.settings")
 
@@ -29,6 +46,7 @@ def create_app():
         limiter,
         mail,
         migrate,
+        oauth,
         security,
         tasks,
     )
@@ -52,6 +70,9 @@ def create_app():
     authentication.init_app(app)
     limiter.init_app(app)
     handlers.init_app(app)
+    # After the handlers: the authorization server's endpoints live on the
+    # same blueprint, and registering the grants needs the app.
+    oauth.init_app(app)
     configure_webpack(app)
     users.init_app(app)
     tasks.init_app(app)

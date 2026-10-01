@@ -6,6 +6,7 @@ import ApiKeyForm from "./ApiKeyForm";
 import PasswordForm from "./PasswordForm";
 import ToggleUserForm from "./ToggleUserForm";
 import UserAccess from "./UserAccess";
+import ConnectedApps from "./ConnectedApps";
 
 export default function EditableUserProfile(props) {
   const [user, setUser] = useState(props.user);
@@ -23,6 +24,7 @@ export default function EditableUserProfile(props) {
       {!user.isDisabled && (
         <React.Fragment>
           <ApiKeyForm user={user} onChange={setUser} />
+          <ConnectedApps user={user} />
           <hr />
           <PasswordForm user={user} />
         </React.Fragment>

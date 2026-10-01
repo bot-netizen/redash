@@ -28,3 +28,22 @@
     background: #fff !important;
   }
 }
+
+// The connected MCP clients. Each row is a name, when it was connected and
+// last used, and the way to stop it -- so the action sits at the far end
+// rather than under the text it applies to.
+.connected-apps {
+  margin-bottom: 0;
+}
+
+.connected-app {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+
+  & + & {
+    border-top: 1px solid #f0f0f0;
+  }
+}
