@@ -154,6 +154,26 @@ reached only one of them is the kind of difference nobody finds quickly.
   value: {{ .Values.mcp.catalog.harvestHours | quote }}
 - name: SQLDESK_CATALOG_USAGE_WINDOW_HOURS
   value: {{ .Values.mcp.catalog.usageWindowHours | quote }}
+{{- with dig "catalog" "evalFile" "" .Values.mcp }}
+- name: SQLDESK_CATALOG_EVAL_FILE
+  value: {{ . | quote }}
+{{- end }}
+{{/*
+  `dig`, not `.Values.mcp.oauth.enabled`, because `helm upgrade --reuse-values`
+  from a release made before these keys existed hands the template a values
+  tree without them -- and a nil pointer there fails the upgrade rather than
+  falling back. `dig` and not `| default` because `default` treats 0 as absent:
+  somebody who set `lifetimeDays: 0` to keep their files forever would silently
+  get 7 and lose them.
+*/}}
+- name: SQLDESK_MCP_OAUTH_ENABLED
+  value: {{ dig "oauth" "enabled" true .Values.mcp | quote }}
+{{- if dig "oauth" "allowHttp" false .Values.mcp }}
+# Set deliberately, and only worth setting for a local install: a code or a
+# token crossing a network in the clear is what the flow exists to avoid.
+- name: SQLDESK_MCP_OAUTH_ALLOW_HTTP
+  value: "true"
+{{- end }}
 {{- end }}
 {{- if .Values.rendering.enabled }}
 - name: SQLDESK_FEATURE_ALERT_SCREENSHOTS
@@ -172,6 +192,14 @@ reached only one of them is the kind of difference nobody finds quickly.
       name: {{ include "sqldesk.secretName" . }}
       key: screenshot-token
       optional: true
+{{- end }}
+{{- if .Values.uploads.enabled }}
+- name: SQLDESK_UPLOAD_LIFETIME_DAYS
+  value: {{ dig "lifecycle" "lifetimeDays" 7 .Values.uploads | quote }}
+- name: SQLDESK_UPLOAD_UNLOAD_AFTER_DAYS
+  value: {{ dig "lifecycle" "unloadAfterDays" 3 .Values.uploads | quote }}
+- name: SQLDESK_UPLOAD_QUOTA_MB
+  value: {{ dig "lifecycle" "quotaMb" 5120 .Values.uploads | quote }}
 {{- end }}
 {{- range $key, $value := .Values.extraEnv }}
 - name: {{ $key }}

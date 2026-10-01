@@ -793,3 +793,61 @@ class TestTheStoragePage(UploadTestCase):
 
     def test_somebody_who_is_not_an_administrator_may_not_look(self):
         self.assertEqual(403, self.storage(user=self.factory.user).status_code)
+
+
+class TestWhatTheChartSays(BaseTestCase):
+    """
+    The Helm chart is a shipped artifact, and two of these settings decide
+    whether somebody loses data or sends a token in the clear.
+
+    Read out of `values.yaml` and `_helpers.tpl` as text rather than rendered
+    with helm, because helm is not in the container the suite runs in -- a test
+    that skips itself wherever it actually runs is not a test. `helm lint` and
+    `helm template` cover the rendering; what is checked here is the pair of
+    things text can check and a human reading two files cannot: that a default
+    has not drifted, and that every environment variable the chart sets is one
+    the application reads.
+    """
+
+    def values(self):
+        import yaml
+
+        return yaml.safe_load(open("charts/sqldesk/values.yaml"))
+
+    def test_the_upload_lifecycle_is_on_by_default(self):
+        lifecycle = self.values()["uploads"]["lifecycle"]
+
+        self.assertEqual(7, lifecycle["lifetimeDays"])
+        self.assertEqual(3, lifecycle["unloadAfterDays"])
+        self.assertEqual(5120, lifecycle["quotaMb"])
+
+    def test_the_quota_fits_inside_the_volume_the_chart_asks_for(self):
+        # Otherwise the disk fills before the quota is reached, and what
+        # somebody sees is a disk error rather than a sentence they can act on.
+        values = self.values()
+        size = values["uploads"]["size"]
+        self.assertTrue(size.endswith("Gi"), size)
+        self.assertLessEqual(values["uploads"]["lifecycle"]["quotaMb"], int(size[:-2]) * 1024)
+
+    def test_oauth_is_on_by_default_and_http_is_not(self):
+        oauth = self.values()["mcp"]["oauth"]
+
+        self.assertTrue(oauth["enabled"])
+        self.assertFalse(oauth["allowHttp"])
+
+    def test_every_setting_the_chart_names_is_one_the_application_reads(self):
+        """
+        A typo in an environment variable's name in the chart is silent: the
+        pod starts, the setting keeps its default, and the feature is quietly
+        off. Nothing else would catch it.
+        """
+        import re
+
+        template = open("charts/sqldesk/templates/_helpers.tpl").read()
+        settings_source = open("sqldesk/settings/__init__.py").read()
+        for name in sorted(set(re.findall(r"SQLDESK_[A-Z0-9_]+", template))):
+            self.assertIn(
+                '"{}"'.format(name),
+                settings_source,
+                "{} is set by the chart and read by nothing".format(name),
+            )

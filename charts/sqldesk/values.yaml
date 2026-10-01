@@ -93,6 +93,26 @@ mcp:
     # How far back to look for the queries it learns from, in hours, measured
     # by when a query last *ran*. 0 for every saved query however old.
     usageWindowHours: 168
+    # A file of questions the catalog has to keep answering, checked nightly
+    # and scored on the Catalog page. A path inside the container, so it has
+    # to be mounted -- unset, nothing is scheduled and `manage ai eval` still
+    # works for CI, which is where most of its value is.
+    evalFile: ""
+  oauth:
+    # How a person connects a client: the client opens a browser, they sign in
+    # the way they always do, and it gets a token that expires and can be
+    # revoked. The alternative is a personal API key living in a config file
+    # outside your identity provider. On wherever MCP is on; off, the endpoints
+    # answer 404 and clients fall back to a key.
+    enabled: true
+    # Allow the flow over plain http.
+    #
+    # Leave this false. An authorization code and a bearer token crossing a
+    # network in the clear is exactly what the flow exists to avoid, and
+    # "it is only internal" is not a property of a network anybody can check.
+    # The one honest use is a local install reached through a port-forward with
+    # no TLS anywhere; the server logs a warning for as long as it is on.
+    allowHttp: false
 
 # Files people upload to query -- CSV and Parquet, read by DuckDB. The server
 # writes them and the worker reads them, so both mount the same volume;
@@ -108,6 +128,25 @@ uploads:
   accessMode: ReadWriteOnce
   # A claim you manage instead of the one the chart makes.
   existingClaim: ""
+  # What happens to a file after somebody uploads it.
+  #
+  # An uploaded file is the only copy there is -- unlike a query result, which
+  # the warehouse can be asked for again -- so it expires on a clock people can
+  # see and stop, and its uploader is emailed a day before with a button that
+  # keeps it. Nothing is deleted that nobody was warned about.
+  lifecycle:
+    # Days before a file expires. 0 keeps everything forever, which is what
+    # fills a disk.
+    lifetimeDays: 7
+    # Days unqueried before a file stops being registered with DuckDB. The file
+    # is untouched and the next query naming it brings it back; what it stops
+    # costing is schema inference on every query. 0 never unloads.
+    unloadAfterDays: 3
+    # A ceiling on everything uploaded, in megabytes. Keep it at or under the
+    # volume size above, or the volume fills before the quota is reached and
+    # the error a person sees is a disk error rather than a sentence they can
+    # act on. 0 removes the ceiling.
+    quotaMb: 5120
 
 # The browser that draws pictures for alert emails, and nothing else. Off by
 # default: it is several hundred megabytes of Chromium for one feature, and
