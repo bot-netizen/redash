@@ -91,6 +91,15 @@ optional container.</p>
 good for that one dashboard, for five minutes, read-only, and spent as soon as the picture is taken.
 Access is checked against the alert&rsquo;s owner each time, so an attachment stops arriving if they lose
 sight of it.</p>
+<p><strong>Email and Slack (app) carry the pictures; the Slack webhook cannot.</strong> An incoming webhook
+has no way to upload a file, so an alert sent through it says a threshold was crossed and shows nothing
+&mdash; which for an alert on a chart is most of the information missing. The <strong>Slack (app)</strong>
+destination posts as the app an administrator connected under
+<a href="dashboards.html#slack">Settings &rarr; Slack</a> and uploads them. Both destinations exist: the
+webhook needs nothing but a URL, and this needs the app.</p>
+<p>A picture that will not upload never stops the alert &mdash; the threshold was still crossed and
+somebody still needs to know &mdash; but the message says which one is missing, because an alert about a
+chart arriving with no chart and no explanation reads as the alert being broken.</p>
 <div class="doc-next"><a class="btn btn-ghost" href="dashboards.html">&larr; Dashboards and textboxes</a><a class="btn btn-primary" href="mcp.html">MCP &rarr;</a></div>
   </main>
 </div>

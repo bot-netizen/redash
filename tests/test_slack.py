@@ -588,3 +588,167 @@ class TestWhereTheButtonGoes(SlackTestCase):
         self.send()
 
         self.assertNotIn("/public/", self.button_url())
+
+
+class TestAnAlertThroughTheSlackApp(SlackTestCase):
+    """
+    The reason this destination exists: an incoming webhook cannot upload a
+    file, so an alert sent that way says a threshold was crossed and shows
+    nothing -- which for an alert on a chart is most of the information
+    missing.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from sqldesk.destinations.slack_app import SlackApp
+
+        self.destination = SlackApp({"channel": "C1"})
+        # The alert's body templates render the result that fired it, so the
+        # query needs one and the alert needs a column to look at.
+        result = self.factory.create_query_result(
+            data={"rows": [{"value": 1}], "columns": [{"name": "value", "type": "INTEGER"}]}
+        )
+        self.query = self.factory.create_query(latest_query_data_id=result.id)
+        self.alert = self.factory.create_alert(
+            query_rel=self.query,
+            options={"selector": "first", "op": "equals", "column": "value", "value": "1"},
+        )
+        db.session.commit()
+
+    def notify(self, state="triggered", pictures=None, options=None):
+        self.destination.options = options if options is not None else {"channel": "C1"}
+        self.destination.notify(
+            self.alert,
+            self.query,
+            self.factory.user,
+            state,
+            None,
+            "https://sqldesk.example.com",
+            {"screenshots": pictures or []},
+            self.destination.options,
+        )
+
+    def picture(self, name="dashboard-1.png", title="Revenue"):
+        return {"filename": name, "image": b"PNGDATA", "title": title}
+
+    def test_the_message_carries_the_picture(self):
+        self.installed()
+
+        self.notify(pictures=[self.picture()])
+
+        kinds = [block["type"] for block in self.slack.posted()]
+        self.assertIn("image", kinds)
+
+    def test_and_a_button_to_the_query(self):
+        self.installed()
+
+        self.notify(pictures=[self.picture()])
+
+        actions = [b for b in self.slack.posted() if b["type"] == "actions"][0]
+        self.assertIn("/queries/{}".format(self.query.id), actions["elements"][0]["url"])
+
+    def test_a_triggered_alert_says_so(self):
+        self.installed()
+
+        self.notify()
+
+        self.assertIn("just triggered", json.dumps(self.slack.posted()))
+
+    def test_and_one_that_recovered_says_that(self):
+        self.installed()
+
+        self.notify(state="ok")
+
+        self.assertIn("went back to normal", json.dumps(self.slack.posted()))
+
+    def test_a_custom_body_is_sent_exactly_as_written(self):
+        # It is not ours to append to.
+        self.installed()
+        self.alert.options = dict(self.alert.options or {}, custom_body="Revenue is below plan.")
+        db.session.commit()
+
+        self.notify()
+
+        self.assertIn("Revenue is below plan.", json.dumps(self.slack.posted()))
+
+    def test_several_pictures_arrive_as_several_messages(self):
+        # A Slack message carries one image block, and an alert told to attach
+        # three dashboards should send three rather than silently send one.
+        self.installed()
+
+        self.notify(pictures=[self.picture("a.png"), self.picture("b.png"), self.picture("c.png")])
+
+        self.assertEqual(3, len(self.slack.asked("chat.postMessage")))
+
+    def test_a_picture_that_will_not_upload_does_not_stop_the_alert(self):
+        # The threshold was still crossed, and somebody still needs to know.
+        self.installed()
+        self.slack.answers["files.getUploadURLExternal"] = {"ok": False, "error": "upload_limit_reached"}
+
+        self.notify(pictures=[self.picture()])
+
+        self.assertEqual(1, len(self.slack.asked("chat.postMessage")))
+
+    def test_but_it_says_the_picture_is_missing(self):
+        # An alert about a chart arriving with no chart and no explanation
+        # reads as the alert being broken.
+        self.installed()
+        self.slack.answers["files.getUploadURLExternal"] = {"ok": False, "error": "upload_limit_reached"}
+
+        self.notify(pictures=[self.picture(title="Revenue")])
+
+        self.assertIn("could not be attached", json.dumps(self.slack.posted()))
+
+    def test_with_no_workspace_connected_nothing_is_sent(self):
+        # And it is said once in the log with what to do, rather than an alert
+        # firing into nothing every five minutes.
+        self.notify(pictures=[self.picture()])
+
+        self.assertEqual([], self.slack.asked("chat.postMessage"))
+
+    def test_with_no_channel_nothing_is_sent(self):
+        self.installed()
+
+        self.notify(options={"channel": "  "})
+
+        self.assertEqual([], self.slack.asked("chat.postMessage"))
+
+    def test_a_refusal_is_remembered_where_settings_can_show_it(self):
+        workspace = self.installed()
+        self.slack.answers["chat.postMessage"] = {"ok": False, "error": "not_in_channel"}
+
+        self.notify()
+
+        db.session.refresh(workspace)
+        self.assertIn("Invite it", workspace.last_error)
+
+    def test_and_a_successful_send_clears_it(self):
+        workspace = self.installed()
+        workspace.last_error = "something from last time"
+        db.session.commit()
+
+        self.notify()
+
+        db.session.refresh(workspace)
+        self.assertIsNone(workspace.last_error)
+
+    def test_it_takes_no_token_of_its_own(self):
+        """
+        The token is the organisation's, entered once by an administrator and
+        stored encrypted. A destination carrying its own would mean a bot token
+        in a form field on a page anybody with alert permissions can reach.
+        """
+        from sqldesk.destinations.slack_app import SlackApp
+
+        schema = SlackApp.configuration_schema()
+
+        self.assertEqual(["channel"], list(schema["properties"]))
+        self.assertNotIn("secret", schema)
+
+    def test_the_webhook_destination_still_exists(self):
+        # Replacing it would break every alert already using it, for a feature
+        # not everybody wants.
+        from sqldesk.destinations import destinations
+
+        self.assertIn("slack", destinations)
+        self.assertIn("slack_app", destinations)

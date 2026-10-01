@@ -421,6 +421,10 @@ dynamic_settings = importlib.import_module(
 default_destinations = [
     "sqldesk.destinations.email",
     "sqldesk.destinations.slack",
+    # Both Slacks on purpose. The webhook one needs nothing but a URL; this one
+    # needs the app installed under Settings -> Slack and can carry the
+    # picture, which a webhook cannot.
+    "sqldesk.destinations.slack_app",
     "sqldesk.destinations.webhook",
     "sqldesk.destinations.discord",
     "sqldesk.destinations.mattermost",
