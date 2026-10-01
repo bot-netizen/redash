@@ -1,4 +1,5 @@
 import os
+import tempfile
 from unittest import TestCase
 from unittest.mock import patch
 
@@ -180,7 +181,7 @@ class TestTheSqlStaysInItsOwnFolder(TestCase):
         return self.runner.run_query(sql, None)
 
     def test_its_own_uploads_are_readable(self):
-        self.runner.register_uploaded_files([("a", os.path.join(self.mine, "a.csv"))])
+        self.runner.register_uploaded_files([("a", os.path.join(self.mine, "a.csv"), True)])
         data, error = self.run_sql("SELECT * FROM a")
         self.assertIsNone(error)
         self.assertEqual([{"x": 1}], data["rows"])
@@ -205,3 +206,69 @@ class TestTheSqlStaysInItsOwnFolder(TestCase):
         self.assertIsNone(data)
         data, error = self.run_sql("SELECT * FROM read_text('/etc/passwd')")
         self.assertIsNone(data)
+
+
+class TestUnloadingAFileNobodyQueries(TestCase):
+    """
+    A file unqueried for days stops being registered. That saves every query
+    on this data source the schema inference for a file nobody is reading --
+    which on a source with thirty uploads is most of what a query costs before
+    it starts.
+
+    The file is untouched, so the one outcome this must never produce is a
+    query failing for a file that is sitting right there on the disk.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.folder = tempfile.mkdtemp()
+        with open(os.path.join(self.folder, "sales.csv"), "w") as handle:
+            handle.write("x\n1\n")
+        with open(os.path.join(self.folder, "old_notes.csv"), "w") as handle:
+            handle.write("y\n2\n")
+        self.runner = DuckDB({"dbpath": ":memory:"})
+        self.runner.confine_to(self.folder)
+
+    def register(self, *files):
+        self.runner.register_uploaded_files(
+            [(name, os.path.join(self.folder, "{}.csv".format(name)), load) for name, load in files]
+        )
+
+    def test_an_unloaded_file_has_no_view(self):
+        self.register(("sales", True), ("old_notes", False))
+
+        self.assertIn("sales", self.runner._existing_views())
+        self.assertNotIn("old_notes", self.runner._existing_views())
+
+    def test_but_a_query_that_names_it_still_works(self):
+        self.register(("sales", True), ("old_notes", False))
+
+        data, error = self.runner.run_query("SELECT * FROM old_notes", None)
+
+        self.assertIsNone(error)
+        self.assertEqual([{"y": 2}], data["rows"])
+
+    def test_and_it_stays_loaded_afterwards(self):
+        self.register(("sales", True), ("old_notes", False))
+        self.runner.run_query("SELECT * FROM old_notes", None)
+
+        self.assertIn("old_notes", self.runner._existing_views())
+
+    def test_the_name_is_matched_as_a_whole_word(self):
+        # `notes` must not bring back `old_notes`; a substring match would load
+        # half the data source on any query with a common word in it.
+        self.register(("sales", True), ("old_notes", False))
+
+        self.runner.run_query("SELECT 'notes' AS label", None)
+
+        self.assertNotIn("old_notes", self.runner._existing_views())
+
+    def test_unloading_drops_a_view_an_earlier_query_created(self):
+        # A worker process is long-lived and its catalog outlives one query, so
+        # without this the unload saves nothing after the first use.
+        self.register(("sales", True), ("old_notes", True))
+        self.assertIn("old_notes", self.runner._existing_views())
+
+        self.register(("sales", True), ("old_notes", False))
+
+        self.assertNotIn("old_notes", self.runner._existing_views())

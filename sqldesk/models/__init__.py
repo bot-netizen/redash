@@ -299,7 +299,12 @@ class DataSource(BelongsToOrgMixin, db.Model):
             query_runner.confine_to(os.path.join(settings.UPLOAD_ROOT, str(self.org_id), str(self.id)))
         if hasattr(query_runner, "register_uploaded_files"):
             uploads = UploadedFile.query.filter(UploadedFile.data_source_id == self.id)
-            query_runner.register_uploaded_files([(upload.view_name, upload.path) for upload in uploads])
+            # The third element says whether to create the view now. An
+            # unloaded file is still handed over, name and path, so a query
+            # that names it can bring it back -- see the runner.
+            query_runner.register_uploaded_files(
+                [(upload.view_name, upload.path, upload.unloaded_at is None) for upload in uploads]
+            )
 
         return query_runner
 
@@ -341,7 +346,10 @@ class UploadedFile(TimestampMixin, BelongsToOrgMixin, db.Model):
     data_source = db.relationship(DataSource, backref="uploaded_files")
 
     created_by_id = Column(key_type("User"), db.ForeignKey("users.id"), nullable=True)
-    created_by = db.relationship(User)
+    # `foreign_keys` is required now that `kept_by_id` is a second path to
+    # `users`: without it SQLAlchemy cannot tell which column this relationship
+    # means and refuses to map the class at all.
+    created_by = db.relationship(User, foreign_keys=[created_by_id])
 
     filename = Column(db.String(255))
     stored_filename = Column(db.String(255))
@@ -351,7 +359,61 @@ class UploadedFile(TimestampMixin, BelongsToOrgMixin, db.Model):
     content_type = Column(db.String(255), nullable=True)
     size = Column(db.Integer, default=0)
 
+    #: When this file goes. Null means it stays until somebody deletes it --
+    #: either because the install has turned the lifecycle off, or because
+    #: somebody with `keep_uploads` said to keep it.
+    #:
+    #: An uploaded file is the only copy of itself. A warehouse answer can be
+    #: fetched again; this cannot, so it expires on a clock people can see and
+    #: stop, and never silently.
+    expires_at = Column(db.DateTime(True), nullable=True)
+    kept_at = Column(db.DateTime(True), nullable=True)
+    kept_by_id = Column(key_type("User"), db.ForeignKey("users.id"), nullable=True)
+    kept_by = db.relationship(User, foreign_keys=[kept_by_id])
+
+    #: When a query last named this file's view. Drives the unload step, and is
+    #: the one number that makes Admin -> Storage worth looking at: a list of
+    #: files with no "last used" column cannot tell you which to remove.
+    last_queried_at = Column(db.DateTime(True), nullable=True)
+
+    #: When it stopped being registered with DuckDB. Reversible: the next query
+    #: that names it registers it again. The file is untouched.
+    unloaded_at = Column(db.DateTime(True), nullable=True)
+
+    #: When its uploader was told it is about to go, so they are told once.
+    expiry_warning_sent_at = Column(db.DateTime(True), nullable=True)
+
     __tablename__ = "uploaded_files"
+    #: The two columns the hourly lifecycle scan reads.
+    __table_args__ = (
+        db.Index("uploaded_files_expires_at", "expires_at"),
+        db.Index("uploaded_files_last_queried_at", "last_queried_at"),
+    )
+
+    @property
+    def expires_in_days(self):
+        """Whole days until it goes, or None where it does not."""
+        if self.expires_at is None:
+            return None
+        remaining = self.expires_at - utcnow()
+        return max(0, remaining.days + (1 if remaining.seconds else 0))
+
+    @property
+    def kept(self):
+        return self.expires_at is None
+
+    def keep(self, user):
+        """Make it permanent. Who did it is recorded; it is a decision."""
+        self.expires_at = None
+        self.kept_at = utcnow()
+        self.kept_by = user
+        self.expiry_warning_sent_at = None
+
+    @staticmethod
+    def default_expiry():
+        if settings.UPLOAD_LIFETIME_DAYS <= 0:
+            return None
+        return utcnow() + datetime.timedelta(days=settings.UPLOAD_LIFETIME_DAYS)
 
     def to_dict(self):
         return {
@@ -363,6 +425,12 @@ class UploadedFile(TimestampMixin, BelongsToOrgMixin, db.Model):
             "content_type": self.content_type,
             "size": self.size,
             "created_at": self.created_at,
+            "expires_at": self.expires_at,
+            "expires_in_days": self.expires_in_days,
+            "kept": self.kept,
+            "kept_by": self.kept_by.name if self.kept_by else None,
+            "last_queried_at": self.last_queried_at,
+            "unloaded": self.unloaded_at is not None,
         }
 
     @staticmethod

@@ -9,7 +9,7 @@ from rq.exceptions import NoSuchJobError
 from rq.job import JobStatus
 from rq.timeouts import JobTimeoutException
 
-from sqldesk import models, redis_connection, settings
+from sqldesk import models, redis_connection, settings, uploads
 from sqldesk.query_runner import InterruptException
 from sqldesk.tasks.alerts import check_alerts_for_query
 from sqldesk.tasks.failure_report import track_failure
@@ -212,6 +212,16 @@ class QueryExecutor:
 
         query_runner = self.data_source.query_runner
         annotated_query = self._annotate_query(query_runner)
+
+        # Which uploaded files this query reads. Recorded here rather than in
+        # the runner because the runner has no session to write with, and
+        # before the query rather than after so a query that times out still
+        # counts as somebody needing the file. Never fatal: a file whose "last
+        # queried" is a minute stale is not worth failing a query over.
+        try:
+            uploads.note_queried(self.data_source, self.query)
+        except Exception:
+            logger.warning("could not record which uploads this query reads", exc_info=True)
 
         try:
             data, error = query_runner.run_query(annotated_query, self.user)

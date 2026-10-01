@@ -7,13 +7,14 @@ from flask_login import current_user, login_required
 from flask_restful import abort
 from rq.exceptions import NoSuchJobError
 
-from sqldesk import features, models, redis_connection, rq_redis_connection
+from sqldesk import features, models, redis_connection, rq_redis_connection, settings
+from sqldesk import uploads as sqldesk_uploads
 from sqldesk.ai.catalog.freshness import in_days, stale_sources
 from sqldesk.ai.catalog.semantic import catalog_documents
 from sqldesk.authentication import current_org
 from sqldesk.handlers import routes
 from sqldesk.handlers.base import json_response, record_event
-from sqldesk.monitor import get_overview, rq_status
+from sqldesk.monitor import get_db_sizes, get_overview, rq_status
 from sqldesk.permissions import (
     require_access,
     require_feature,
@@ -163,6 +164,66 @@ def run_events_cleanup():
     )
 
     return json_response({"job_id": job.id})
+
+
+@routes.route("/api/admin/storage", methods=["GET"])
+@login_required
+@require_super_admin
+def storage_overview():
+    """
+    What SQLDesk is holding, per data source, and what happens to it when.
+
+    None of this was visible anywhere. On 2026-09-28 the development disk
+    reached 100% and took Postgres with it, and the only way to find out why
+    was to look at the filesystem -- which is exactly the situation a product
+    that stores files for people should not put anybody in.
+
+    Borrowed and owned data are listed apart, because the policies are
+    different and conflating them is how somebody ends up afraid to delete a
+    cached query result. A result can be fetched again; an upload cannot.
+    """
+    uploads_by_source = {}
+    for upload in models.UploadedFile.query.filter(models.UploadedFile.org_id == current_org.id).order_by(
+        models.UploadedFile.size.desc()
+    ):
+        uploads_by_source.setdefault(upload.data_source_id, []).append(upload)
+
+    names = dict(
+        models.db.session.query(models.DataSource.id, models.DataSource.name).filter(
+            models.DataSource.org == current_org
+        )
+    )
+
+    sources = []
+    for source_id, rows in uploads_by_source.items():
+        sources.append(
+            {
+                "data_source_id": source_id,
+                "data_source_name": names.get(source_id) or "a deleted data source",
+                "files": len(rows),
+                "bytes": sum(row.size or 0 for row in rows),
+                "uploads": [row.to_dict() for row in rows[:200]],
+            }
+        )
+    sources.sort(key=lambda entry: -entry["bytes"])
+
+    held = sqldesk_uploads.bytes_held(current_org)
+    ceiling = sqldesk_uploads.quota_bytes()
+    return json_response(
+        {
+            "uploads": {
+                "bytes": held,
+                "quota_bytes": ceiling or None,
+                "files": sum(entry["files"] for entry in sources),
+                "lifetime_days": settings.UPLOAD_LIFETIME_DAYS,
+                "unload_after_days": settings.UPLOAD_UNLOAD_AFTER_DAYS,
+                "by_data_source": sources,
+            },
+            # The borrowed half, from the numbers the status page already
+            # gathers, so the two are not computed two different ways.
+            "results": get_db_sizes(),
+        }
+    )
 
 
 @routes.route("/api/catalog", methods=["GET"])

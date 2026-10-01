@@ -1,0 +1,13 @@
+{% if files|length == 1 %}A file you uploaded to SQLDesk expires tomorrow.{% else %}{{ files|length }} files you uploaded to SQLDesk expire tomorrow.{% endif %}
+
+SQLDesk holds the only copy. Once it is gone it cannot be fetched back from
+anywhere, so if you still need it, keep it:
+
+{% for file in files %}
+{{ file.name }}{% if file.size %} ({{ file.size }}){% endif %}
+  {% if file.last_queried %}Last queried {{ file.last_queried }}{% else %}Never queried since it was uploaded{% endif %}
+  Keep it: {{ file.keep_link }}
+{% endfor %}
+
+Nothing happens if you ignore this except that the files are deleted
+tomorrow. You can also delete them yourself from the data source's page.

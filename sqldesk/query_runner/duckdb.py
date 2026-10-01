@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 
 from sqldesk.query_runner import (
     TYPE_BOOLEAN,
@@ -185,11 +186,17 @@ class DuckDB(BaseSQLQueryRunner):
     def register_uploaded_files(self, files) -> None:
         """Sync queryable views to exactly the given uploaded files.
 
-        `files` is a list of (view_name, absolute_path) tuples. `view_name` is
-        now the user-assigned table name (uniqueness enforced at upload time,
-        see DataSourceUploadListResource.post), and `path` is always
-        server-generated (never taken from query text), so this is safe from
-        path-injection via user-supplied SQL.
+        `files` is a list of (view_name, absolute_path, load_now) tuples.
+        `view_name` is the user-assigned table name (uniqueness enforced at
+        upload time, see DataSourceUploadListResource.post), and `path` is
+        always server-generated (never taken from query text), so this is safe
+        from path-injection via user-supplied SQL.
+
+        `load_now` false means the file has not been queried for a while and
+        has been unloaded: no view is created for it, so no query pays for its
+        schema inference. It is still listed here, with its path, because a
+        query that names it brings it back -- see `run_query`. The file itself
+        is untouched either way; unloading costs nothing to reverse.
 
         Any view that exists but isn't in `files` anymore gets dropped, since
         the connection's catalog otherwise outlives individual uploads (e.g. a
@@ -200,28 +207,57 @@ class DuckDB(BaseSQLQueryRunner):
         Upload" data source's dbpath, they'll be dropped on the next upload
         or delete.
         """
-        current_view_names = {view_name for view_name, _ in files}
+        current_view_names = {view_name for view_name, _path, _load in files}
         for stale_view in self._existing_views() - current_view_names:
             try:
                 self.con.execute(f'DROP VIEW IF EXISTS "{stale_view}"')
             except Exception as e:
                 logger.warning("Failed to drop stale view %s: %s", stale_view, e)
 
-        for view_name, path in files:
-            extension = path.rsplit(".", 1)[-1].lower() if "." in path else ""
-            reader = self.READERS.get(extension)
-            if reader is None:
-                logger.warning("No DuckDB reader for uploaded file extension: %s", extension)
-                continue
+        # Remembered so a query naming one can register it on the spot.
+        self._unloaded = {view_name: path for view_name, path, load_now in files if not load_now}
+        for view_name, path in self._unloaded.items():
+            # An unloaded file whose view is still in the catalog from an
+            # earlier query in this process has to go, or unloading saves
+            # nothing on a long-lived worker.
             try:
-                # DuckDB DDL statements (CREATE VIEW) don't support prepared-statement
-                # parameters, so the path is embedded directly. This is safe because
-                # `path` is always server-generated (UUID-based storage path), never
-                # taken from query text or other user input.
-                escaped_path = path.replace("'", "''")
-                self.con.execute(f"CREATE OR REPLACE VIEW \"{view_name}\" AS SELECT * FROM {reader}('{escaped_path}')")
+                self.con.execute(f'DROP VIEW IF EXISTS "{view_name}"')
             except Exception as e:
-                logger.warning("Failed to register uploaded file %s as view %s: %s", path, view_name, e)
+                logger.warning("Failed to unload view %s: %s", view_name, e)
+
+        for view_name, path, load_now in files:
+            if load_now:
+                self._create_view(view_name, path)
+
+    def _create_view(self, view_name, path) -> None:
+        extension = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+        reader = self.READERS.get(extension)
+        if reader is None:
+            logger.warning("No DuckDB reader for uploaded file extension: %s", extension)
+            return
+        try:
+            # DuckDB DDL statements (CREATE VIEW) don't support prepared-statement
+            # parameters, so the path is embedded directly. This is safe because
+            # `path` is always server-generated (UUID-based storage path), never
+            # taken from query text or other user input.
+            escaped_path = path.replace("'", "''")
+            self.con.execute(f"CREATE OR REPLACE VIEW \"{view_name}\" AS SELECT * FROM {reader}('{escaped_path}')")
+        except Exception as e:
+            logger.warning("Failed to register uploaded file %s as view %s: %s", path, view_name, e)
+
+    def _load_anything_the_query_names(self, query) -> None:
+        """
+        Bring back any unloaded file this query mentions.
+
+        Matched on the view name as a whole word in the SQL. A false positive
+        costs one view creation that nobody reads, so the match is deliberately
+        generous: the alternative is a query failing with "table does not
+        exist" for a file that is sitting right there on the disk, which is the
+        one outcome unloading must never produce.
+        """
+        for view_name in list(getattr(self, "_unloaded", {})):
+            if re.search(r"\b{}\b".format(re.escape(view_name)), query, re.IGNORECASE):
+                self._create_view(view_name, self._unloaded.pop(view_name))
 
     def _existing_views(self) -> set:
         try:
@@ -235,6 +271,7 @@ class DuckDB(BaseSQLQueryRunner):
         return {row[0] for row in rows}
 
     def run_query(self, query, user) -> tuple:
+        self._load_anything_the_query_names(query)
         try:
             cursor = self.con.cursor()
             cursor.execute(query)

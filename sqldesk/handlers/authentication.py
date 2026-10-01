@@ -6,6 +6,7 @@ from itsdangerous import BadSignature, SignatureExpired
 from sqlalchemy.orm.exc import NoResultFound
 
 from sqldesk import __version__, features, limiter, models, settings, unsubscribe
+from sqldesk import uploads as sqldesk_uploads
 from sqldesk.authentication import current_org, get_login_url, get_next_path
 from sqldesk.authentication.account import (
     INVITE,
@@ -160,6 +161,45 @@ def unsubscribe_from_dashboard(token, org_slug=None):
         recipient_name=user.name,
         done=False,
     )
+
+
+# Signed in, unlike unsubscribe. Keeping a file costs disk indefinitely and is
+# a permission somebody holds, so the page has to know who is asking -- and the
+# person reading the mail is the one who uploaded the file, so they have an
+# account here by definition.
+#
+# CSRF-exempt and refusing to act on a GET, for the same reason unsubscribe is:
+# mail clients and scanners fetch links before anybody reads them, and a GET
+# that kept the file would keep files nobody chose to keep.
+@csrf.exempt
+@routes.route(org_scoped_rule("/uploads/keep/<token>"), methods=["GET", "POST"])
+@login_required
+def keep_uploaded_file(token, org_slug=None):
+    upload = sqldesk_uploads.upload_from_token(token)
+    if upload is None or upload.org_id != current_org.id:
+        # Expired, deleted, or a token for another organisation. All three say
+        # the same true thing rather than pretending the link is malformed.
+        return render_template("upload_kept.html", upload=None, done=False), 404
+
+    filename = upload.display_name or upload.filename
+    may_keep = features.can(current_user, features.KEEP_UPLOADS)
+    context = {
+        "upload": upload,
+        "filename": filename,
+        "may_keep": may_keep,
+        "kept_already": upload.kept,
+        "expires": upload.expires_at.date().isoformat() if upload.expires_at else None,
+        "done": False,
+    }
+
+    if request.method == "POST" and may_keep and not upload.kept:
+        upload.keep(current_user._get_current_object())
+        models.db.session.add(upload)
+        models.db.session.commit()
+        context["done"] = True
+
+    status = 403 if not may_keep else 200
+    return render_template("upload_kept.html", **context), status
 
 
 @routes.route(org_scoped_rule("/verify/<token>"), methods=["GET"])

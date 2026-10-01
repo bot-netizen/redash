@@ -1,0 +1,51 @@
+{% set hide_page_header = true %}
+
+{% extends "layouts/signed_out.html" %}
+
+{% block title %}Keep this file{% endblock %}
+
+{% block content %}
+<div class="fixed-width-page">
+  <div class="bg-white tiled m-t-0" style="padding: 24px">
+    {% if done %}
+      <h4>Kept.</h4>
+      <p class="text-muted">
+        <strong>{{ filename }}</strong> will not expire. It stays until somebody deletes it
+        from the data source's page.
+      </p>
+    {% elif not upload %}
+      {# A link from a mail about a file that has since gone, or one that has
+         been tampered with. Both say the same thing, and saying "it has gone"
+         is the honest answer rather than pretending the link is invalid. #}
+      <h4>That file is no longer here.</h4>
+      <p class="text-muted">
+        It has already expired or been deleted. SQLDesk held the only copy, so there is
+        nothing to restore &mdash; upload it again if you still need it.
+      </p>
+    {% elif not may_keep %}
+      <h4>You cannot keep files.</h4>
+      <p class="text-muted">
+        Keeping a file permanently is a permission an administrator grants to a group.
+        Ask one of yours to keep <strong>{{ filename }}</strong>, or download it from the data
+        source's page before it expires.
+      </p>
+    {% elif kept_already %}
+      <h4>Already kept.</h4>
+      <p class="text-muted">
+        <strong>{{ filename }}</strong> is not expiring. Somebody has already kept it.
+      </p>
+    {% else %}
+      <h4>Keep {{ filename }}?</h4>
+      <p class="text-muted">
+        It expires {{ expires }}. Keeping it means it stays until somebody deletes it.
+      </p>
+      {# A button rather than a link that acts on its own: mail clients and
+         security scanners fetch links before anybody reads the message, and a
+         GET that kept the file would keep files nobody chose to keep. #}
+      <form method="POST">
+        <button class="btn btn-primary" type="submit">Keep this file</button>
+      </form>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -235,6 +235,29 @@ FLASK_TEMPLATE_PATH = fix_assets_path(os.environ.get("SQLDESK_FLASK_TEMPLATE_PAT
 UPLOAD_ROOT = fix_assets_path(os.environ.get("SQLDESK_UPLOAD_ROOT", "../uploads/"))
 UPLOAD_MAX_SIZE_MB = int(os.environ.get("SQLDESK_UPLOAD_MAX_SIZE_MB", "200"))
 UPLOAD_ALLOWED_EXTENSIONS = set_from_string(os.environ.get("SQLDESK_UPLOAD_ALLOWED_EXTENSIONS", "csv,parquet"))
+
+#: How long an uploaded file is kept before it expires, in days. 0 keeps
+#: everything forever, which is what SQLDesk did until now -- and on
+#: 2026-09-28 the development disk reached 100% and took Postgres with it,
+#: because nothing bounded what was being stored.
+#:
+#: Seven, because most uploads are somebody checking a CSV once and those
+#: should not be on a disk in a year. Nothing is ever deleted without a
+#: warning somebody could act on: the uploader is mailed the day before with a
+#: button that keeps it.
+UPLOAD_LIFETIME_DAYS = int(os.environ.get("SQLDESK_UPLOAD_LIFETIME_DAYS", "7"))
+
+#: How many days unqueried before a file stops being registered with DuckDB.
+#: 0 never unloads. This is the cheap, reversible half of the lifecycle: the
+#: file keeps its disk space and comes back on the next query that names it.
+#: What it stops costing is the schema inference every worker pays, for every
+#: query, for every file nobody is using.
+UPLOAD_UNLOAD_AFTER_DAYS = int(os.environ.get("SQLDESK_UPLOAD_UNLOAD_AFTER_DAYS", "3"))
+
+#: A ceiling on everything uploaded, in megabytes. 0 is no ceiling. Checked at
+#: upload time with the numbers in the message, because "quota exceeded" with
+#: no figures is a message nobody can act on.
+UPLOAD_QUOTA_MB = int(os.environ.get("SQLDESK_UPLOAD_QUOTA_MB", "5120"))
 # Time limit (in seconds) for scheduled queries. Set this to -1 to execute without a time limit.
 SCHEDULED_QUERY_TIME_LIMIT = int(os.environ.get("SQLDESK_SCHEDULED_QUERY_TIME_LIMIT", -1))
 

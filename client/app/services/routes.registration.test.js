@@ -58,6 +58,7 @@ const EXPECTED = [
   ["Admin.OutdatedQueries", "/admin/queries/outdated"],
   ["Admin.SystemStatus", "/admin/status"],
   ["Admin.MCP", "/admin/mcp"],
+  ["Admin.Storage", "/admin/storage"],
 ];
 
 describe("the routes the pages register", () => {

@@ -91,6 +91,7 @@ from sqldesk.handlers.subscriptions import (
     DashboardSubscriptionResource,
 )
 from sqldesk.handlers.uploads import (
+    DataSourceUploadKeepResource,
     DataSourceUploadListResource,
     DataSourceUploadResource,
 )
@@ -184,6 +185,11 @@ api.add_org_resource(
     DataSourceUploadResource,
     "/api/data_sources/<data_source_id>/uploads/<upload_id>",
     endpoint="data_source_upload",
+)
+api.add_org_resource(
+    DataSourceUploadKeepResource,
+    "/api/data_sources/<data_source_id>/uploads/<upload_id>/keep",
+    endpoint="data_source_upload_keep",
 )
 
 api.add_org_resource(GroupListResource, "/api/groups", endpoint="groups")

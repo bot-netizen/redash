@@ -43,6 +43,12 @@ def _mcp_is_on():
     return settings.FEATURE_AI
 
 
+def _uploads_expire():
+    # Nothing to be allowed to stop where nothing expires. An install that has
+    # turned the lifecycle off should not offer a permission that does nothing.
+    return settings.UPLOAD_LIFETIME_DAYS > 0
+
+
 def _rendering_is_on():
     # Nothing can send a dashboard without something to draw it, and the
     # renderer is a separate, optional container. Offering the feature where
@@ -54,6 +60,7 @@ USE_MCP = "use_mcp"
 MANAGE_CATALOG = "manage_catalog"
 MANAGE_LIVE_DASHBOARDS = "manage_live_dashboards"
 SEND_DASHBOARDS = "send_dashboards"
+KEEP_UPLOADS = "keep_uploads"
 
 #: Every feature, whether or not this install offers it.
 FEATURES = (
@@ -79,6 +86,12 @@ FEATURES = (
         "Send dashboards",
         "Mail a dashboard to colleagues on a schedule, and share one to Slack.",
         enabled=_rendering_is_on,
+    ),
+    Feature(
+        KEEP_UPLOADS,
+        "Keep uploaded files",
+        "Stop an uploaded file expiring, so it stays until somebody deletes it.",
+        enabled=_uploads_expire,
     ),
 )
 

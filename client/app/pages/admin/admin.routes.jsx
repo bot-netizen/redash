@@ -6,7 +6,7 @@ import routes from "@/services/routes";
   The admin routes, without the admin pages.
 
   Imported at startup so the paths are known; the pages arrive when somebody
-  opens one. Six pages nobody visits in an ordinary day, and everybody was
+  opens one. Seven pages nobody visits in an ordinary day, and everybody was
   downloading all of them before drawing anything.
 
   One chunk, because somebody looking at system status is usually about to
@@ -20,6 +20,16 @@ const OutdatedQueries = React.lazy(() => import(/* webpackChunkName: "admin" */ 
 const SystemStatus = React.lazy(() => import(/* webpackChunkName: "admin" */ "./SystemStatus"));
 const Catalog = React.lazy(() => import(/* webpackChunkName: "admin" */ "./Catalog"));
 const McpHome = React.lazy(() => import(/* webpackChunkName: "admin" */ "../mcp/McpHome"));
+const Storage = React.lazy(() => import(/* webpackChunkName: "admin" */ "./Storage"));
+
+routes.register(
+  "Admin.Storage",
+  routeWithUserSession({
+    path: "/admin/storage",
+    title: "Storage",
+    render: (pageProps) => <Storage {...pageProps} />,
+  })
+);
 
 routes.register(
   "Admin.Overview",

@@ -21,6 +21,7 @@ from sqldesk.tasks.queries import (
     remove_ghost_locks,
 )
 from sqldesk.tasks.subscriptions import send_due_subscriptions
+from sqldesk.tasks.uploads import manage_uploads
 from sqldesk.tasks.worker import Queue
 
 logger = logging.getLogger(__name__)
@@ -159,6 +160,12 @@ def periodic_job_definitions():
         jobs.append({"func": eval_catalog, "interval": timedelta(days=1)})
     if settings.FEATURE_AI and settings.MCP_AUDIT_RETENTION_DAYS > 0:
         jobs.append({"func": cleanup_mcp_events, "interval": timedelta(hours=1)})
+
+    # The clock on uploaded files. Hourly, because the warning has to land a
+    # day before expiry and a daily job that ran at the wrong hour would warn
+    # people with eleven hours' notice or none.
+    if settings.UPLOAD_LIFETIME_DAYS > 0 or settings.UPLOAD_UNLOAD_AFTER_DAYS > 0:
+        jobs.append({"func": manage_uploads, "interval": timedelta(hours=1)})
 
     if settings.VERSION_CHECK:
         jobs.append({"func": version_check, "interval": timedelta(days=1)})
