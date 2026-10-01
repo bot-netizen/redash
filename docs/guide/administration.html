@@ -87,7 +87,37 @@ attributed.</p>
   <dt>Outdated Queries</dt>
   <dd>Scheduled queries that have not refreshed when they should have — usually the first sign a worker
     has stopped or a data source is unreachable.</dd>
+  <dt>Storage</dt>
+  <dd>What is on the disk: every uploaded file per data source, how big, when it was last queried, and
+    when it expires. See <a href="#uploads">What happens to uploaded files</a>.</dd>
 </dl>
+
+<h2 id="uploads">What happens to uploaded files</h2>
+<p>An uploaded file is <strong>the only copy there is</strong>. A query result can be fetched from the
+warehouse again; a CSV somebody dragged in six months ago and has since deleted from their laptop
+cannot be re-created by anybody. So the policy is deliberately cautious, and nothing is ever deleted
+without a warning somebody could have acted on.</p>
+<ol>
+  <li><strong>Three days unqueried: unloaded.</strong> The file stops being registered with DuckDB, so
+    queries on that data source no longer pay to infer its schema. The file is untouched and the next
+    query that names it brings it back. Nobody is told, because nothing was lost.</li>
+  <li><strong>Six days: its uploader is emailed</strong> — one message, however many of their files are
+    due, each with its size, whether it has <em>ever</em> been queried, and a button that keeps it.</li>
+  <li><strong>Seven days: deleted</strong>, but only files that were warned about. If mail was not
+    working, nothing is deleted; the warning is retried instead. A file whose uploader has no address is
+    never deleted on a timer at all — an administrator removes it from the Storage page, having looked
+    at it.</li>
+</ol>
+<p><strong>Keeping a file</strong> is a permission (<em>Keep uploaded files</em>) an administrator grants
+to a group, from the email, the Storage page, or the data source's own page. A kept file stays until
+somebody deletes it.</p>
+<p><strong>The quota</strong> is a ceiling on everything uploaded, 5 GB by default. An upload past it is
+refused with the figures in the message, including how many files nothing has queried in a month —
+removing those is almost always the answer.</p>
+<p>Turn any of it off with <code>SQLDESK_UPLOAD_LIFETIME_DAYS=0</code>,
+<code>SQLDESK_UPLOAD_UNLOAD_AFTER_DAYS=0</code> or <code>SQLDESK_UPLOAD_QUOTA_MB=0</code>. The reason the
+default is not "keep everything" is that keeping everything is what SQLDesk did until 0.7, and on a
+development machine it filled the disk and took Postgres with it.</p>
 
 <h2>Keeping it healthy</h2>
 <ul>
@@ -109,6 +139,8 @@ attributed.</p>
   <tr><td><code>SQLDESK_FEATURE_AI</code></td><td>Turns MCP on. Off by default.</td></tr>
   <tr><td>Mail settings</td><td>Without them, alerts and invitations silently do nothing.</td></tr>
   <tr><td>Public URLs</td><td>Can be disabled instance-wide if shared links are not acceptable.</td></tr>
+  <tr><td><code>SQLDESK_UPLOAD_QUOTA_MB</code></td><td>A ceiling on uploaded files, 5 GB by default. <code>0</code> removes it, and removing it is how a disk fills.</td></tr>
+  <tr><td><code>SQLDESK_UPLOAD_LIFETIME_DAYS</code></td><td>How long an uploaded file is kept, 7 by default. <code>0</code> keeps everything forever.</td></tr>
 </table>
 <div class="doc-next"><a class="btn btn-ghost" href="mcp.html">&larr; MCP</a><a class="btn btn-primary" href="deploying.html">Deploying &rarr;</a></div>
   </main>

@@ -177,13 +177,36 @@ expression like <code>SUM(price * qty)</code> is left for a person to write, sin
 checked against a column.</p>
 
 <h2 id="connecting">Connecting a client</h2>
-<p>One endpoint, JSON-RPC over HTTP, authenticated with a SQLDesk API key — the one on your profile page.</p>
+<p>One endpoint, JSON-RPC over HTTP, and two ways to prove who you are.</p>
+
+<h3 id="signing-in">Signing in (recommended)</h3>
+<p>Add the endpoint and nothing else. The client calls it, gets a 401 that names where to look, finds
+the OAuth endpoints, and opens a browser. You sign in the way you always sign in &mdash; which is your
+identity provider where SAML or Google is configured &mdash; and the client gets a token.</p>
+<pre><code>claude mcp add --transport http sqldesk https://sqldesk.example.com/mcp</code></pre>
+<p>Why this rather than a key: <strong>an API key is a long-lived secret living outside your identity
+provider.</strong> It is not revoked when somebody leaves, it is invisible to whoever administers your
+SSO, it is the same string forever, and nothing in SQLDesk can tell you which machines it has been
+pasted onto. A token expires in an hour, refreshes for thirty days of use, is listed on your profile
+under <strong>Connected apps</strong> with when it was last used, and stops working the moment you or an
+administrator disconnects it. Disabling an account revokes everything it holds.</p>
+<p>The consent page names the app and says plainly that SQLDesk cannot vouch for that name: anybody
+may register a client, and a name is the one thing a phishing client can choose freely. It also says
+what the app will be able to do, which is read what you can read and nothing else.</p>
+<p>What it needs on the server: nothing. It is on wherever MCP is on, and the endpoints answer
+<code>404</code> where it is off, so a client falls back to a key rather than looping. It does need
+<strong>https</strong> &mdash; an authorization code or a token crossing a network in the clear is what the
+flow exists to avoid. For a local install with no TLS anywhere, set
+<code>SQLDESK_MCP_OAUTH_ALLOW_HTTP=true</code>; the server logs a warning while it is on.</p>
+
+<h3 id="api-key">An API key</h3>
+<p>Still accepted, and the right choice for a script or a headless setup. The key is the one on your
+profile page.</p>
 <pre><code>POST https://sqldesk.example.com/mcp
 Authorization: Bearer &lt;your SQLDesk API key&gt;</code></pre>
-<p>With Claude Code:</p>
 <pre><code>claude mcp add --transport http sqldesk https://sqldesk.example.com/mcp \
   --header "Authorization: Bearer &lt;your API key&gt;"</code></pre>
-<p><strong>Every call runs as the user whose key it is.</strong> The client sees the data sources that user
+<p><strong>Every call runs as the person who authorized it.</strong> The client sees the data sources that user
 can see and nothing else &mdash; in the catalog and in the saved queries and dashboards it searches, not only
 when it runs SQL. Running SQL, <code>EXPLAIN</code> included, needs <em>full</em> access to the data source,
 the same as the query editor: a user in a view-only group can look things up but not ask new questions. There is no service account and no way to configure one, which is deliberate:
