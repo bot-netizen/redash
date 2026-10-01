@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 
 from flask import make_response, request
@@ -32,6 +33,31 @@ class DataSourceTypeListResource(BaseResource):
     @require_admin
     def get(self):
         return [q.to_dict() for q in sorted(query_runners.values(), key=lambda q: q.name().lower())]
+
+
+#: A queue name is used to build Redis keys and is read by a worker from an
+#: environment variable, so it has to survive both. Letters, digits, dash and
+#: underscore -- the same set every queue in SQLDesk already uses.
+QUEUE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
+MAX_QUEUE_NAME = 64
+
+
+def _queue_problem(name):
+    """
+    Why this queue name cannot be used, or None.
+
+    Said rather than silently corrected, because the consequence of a name
+    nothing serves is a data source whose queries sit in a queue forever with
+    nothing in any log to explain it -- and the person typing it is the one who
+    also has to configure a worker for it.
+    """
+    if not name:
+        return None
+    if len(name) > MAX_QUEUE_NAME:
+        return "A queue name is at most {} characters.".format(MAX_QUEUE_NAME)
+    if not QUEUE_NAME.match(name):
+        return "A queue name may use letters, digits, dashes and underscores only."
+    return None
 
 
 class DataSourceResource(BaseResource):
@@ -70,6 +96,24 @@ class DataSourceResource(BaseResource):
         # them should silently discard somebody's notes.
         if "description" in req:
             data_source.description = req["description"] or None
+
+        # Which queues this source's queries go on. Until now the only way to
+        # set these was an UPDATE against the `data_sources` table, which the
+        # Administration page actually told people to run -- and giving a slow
+        # warehouse a queue of its own is the single most useful thing an
+        # administrator can do to stop it starving everything else.
+        #
+        # Absent means "leave it alone", like the description. Blank means
+        # "back to the default", because a queue name somebody has emptied is
+        # a queue name they have withdrawn.
+        for field, default in (("queue_name", "queries"), ("scheduled_queue_name", "scheduled_queries")):
+            if field in req:
+                name = (req[field] or "").strip()
+                problem = _queue_problem(name)
+                if problem:
+                    abort(400, message=problem)
+                setattr(data_source, field, name or default)
+
         models.db.session.add(data_source)
 
         try:

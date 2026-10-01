@@ -25,6 +25,54 @@ const DESCRIPTION_FIELD = (dataSource) => ({
   props: { rows: 3 },
 });
 
+/*
+  Which queues this source's queries go on.
+
+  Until now the only way to set these was an UPDATE against the `data_sources`
+  table -- which the Administration page actually told people to run. Giving a
+  slow warehouse a queue of its own is the single most useful thing an
+  administrator can do to stop it starving everything else, and it should not
+  require psql.
+
+  In the extra fields rather than the main form: most sources never need it,
+  and the ones that do are a deliberate decision somebody has gone looking for.
+*/
+const QUEUE_FIELDS = (dataSource) => [
+  {
+    name: "queue_name",
+    title: "Queue",
+    type: "text",
+    required: false,
+    extra: true,
+    initialValue: dataSource.queue_name,
+    placeholder: "queries",
+    // Said here because the consequence of getting it wrong is silent: a
+    // queue nothing serves is a data source whose queries wait forever.
+    helpText:
+      "A queue of this source's own, for a warehouse slow enough to starve the rest. A worker has to be running with this name in its QUEUES, or nothing here will run.",
+  },
+  {
+    name: "scheduled_queue_name",
+    title: "Scheduled queue",
+    type: "text",
+    required: false,
+    extra: true,
+    initialValue: dataSource.scheduled_queue_name,
+    placeholder: "scheduled_queries",
+    contentAfter: React.createElement("hr"),
+    helpText:
+      "The same, for this source's scheduled refreshes. Keeping them apart is what stops a refresh storm delaying somebody waiting at a dashboard.",
+  },
+];
+
+const DEFAULT_QUEUES = { queue_name: "queries", scheduled_queue_name: "scheduled_queries" };
+
+function hasOwnQueue(dataSource) {
+  return Object.entries(DEFAULT_QUEUES).some(
+    ([field, fallback]) => dataSource[field] && dataSource[field] !== fallback
+  );
+}
+
 class EditDataSource extends React.Component {
   static propTypes = {
     dataSourceId: PropTypes.string.isRequired,
@@ -53,7 +101,7 @@ class EditDataSource extends React.Component {
 
   saveDataSource = (values, successCallback, errorCallback) => {
     const { dataSource } = this.state;
-    helper.updateTargetWithValues(dataSource, values, ["name", "description"]);
+    helper.updateTargetWithValues(dataSource, values, ["name", "description", "queue_name", "scheduled_queue_name"]);
     DataSource.save(dataSource)
       .then(() => successCallback("Saved."))
       .catch((error) => {
@@ -113,7 +161,7 @@ class EditDataSource extends React.Component {
     const { dataSource, type } = this.state;
     // Shown on the data source form and nowhere else: it is a column on this
     // row, while a destination of the same shape has no such thing.
-    const fields = helper.getFields(type, dataSource, [DESCRIPTION_FIELD(dataSource)]);
+    const fields = helper.getFields(type, dataSource, [DESCRIPTION_FIELD(dataSource), ...QUEUE_FIELDS(dataSource)]);
     const helpTriggerType = `DS_${toUpper(type.type)}`;
     const formProps = {
       fields,
@@ -124,7 +172,11 @@ class EditDataSource extends React.Component {
       ],
       onSubmit: this.saveDataSource,
       feedbackIcons: true,
-      defaultShowExtraFields: helper.hasFilledExtraField(type, dataSource),
+      // A queue somebody has *changed* counts as a filled extra field, so the
+      // section is already open when they come back to it. Compared against
+      // the defaults rather than merely being set: every data source carries
+      // "queries", so truthiness would open the section for all of them.
+      defaultShowExtraFields: helper.hasFilledExtraField(type, dataSource) || hasOwnQueue(dataSource),
     };
 
     return (

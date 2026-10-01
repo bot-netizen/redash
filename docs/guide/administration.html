@@ -126,9 +126,12 @@ development machine it filled the disk and took Postgres with it.</p>
   <li><strong>Dashboards stale?</strong> Look at Outdated Queries, then at worker count. Slow queries
     queueing behind each other is the usual cause.</li>
   <li><strong>Pages slow but data fresh?</strong> That is the web tier, not the workers.</li>
-  <li><strong>Give a slow data source its own queue</strong> so one warehouse cannot starve the rest.
-    There is no screen for it yet: set <code>queue_name</code> and <code>scheduled_queue_name</code> on its
-    row in <code>data_sources</code>, and run a worker whose <code>QUEUES</code> names them.</li>
+  <li><strong>Give a slow data source its own queue</strong> so one warehouse cannot starve the rest. On the
+    data source&rsquo;s page, under the extra fields: a <em>Queue</em> for the queries people are waiting
+    for and a <em>Scheduled queue</em> for its refreshes &mdash; keeping those apart is what stops a
+    refresh storm delaying somebody at a dashboard. Then run a worker whose <code>QUEUES</code> names them;
+    a queue nothing serves is a data source whose queries wait forever, with nothing in any log to say
+    why.</li>
 </ul>
 
 <h2>Settings worth knowing</h2>
