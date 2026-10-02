@@ -197,10 +197,124 @@ everything, so this is the one component you do not scale horizontally.</p>
 <p>Two widgets on the same query with the same parameters share a single fetch. A dashboard with five
 views of one query asks once.</p>
 
-<h2>Where the AI pieces sit</h2>
-<p>The <a href="mcp.html">MCP server</a> is part of the web server — it is JSON-RPC over HTTP and needs
-nothing heavy. The catalog it reads is built by a job on the workers, like everything else slow. No AI
-component sits between your browser and your data.</p>
+<h2 id="duckdb">DuckDB — the second database</h2>
+<p>SQLDesk runs a second database engine, inside itself, for two jobs that Postgres is the wrong shape
+for. It is worth understanding because it is the piece people are most surprised to find.</p>
+<dl>
+  <dt>Uploaded files</dt>
+  <dd>A CSV or Parquet file you upload becomes a view over the file on disk. Nothing is imported — the
+    file <em>is</em> the table, and DuckDB reads it where it lies.</dd>
+  <dt>Stream windows</dt>
+  <dd>The last few minutes of a Kafka topic, one file per topic. See below.</dd>
+</dl>
+<p><strong>Why not Postgres?</strong> Because both of these are columnar, analytical workloads over data
+you can afford to lose, and Postgres is the one database here you cannot. Pushing fifty thousand events a
+second through it would make the database holding your users and dashboards also the one under the most
+write pressure, and a scan of a few million rows would compete with the page you are reading.</p>
+<p><strong>Why a file, and not memory?</strong> Because the processes that write and the processes that
+read are different ones. A stream's consumer runs on a worker; your query runs in the web process; the
+rollup runs on another worker. A file is the only cheap thing all three can see. DuckDB gives a file to
+one writer at a time, so the consumer takes the lock for the moment it writes and releases it between
+flushes; readers open read-only and wait out a flush rather than failing on one.</p>
+<p>An uploaded file nobody has queried for a few days is <em>unloaded</em> — its view is dropped so no
+query pays to infer its schema — and the next query that names it brings it back. The file itself is
+never touched by that.</p>
+
+<h2 id="streams">Streams — Kafka, and what a window means</h2>
+<p>A Kafka topic is not a table and SQLDesk does not pretend otherwise. What it keeps is a
+<strong>window</strong>: the last few minutes of a topic, held in DuckDB, queryable with ordinary SQL.</p>
+<p>It is explicitly <strong>not a pipeline</strong>. SQLDesk does not land your topic anywhere, does not
+replay history, and does not promise to have seen every message. If you want the last six months, land
+the topic in your warehouse and point SQLDesk at that. What this is for is the question you have during
+an incident, about the last ten minutes.</p>
+<dl>
+  <dt>The cluster is the data source</dt>
+  <dd>An administrator registers brokers and credentials once. Topics are its tables.</dd>
+  <dt>A consumer runs only while somebody is watching</dt>
+  <dd>Nobody watching means nothing consumed and nothing stored. A stream resumes
+    <strong>from the end of the topic</strong>, never from where it left off — replaying a gap would
+    stamp old events with an arrival time of now, and draw a chart that lies.</dd>
+  <dt>The window sizes itself</dt>
+  <dd>From the row budget and the rate actually observed. A slow topic gets an hour; a fast one gets
+    four minutes. Above a ceiling the stream is <em>sampled</em>, and every chart drawn from it says so,
+    because a count from a sampled stream is an estimate and silence about that is the worst outcome.</dd>
+  <dt>Rollups outlive the window</dt>
+  <dd>Each minute is aggregated into buckets and kept after the raw events have aged out, so "what
+    happened this morning" has an answer when the window has long moved on.</dd>
+</dl>
+
+<h2 id="mcp">MCP — where the AI pieces sit</h2>
+<p>The <a href="mcp.html">MCP server</a> is part of the web server: JSON-RPC over HTTP, needing nothing
+heavy. An AI client connects to it the way a browser connects to the API, and <strong>runs as the person
+whose credentials it holds</strong> — the same data sources, the same permissions, the same audit.</p>
+<p>Three pieces sit behind it, and they are deliberately separate:</p>
+<dl>
+  <dt>The catalog</dt>
+  <dd>What the tools know about your warehouse: tables, columns, which ones are actually used together,
+    agreed measures, and queries a person has confirmed as the right answer to a question. Built by a
+    job on the workers — <em>harvesting</em> — which reads each data source's schema and the SQL that
+    recently ran against it. It never overwrites a description somebody wrote.</dd>
+  <dt>Its own queue and its own workers</dt>
+  <dd>A model exploring a warehouse writes a great many queries. They go on the <code>mcp</code> queue,
+    served by workers that take nothing else, so a model cannot slow down a dashboard somebody is
+    watching.</dd>
+  <dt>A cost ceiling, from the engine's own estimate</dt>
+  <dd>Optional. Where the engine will say what a query costs before running it — a plan cost from the
+    Postgres family, dry-run bytes from BigQuery — <code>run_query</code> can refuse above a limit and
+    tell the model the figure. No estimate is never a refusal.</dd>
+</dl>
+<p><strong>No AI component sits between your browser and your data.</strong> Nothing is sent to a model
+by SQLDesk; a model asks SQLDesk, and SQLDesk answers from the data sources that model's user may
+already read.</p>
+
+<h2 id="glossary">The words, and what they mean</h2>
+<dl>
+  <dt>Data source</dt>
+  <dd>A connection to somewhere data lives, with credentials encrypted at rest. The unit permissions are
+    granted on. A warehouse, a file upload area, or a Kafka cluster.</dd>
+  <dt>Query</dt>
+  <dd>Saved SQL against one data source. Has an owner, a history of changes, optional parameters and an
+    optional schedule.</dd>
+  <dt>Query result</dt>
+  <dd>The rows a query returned, stored in Postgres with the hash of the SQL that produced them. What a
+    dashboard shows is a stored result, which is why dashboards are fast and why they have an age.</dd>
+  <dt>Visualization</dt>
+  <dd>A chart over a query's result. A query can have several.</dd>
+  <dt>Widget</dt>
+  <dd>A visualization placed on a dashboard.</dd>
+  <dt>Live dashboard</dt>
+  <dd>One the server refreshes on an interval, once for everyone watching, instead of every open tab
+    re-running the queries on its own timer.</dd>
+  <dt>Window</dt>
+  <dd>What SQLDesk keeps of a Kafka topic: the last few minutes, in DuckDB. Not a copy of the topic.</dd>
+  <dt>Sampling</dt>
+  <dd>Keeping a fixed share of a topic's events when it is faster than the ceiling allows. Charts drawn
+    from a sampled stream say so.</dd>
+  <dt>Rollup</dt>
+  <dd>A per-minute aggregate of a stream, kept after the raw events have gone.</dd>
+  <dt>Catalog</dt>
+  <dd>What the MCP tools know about your warehouse.</dd>
+  <dt>Harvest</dt>
+  <dd>The job that builds the catalog from schemas and recently-run SQL.</dd>
+  <dt>Unloaded</dt>
+  <dd>An uploaded file whose view has been dropped because nothing has queried it lately. The file is
+    untouched and the next query that names it brings it back.</dd>
+</dl>
+
+<h2>Where everything is kept</h2>
+<table>
+  <thead><tr><th>Store</th><th>Holds</th><th>If you lose it</th></tr></thead>
+  <tbody>
+    <tr><td>Postgres</td><td>users, data sources, queries, dashboards, alerts, query results, the
+      catalog</td><td>everything. Back this up.</td></tr>
+    <tr><td>Redis</td><td>job queues, locks, the schema cache, who is watching what</td><td>in-flight
+      jobs, and nothing else</td></tr>
+    <tr><td>DuckDB files</td><td>uploaded files' views, stream windows</td><td>a window, which refills
+      in minutes; uploads are the files themselves and survive</td></tr>
+    <tr><td>Your warehouse</td><td>your data</td><td>SQLDesk never writes to it</td></tr>
+  </tbody>
+</table>
+
 <div class="doc-next"><a class="btn btn-ghost" href="concepts.html">&larr; Concepts</a><a class="btn btn-primary" href="connectors.html">Data sources &rarr;</a></div>
   </main>
 </div>
