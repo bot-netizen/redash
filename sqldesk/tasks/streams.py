@@ -20,9 +20,10 @@ out. What it costs is one line of hand-over and a lock.
 """
 
 import logging
+import os
 
 from sqldesk import models, redis_connection, settings
-from sqldesk.streams import activity, rollup
+from sqldesk.streams import activity, rollup, slots, watching
 from sqldesk.streams.consumer import Broker, consume
 from sqldesk.streams.consumer import _security as security
 from sqldesk.streams.store import RECEIVED, Store
@@ -68,9 +69,26 @@ def supervise_streams():
 
     started = 0
     for stream in activity.active_streams():
-        if not _being_consumed(stream.id):
-            consume_stream.delay(stream.id)
-            started += 1
+        if _being_consumed(stream.id):
+            continue
+        if watching.state(stream) != watching.RUNNING:
+            # Seen recently but nobody watching now: paused, and a paused
+            # stream keeps its window and starts nothing.
+            continue
+        refused = slots.acquire(stream.id, owner=stream.started_by_id)
+        if refused:
+            # Said on the stream so the page can explain it. A person looking
+            # at an empty chart deserves "all the slots are in use" rather than
+            # silence.
+            if stream.last_error != refused:
+                stream.last_error = refused
+                models.db.session.commit()
+            continue
+        if stream.last_error and "slot" in stream.last_error:
+            stream.last_error = None
+            models.db.session.commit()
+        consume_stream.delay(stream.id)
+        started += 1
     if started:
         logger.info("task=supervise_streams started=%s", started)
     return started
@@ -137,7 +155,14 @@ def consume_stream(stream_id):
         # Re-read rather than trusting the row we loaded: whether anybody is
         # watching changes while this runs, which is the entire point.
         models.db.session.refresh(stream)
-        return activity.is_active(stream) and utcnow().timestamp() < deadline
+        if utcnow().timestamp() >= deadline:
+            return False
+        if watching.state(stream) != watching.RUNNING:
+            return False
+        # Renewed here rather than on a timer of its own: this is called on
+        # every flush, which is exactly as often as the slot needs holding.
+        slots.renew(stream.id)
+        return True
 
     if not should_continue():
         _release(stream_id)
@@ -165,11 +190,15 @@ def consume_stream(stream_id):
         # a successor at once. Waiting for the supervisor's next minute would
         # leave up to a minute of the topic unconsumed after every job, which on
         # a window measured in minutes is a visible hole in the chart.
-        carry_on = activity.is_active(stream)
+        carry_on = watching.state(stream) == watching.RUNNING
     finally:
         _release(stream_id)
         if carry_on:
             consume_stream.delay(stream_id)
+        else:
+            # Nothing is going to renew it, and leaving it to expire would hold
+            # a slot for two minutes after the stream stopped.
+            slots.release(stream_id)
 
 
 def _release(stream_id):
@@ -287,3 +316,42 @@ def _drop_old_rollups():
     if removed:
         models.db.session.commit()
     return removed
+
+
+@job("periodic", timeout=120)
+def drop_cold_windows():
+    """
+    Delete the window of every stream that has gone cold.
+
+    A paused stream keeps its window so that coming back resumes in seconds. A
+    cold one -- nobody for ten minutes -- does not: the disk is worth more than
+    a window of events nobody is going to look at, and starting again is a
+    deliberate act anyway, which is what the button says.
+
+    Counted down to nothing on the row as well as removed from the disk, so the
+    page does not go on reporting rows in a window that is not there.
+    """
+    dropped = 0
+    for stream in models.Stream.query.filter(models.Stream.pinned.is_(False)):
+        if watching.state(stream) != watching.COLD:
+            continue
+        path = stream.store_path()
+        if not os.path.exists(path):
+            continue
+        if _being_consumed(stream.id):
+            # Between the state going cold and the consumer noticing. It will
+            # be cold again on the next tick.
+            continue
+        try:
+            os.remove(path)
+        except OSError:
+            logger.warning("could not drop the window for stream %s", stream.id, exc_info=True)
+            continue
+        stream.rows = 0
+        stream.malformed = 0
+        stream.observed_rate = 0
+        models.db.session.commit()
+        dropped += 1
+    if dropped:
+        logger.info("task=drop_cold_windows dropped=%s", dropped)
+    return dropped

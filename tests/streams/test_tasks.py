@@ -357,3 +357,92 @@ class TestTheRollup(StreamTaskTestCase):
 
         self.assertGreater(models.StreamRollup.query.filter_by(stream_id=working.id).count(), 0)
         self.assertIsNotNone(models.Stream.query.get(broken.id).last_error)
+
+
+class TestSlotsAndStates(BaseTestCase):
+    """
+    The supervisor starts what somebody is watching, and only as many as the
+    install allows.
+
+    A refusal is written on the stream rather than only logged: a person
+    looking at an empty chart deserves "all the slots are in use" rather than
+    silence, and the page reads it from there.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from sqldesk import redis_connection
+        from sqldesk.streams import slots
+
+        redis_connection.delete(slots.SLOTS_KEY, slots.LOCK_KEY)
+
+    def stream(self, topic="orders"):
+        from sqldesk import models
+
+        source = self.factory.create_data_source(name="Cluster " + topic, type="kafka_stream")
+        stream = models.Stream(org=source.org, data_source=source, topic=topic, last_viewed_at=utcnow())
+        models.db.session.add(stream)
+        models.db.session.commit()
+        return stream
+
+    def watch(self, stream):
+        from sqldesk.streams import watching
+
+        watching.check_in(stream.id, "ada")
+
+    def test_a_watched_stream_is_started_and_takes_a_slot(self):
+        from sqldesk.streams import slots
+        from sqldesk.tasks import streams as tasks
+
+        stream = self.stream()
+        self.watch(stream)
+
+        with mock.patch.object(tasks.consume_stream, "delay") as delayed:
+            self.assertEqual(1, tasks.supervise_streams())
+
+        delayed.assert_called_once_with(stream.id)
+        self.assertIn(stream.id, slots.held())
+
+    def test_a_paused_stream_is_not_started(self):
+        # Seen a minute ago, nobody watching now. Its window is kept and
+        # nothing consumes.
+        from sqldesk.tasks import streams as tasks
+
+        self.stream()
+
+        with mock.patch.object(tasks.consume_stream, "delay") as delayed:
+            self.assertEqual(0, tasks.supervise_streams())
+
+        delayed.assert_not_called()
+
+    def test_past_the_limit_the_stream_says_why(self):
+        from sqldesk import models
+        from sqldesk.tasks import streams as tasks
+
+        first, second = self.stream("orders"), self.stream("payments")
+        self.watch(first)
+        self.watch(second)
+
+        with mock.patch("sqldesk.settings.STREAM_MAX_CONCURRENT", 1):
+            with mock.patch.object(tasks.consume_stream, "delay"):
+                tasks.supervise_streams()
+
+        refused = [s for s in (first, second) if s.last_error]
+        self.assertEqual(1, len(refused))
+        self.assertIn("in use", refused[0].last_error)
+        models.db.session.rollback()
+
+    def test_and_stops_saying_so_once_a_slot_is_free(self):
+        from sqldesk.tasks import streams as tasks
+
+        stream = self.stream()
+        self.watch(stream)
+        stream.last_error = "All 1 streaming slots are in use. Stop one, or wait for one to finish."
+        from sqldesk import models
+
+        models.db.session.commit()
+
+        with mock.patch.object(tasks.consume_stream, "delay"):
+            tasks.supervise_streams()
+
+        self.assertIsNone(stream.last_error)

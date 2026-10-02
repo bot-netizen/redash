@@ -1733,6 +1733,13 @@ class Stream(TimestampMixin, BelongsToOrgMixin, db.Model):
     data_source = db.relationship(DataSource, backref=db.backref("streams", cascade="all, delete-orphan"))
     topic = Column(db.String(255), nullable=False)
 
+    #: Who started it, for the per-person limit and so the Running streams
+    #: page can say whose it is -- the difference between "stop this, it is
+    #: yours" and "stop this, somebody else is looking at it". Null for a
+    #: stream a schedule or a pin started rather than a person.
+    started_by_id = Column(key_type("User"), db.ForeignKey("users.id"), nullable=True)
+    started_by = db.relationship(User, foreign_keys=[started_by_id])
+
     #: Overrides for this stream alone, where 0 means "use the install's".
     row_budget = Column(db.Integer, nullable=False, default=0)
     events_per_second = Column(db.Integer, nullable=False, default=0)

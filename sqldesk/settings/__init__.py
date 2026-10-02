@@ -579,6 +579,32 @@ STREAM_ACTIVE_MINUTES = int(os.environ.get("SQLDESK_STREAM_ACTIVE_MINUTES", "15"
 #: that makes "never buffer the overflow" true: whatever arrives in a second is
 #: either written or sampled away within it.
 STREAM_FLUSH_SECONDS = float(os.environ.get("SQLDESK_STREAM_FLUSH_SECONDS", "1"))
+
+#: A viewer checks in while their tab is open and visible; a stream with
+#: nobody checking in for this long pauses. The same number live dashboards
+#: use, and for the same reason: it allows two missed check-ins.
+STREAM_WATCH_SECONDS = int(os.environ.get("SQLDESK_STREAM_WATCH_SECONDS", "45"))
+
+#: How long a paused stream keeps its slot. Long enough that locking a screen
+#: does not cost somebody their place, short enough that people who wandered
+#: off do not hold slots nobody is using.
+STREAM_SLOT_GRACE_SECONDS = int(os.environ.get("SQLDESK_STREAM_SLOT_GRACE_SECONDS", "120"))
+
+#: After this long with nobody watching, a paused stream goes cold: its window
+#: is dropped and starting it again is a deliberate act.
+STREAM_COLD_MINUTES = int(os.environ.get("SQLDESK_STREAM_COLD_MINUTES", "10"))
+
+#: How many topics may be consumed at once across the install. A slot is a
+#: *topic*, not a viewer: five people watching one topic share one consumer and
+#: one window, which is what makes this limit mean something.
+STREAM_MAX_CONCURRENT = int(os.environ.get("SQLDESK_STREAM_MAX_CONCURRENT", "5"))
+
+#: And how many one person may start, so that one person cannot take them all.
+STREAM_MAX_PER_USER = int(os.environ.get("SQLDESK_STREAM_MAX_PER_USER", "2"))
+
+#: How long one stream may run before somebody has to say they still want it.
+#: A forgotten tab would otherwise hold a slot all day.
+STREAM_MAX_MINUTES = int(os.environ.get("SQLDESK_STREAM_MAX_MINUTES", "30"))
 # Which queue an MCP-issued query goes on. Empty means the data source's own,
 # which is also where dashboards go -- so a model exploring competes with the
 # people waiting for a dashboard to load. Name a queue here and give it

@@ -20,7 +20,7 @@ from sqldesk.tasks.queries import (
     refresh_schemas,
     remove_ghost_locks,
 )
-from sqldesk.tasks.streams import roll_up_streams, supervise_streams
+from sqldesk.tasks.streams import drop_cold_windows, roll_up_streams, supervise_streams
 from sqldesk.tasks.subscriptions import send_due_subscriptions
 from sqldesk.tasks.uploads import manage_uploads
 from sqldesk.tasks.worker import Queue
@@ -175,6 +175,10 @@ def periodic_job_definitions():
     if settings.STREAM_ACTIVE_MINUTES > 0:
         jobs.append({"func": supervise_streams, "timeout": 60, "interval": timedelta(minutes=1)})
         jobs.append({"func": roll_up_streams, "timeout": 300, "interval": timedelta(minutes=1)})
+        # Five minutes rather than one: a window is dropped once, and asking
+        # every minute whether ten streams have gone cold is ten reads a minute
+        # for an answer that is almost always no.
+        jobs.append({"func": drop_cold_windows, "timeout": 120, "interval": timedelta(minutes=5)})
 
     if settings.VERSION_CHECK:
         jobs.append({"func": version_check, "interval": timedelta(days=1)})
