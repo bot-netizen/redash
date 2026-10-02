@@ -1,0 +1,190 @@
+"""
+A cluster is the data source; a topic is a table.
+
+The shape this replaces had one topic per data source, which meant a ticket to
+an administrator for every topic somebody wanted to look at. Now an
+administrator registers the cluster once and the topics enabled on it are its
+tables -- so **enabling a topic is the real access decision**, and that is what
+the streams permission guards.
+"""
+
+from unittest import TestCase
+
+from sqldesk.query_runner.kafka_stream import names_in, table_name
+
+
+class TestTheIdentifierATopicIsQueriedBy(TestCase):
+    """
+    Kafka allows dots and hyphens in a topic name and SQL does not get on with
+    either. The schema browser shows the same name this produces, so what is on
+    screen is what somebody types.
+    """
+
+    def test_a_plain_name_is_itself(self):
+        self.assertEqual("orders", table_name("orders"))
+
+    def test_dots_and_hyphens_become_underscores(self):
+        self.assertEqual("prod_orders_v2", table_name("prod.orders.v2"))
+        self.assertEqual("order_events", table_name("order-events"))
+
+    def test_it_is_lowercased(self):
+        self.assertEqual("orders", table_name("Orders"))
+
+    def test_a_name_that_starts_with_a_digit_gets_a_prefix(self):
+        # `2024_orders` is not an identifier anywhere.
+        self.assertEqual("t_2024_orders", table_name("2024-orders"))
+
+    def test_leading_and_trailing_punctuation_is_dropped(self):
+        self.assertEqual("orders", table_name(".orders."))
+
+    def test_a_name_with_nothing_usable_in_it_still_produces_one(self):
+        # Rather than an empty identifier, which would fail at a confusing
+        # distance from the topic that caused it.
+        self.assertEqual("topic", table_name("..."))
+        self.assertEqual("topic", table_name(""))
+
+
+class TestWhichTopicsAQueryNames(TestCase):
+    """
+    Which topics a query mentions decides two things: which consumers it keeps
+    running, and which "this stream is paused" explanation to give when a table
+    is missing. A substring match would keep half the cluster consuming on any
+    query with a common word in it.
+    """
+
+    def test_a_query_names_the_table_it_selects_from(self):
+        self.assertTrue(names_in("SELECT * FROM orders", "orders"))
+
+    def test_whole_words_only(self):
+        self.assertFalse(names_in("SELECT * FROM orders_archive", "orders"))
+        self.assertFalse(names_in("SELECT * FROM old_orders", "orders"))
+
+    def test_case_does_not_matter(self):
+        self.assertTrue(names_in("select * from ORDERS", "orders"))
+
+    def test_a_query_naming_none_of_them_names_none(self):
+        self.assertFalse(names_in("SELECT 1", "orders"))
+
+    def test_a_join_names_both(self):
+        query = "SELECT * FROM orders JOIN payments USING (id)"
+
+        self.assertTrue(names_in(query, "orders"))
+        self.assertTrue(names_in(query, "payments"))
+
+
+class FakeStream:
+    """A stream row, as `_attached` uses one: a topic and a path."""
+
+    def __init__(self, topic, path):
+        self.topic = topic
+        self._path = path
+
+    def store_path(self):
+        return self._path
+
+
+class TestAttachingTheWindows(TestCase):
+    """
+    One database file per topic, attached read-only into one connection.
+
+    That is what lets a query name two topics and join them, and what keeps the
+    consumers out of each other's way -- a single file for the whole cluster
+    would put every topic behind one writer lock.
+
+    The cases that matter are the ones where there is nothing to attach. A
+    consumer creates its file on the first connection and the `events` table on
+    the first flush, so between the two there is a window with no table in it;
+    attaching that and creating a view over it fails with DuckDB complaining
+    about a table, which is a confusing way to learn that nothing has arrived.
+    """
+
+    def setUp(self):
+        import tempfile
+
+        from sqldesk.query_runner.kafka_stream import KafkaStream
+
+        self.folder = tempfile.mkdtemp()
+        self.runner = KafkaStream({"brokers": "localhost:9092"})
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    def window(self, topic, rows=1):
+        """A window file with `rows` events in it, as a consumer leaves one."""
+        import os
+
+        from sqldesk.streams.store import Store
+
+        path = os.path.join(self.folder, "{}.duckdb".format(topic))
+        store = Store(path)
+        store.append([b'{"n": %d}' % index for index in range(rows)])
+        store.close()
+        return FakeStream(topic, path)
+
+    def empty_window(self, topic):
+        """A file a consumer has opened and not yet flushed into."""
+        import os
+
+        from sqldesk.streams.store import Store
+
+        path = os.path.join(self.folder, "{}.duckdb".format(topic))
+        store = Store(path)
+        store.connection.execute("SELECT 1")
+        store.close()
+        return FakeStream(topic, path)
+
+    def missing(self, topic):
+        import os
+
+        return FakeStream(topic, os.path.join(self.folder, "{}.duckdb".format(topic)))
+
+    def test_a_topic_with_a_window_is_queryable_by_its_name(self):
+        streams = [self.window("orders", rows=3)]
+
+        connection, attached = self.runner._attached(streams, "SELECT * FROM orders")
+        try:
+            self.assertEqual(["orders"], [stream.topic for stream in attached])
+            self.assertEqual(3, connection.execute("SELECT count(*) FROM orders").fetchone()[0])
+        finally:
+            connection.close()
+
+    def test_two_topics_can_be_joined(self):
+        # The whole reason for one connection with several files attached.
+        streams = [self.window("orders", rows=3), self.window("payments", rows=2)]
+
+        connection, attached = self.runner._attached(streams, "SELECT * FROM orders, payments")
+        try:
+            self.assertEqual(2, len(attached))
+            self.assertEqual(6, connection.execute("SELECT count(*) FROM orders CROSS JOIN payments").fetchone()[0])
+        finally:
+            connection.close()
+
+    def test_a_window_with_no_events_yet_is_left_out(self):
+        streams = [self.window("orders"), self.empty_window("payments")]
+
+        connection, attached = self.runner._attached(streams, "SELECT * FROM payments")
+        try:
+            self.assertEqual(["orders"], [stream.topic for stream in attached])
+        finally:
+            connection.close()
+
+    def test_and_so_is_a_topic_with_no_file_at_all(self):
+        streams = [self.window("orders"), self.missing("payments")]
+
+        connection, attached = self.runner._attached(streams, "SELECT * FROM payments")
+        try:
+            self.assertEqual(["orders"], [stream.topic for stream in attached])
+        finally:
+            connection.close()
+
+    def test_a_topic_whose_name_is_not_an_identifier_is_still_attached(self):
+        streams = [self.window("prod.orders.v2", rows=2)]
+
+        connection, attached = self.runner._attached(streams, "SELECT * FROM prod_orders_v2")
+        try:
+            self.assertEqual(1, len(attached))
+            self.assertEqual(2, connection.execute("SELECT count(*) FROM prod_orders_v2").fetchone()[0])
+        finally:
+            connection.close()

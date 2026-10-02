@@ -18,6 +18,9 @@ a stream's SQL is written by people, so DuckDB's defaults would be theirs.
 """
 
 import logging
+import os
+import re
+import time
 
 from sqldesk.query_runner import (
     TYPE_BOOLEAN,
@@ -71,6 +74,27 @@ def _described(connection, query):
     return kinds
 
 
+def table_name(topic):
+    """
+    The identifier a topic is queried by.
+
+    Kafka topic names allow dots, hyphens and underscores; SQL identifiers do
+    not get on with the first two, and quoting them everywhere would make every
+    query in the editor uglier than it needs to be. `prod.orders.v2` is queried
+    as `prod_orders_v2`, and the schema browser shows the same name, so what is
+    on screen is what you type.
+    """
+    name = re.sub(r"[^A-Za-z0-9_]", "_", topic or "").strip("_").lower() or "topic"
+    if name[0].isdigit():
+        name = "t_" + name
+    return name
+
+
+def names_in(query, identifier):
+    """Whether a query mentions an identifier as a whole word."""
+    return re.search(r"\b{}\b".format(re.escape(identifier)), query or "", re.IGNORECASE) is not None
+
+
 class KafkaStream(BaseSQLQueryRunner):
     should_annotate_query = False
 
@@ -92,7 +116,6 @@ class KafkaStream(BaseSQLQueryRunner):
                     "title": "Bootstrap servers",
                     "default": "localhost:9092",
                 },
-                "topic": {"type": "string", "title": "Topic"},
                 # Everything a broker needs to let us in, in the shape
                 # librdkafka wants, because there are too many combinations of
                 # SASL and TLS to put each on a form -- and inventing a subset
@@ -113,22 +136,22 @@ class KafkaStream(BaseSQLQueryRunner):
                 "sasl_password": {"type": "string", "title": "SASL password"},
                 "row_budget": {
                     "type": "number",
-                    "title": "Rows to keep",
+                    "title": "Rows to keep, per topic",
                     "default": 0,
-                    "info": "0 uses the install's setting. The window follows from this and the rate.",
+                    "info": "The default for topics on this cluster; each can override it. "
+                    "0 uses the install's setting. A topic's window follows from this and its rate.",
                 },
                 "events_per_second": {
                     "type": "number",
-                    "title": "Events a second to store",
+                    "title": "Events a second to store, per topic",
                     "default": 0,
-                    "info": "Past this, events are sampled and every chart says so. 0 uses the install's setting.",
+                    "info": "Past this a topic is sampled and every chart says so. " "0 uses the install's setting.",
                 },
             },
-            "required": ["brokers", "topic"],
+            "required": ["brokers"],
             "secret": ["sasl_password"],
             "order": [
                 "brokers",
-                "topic",
                 "security_protocol",
                 "sasl_mechanism",
                 "sasl_username",
@@ -166,13 +189,13 @@ class KafkaStream(BaseSQLQueryRunner):
 
     # --- what the rest of SQLDesk asks of a data source --------------------
 
-    def _stream(self):
+    def _streams(self):
         """
-        The `Stream` row for this data source.
+        The topics somebody has enabled on this cluster, as `Stream` rows.
 
-        Looked up rather than held, because a runner is constructed per query
-        and the row carries the window and the sample rate -- both of which the
-        consumer is changing underneath us.
+        Looked up rather than held: a runner is built per query, and these rows
+        carry the window and the sample rate, both of which the consumers are
+        changing underneath us.
         """
         from sqldesk import models
 
@@ -180,45 +203,89 @@ class KafkaStream(BaseSQLQueryRunner):
         # or a shell; through the application it arrives by `for_data_source`.
         source_id = self._data_source_id or self.configuration.get("data_source_id")
         if not source_id:
-            return None
-        return models.Stream.query.filter(models.Stream.data_source_id == source_id).first()
+            return []
+        return (
+            models.Stream.query.filter(models.Stream.data_source_id == source_id).order_by(models.Stream.topic).all()
+        )
 
-    def _opened_store(self, stream):
+    def _attached(self, streams, query):
+        """
+        A connection with every enabled topic's window attached as a view.
+
+        One database file per topic, attached read-only into one in-memory
+        connection, so a query can name two topics and join them. Read-only
+        because the consumer owns the write lock; attaching waits out a flush
+        rather than failing on one, which is the same bargain readers strike
+        everywhere else here.
+
+        A topic that has never consumed anything has no file at all, so there is
+        nothing to attach; naming it gets the explanation from
+        `activity.why_it_is_quiet` rather than DuckDB's "table does not exist".
+        """
+        import duckdb
+
         from sqldesk.streams.store import Store
 
-        if self._store is None:
-            # Read-only, and waiting out a flush rather than failing on one:
-            # the consumer owns the write lock, and a query is a reader.
-            self._store = Store(stream.store_path(), read_only=True)
-        return self._store
+        connection = duckdb.connect(":memory:")
+        attached = []
+        for stream in streams:
+            path = stream.store_path()
+            if not os.path.exists(path):
+                continue
+            name = table_name(stream.topic)
+            quoted = path.replace("'", "''")
+            last = None
+            for attempt in range(Store.READ_ATTEMPTS):
+                try:
+                    connection.execute("ATTACH '{}' AS \"{}__window\" (READ_ONLY)".format(quoted, name))
+                    last = None
+                    break
+                except Exception as error:  # noqa: PERF203 -- the retry is the point
+                    last = error
+                    time.sleep(Store.READ_PAUSE_SECONDS)
+            if last is not None:
+                logger.warning("could not attach the window for %s: %s", stream.topic, last)
+                continue
+            # A consumer creates the file on its first connection and the table
+            # on its first flush, so between the two there is a window with no
+            # `events` in it. Detached again rather than left attached, so the
+            # topic lands in the "nothing has arrived yet" explanation instead
+            # of DuckDB's complaint about a view it could not create.
+            present = connection.execute(
+                "SELECT count(*) FROM duckdb_tables() WHERE database_name = ? AND table_name = 'events'",
+                ["{}__window".format(name)],
+            ).fetchone()
+            if not present or not present[0]:
+                connection.execute('DETACH "{}__window"'.format(name))
+                continue
+            connection.execute('CREATE VIEW "{}" AS SELECT * FROM "{}__window".events'.format(name, name))
+            attached.append(stream)
+        return connection, attached
 
     def run_query(self, query, user):
-        stream = self._stream()
-        if stream is None:
-            return None, "This data source has no stream yet. Save it, and SQLDesk will start consuming."
+        streams = self._streams()
+        if not streams:
+            return None, (
+                "No topics are set up on this cluster yet. Somebody with the streams permission "
+                "enables them under Streams \u2192 Manage topics."
+            )
 
-        # Querying a stream is what "somebody is watching" means. Without this
-        # nothing is ever active except a pinned stream, so the window would be
-        # empty for everybody who had not asked an administrator to pin their
-        # topic. At most one write a minute; see `activity.note_viewed`.
+        # Querying a topic is what "somebody is watching" means, and it is per
+        # topic: a query naming `orders` should not keep `payments` consuming.
+        # A query naming none of them -- `select 1` -- counts for none.
         from sqldesk.streams import activity
 
-        try:
-            activity.note_viewed(stream)
-        except Exception:
-            logger.warning("could not note that stream %s was viewed", stream.id, exc_info=True)
+        named = [stream for stream in streams if names_in(query, table_name(stream.topic))]
+        for stream in named:
+            try:
+                activity.note_viewed(stream)
+            except Exception:
+                logger.warning("could not note that stream %s was viewed", stream.id, exc_info=True)
 
-        store = self._opened_store(stream)
+        connection, attached = self._attached(streams, query)
         try:
-            cursor = store.connection.cursor()
-            # The column types come from DESCRIBE rather than from the cursor.
-            # DuckDB's DB-API `description` reports the generic DB-API codes --
-            # every number is "NUMBER", every string "STRING" -- so reading
-            # types from it typed every column as text, and a chart cannot plot
-            # a number it has been told is a word. DESCRIBE answers in DuckDB's
-            # own names, which is what `TYPES` is keyed by, and it plans the
-            # query rather than running it.
-            kinds = _described(store.connection, query)
+            kinds = _described(connection, query)
+            cursor = connection.cursor()
             cursor.execute(query)
             columns = self.fetch_columns(
                 [(column[0], TYPES.get(kinds.get(column[0], ""), TYPE_STRING)) for column in cursor.description]
@@ -228,41 +295,57 @@ class KafkaStream(BaseSQLQueryRunner):
         except JobTimeoutException:
             raise
         except Exception as error:
-            # A stream nothing has arrived on has no `events` table at all, and
-            # "Table with name events does not exist" is a confusing way to
-            # learn that nobody has looked at the dashboard yet.
-            from sqldesk.streams import activity
+            return None, self._explain(error, named, attached)
+        finally:
+            connection.close()
 
-            quiet = activity.why_it_is_quiet(stream)
-            if quiet and "events" in str(error):
-                return None, quiet
-            return None, str(error)
+    def _explain(self, error, named, attached):
+        """
+        Why a query failed, in terms of the stream rather than of DuckDB.
+
+        A topic nobody has watched for a while has no window and therefore no
+        table, and "Table with name orders does not exist" is a confusing way to
+        learn that the stream is paused.
+        """
+        from sqldesk.streams import activity
+
+        missing = [stream for stream in named if stream not in attached]
+        for stream in missing:
+            if names_in(str(error), table_name(stream.topic)):
+                quiet = activity.why_it_is_quiet(stream)
+                if quiet:
+                    return quiet
+        return str(error)
 
     def get_schema(self, get_stats=False):
         """
-        What a person sees in the schema browser.
+        One table per enabled topic, named as it is queried.
 
-        From the stream's recorded columns rather than from the file, so a
-        stream that is paused still shows what it holds -- a schema browser that
-        empties itself when a consumer pauses would read as the data being gone.
+        From each stream's recorded columns rather than from its file, so a
+        topic whose consumer is paused still shows what it holds -- a schema
+        browser that empties itself when nobody is watching would read as the
+        data having gone.
         """
-        stream = self._stream()
-        if stream is None or not stream.columns:
-            return []
-        return [
-            {
-                "name": "events",
-                "columns": [column["name"] for column in stream.columns],
-            }
-        ]
+        schema = []
+        for stream in self._streams():
+            if not stream.columns:
+                continue
+            schema.append(
+                {
+                    "name": table_name(stream.topic),
+                    "columns": [column["name"] for column in stream.columns],
+                }
+            )
+        return schema
 
     def test_connection(self):
         """
-        Whether the broker will let us in, and whether the topic exists.
+        Whether the broker will let us in.
 
-        Asked when somebody saves the data source, which is the moment to find
-        out -- the alternative is a stream that looks configured and quietly
-        consumes nothing.
+        Asked when somebody saves the cluster, which is the moment to find out.
+        Not whether any particular topic exists: a cluster is registered before
+        anybody has chosen topics, and which ones exist is the question the
+        Manage topics page asks next.
         """
         from sqldesk.streams.consumer import describe_topic
 

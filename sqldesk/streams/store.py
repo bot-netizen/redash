@@ -79,14 +79,15 @@ class Store:
         a reader that arrives during one waits rather than failing -- a page
         that errored whenever it happened to land on a flush would be a page
         that errored at random.
-        """
-        if not self.read_only:
-            return duckdb.connect(self.path)
 
+        Both ways round. A query holds its windows open while it runs, so the
+        consumer waits in its turn rather than losing the events it has already
+        polled.
+        """
         last = None
         for attempt in range(self.READ_ATTEMPTS):
             try:
-                return duckdb.connect(self.path, read_only=True)
+                return duckdb.connect(self.path, read_only=self.read_only)
             except duckdb.IOException as error:
                 last = error
                 if attempt + 1 < self.READ_ATTEMPTS:

@@ -125,9 +125,9 @@ class Broker:
             self._consumer = None
 
 
-def describe_topic(options, seconds=5):
+def describe_topic(options, topic=None, seconds=5):
     """
-    Whether the broker will let us in and the topic exists, as a sentence.
+    Whether the broker will let us in and, if one is named, the topic exists.
 
     Returns None when all is well, and otherwise something a person can act on.
     Called when somebody saves the data source, which is the moment to find
@@ -142,24 +142,57 @@ def describe_topic(options, seconds=5):
     question that cannot wait: will it connect at all.
     """
     brokers = (options or {}).get("brokers")
-    topic = (options or {}).get("topic")
+    topic = topic or (options or {}).get("topic")
     if not brokers:
         return "No bootstrap servers given."
-    if not topic:
-        return "No topic given."
 
     try:
-        admin = confluent.admin.AdminClient({"bootstrap.servers": brokers, **_security(options)})
-        found = admin.list_topics(timeout=seconds)
+        found = _metadata(options, seconds)
     except Exception as error:
         return "Could not reach the broker at {}: {}".format(brokers, error)
 
+    # No topic named: the question was only whether the cluster answers, which
+    # is what saving a cluster data source asks.
+    if not topic:
+        return None
     if topic not in (found.topics or {}):
         return "The broker has no topic called {!r}.".format(topic)
     partitions = len(found.topics[topic].partitions or {})
     if not partitions:
         return "The topic {!r} has no partitions.".format(topic)
     return None
+
+
+def _metadata(options, seconds=5):
+    admin = confluent.admin.AdminClient({"bootstrap.servers": (options or {}).get("brokers"), **_security(options)})
+    return admin.list_topics(timeout=seconds)
+
+
+def list_topics(options, seconds=5):
+    """
+    Every topic the cluster will tell us about.
+
+    Metadata only -- no consumer, no messages, and fast enough to answer a page
+    load. Internal topics are left out: `__consumer_offsets` and its kind are
+    Kafka's own bookkeeping, and offering them as something to analyse is an
+    invitation to a confusing afternoon.
+    """
+    found = _metadata(options, seconds)
+    topics = []
+    for name, described in (found.topics or {}).items():
+        if name.startswith("_"):
+            continue
+        topics.append(
+            {
+                "name": name,
+                "partitions": len(described.partitions or {}),
+                # A topic the cluster is reporting an error for -- not
+                # authorised, under-replicated -- is still worth listing, with
+                # the reason, rather than silently missing.
+                "problem": str(described.error) if described.error else None,
+            }
+        )
+    return sorted(topics, key=lambda topic: topic["name"])
 
 
 def _security(options):

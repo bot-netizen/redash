@@ -1725,7 +1725,12 @@ class Stream(TimestampMixin, BelongsToOrgMixin, db.Model):
     data_source_id = Column(
         key_type("DataSource"), db.ForeignKey("data_sources.id", ondelete="CASCADE"), nullable=False
     )
-    data_source = db.relationship(DataSource, backref=db.backref("stream", uselist=False, cascade="all, delete"))
+    # Many per data source: the data source is a *cluster*, and each enabled
+    # topic on it is a stream of its own. It was one-to-one while a data source
+    # meant a single topic, and adding a second stream silently orphaned the
+    # first -- SQLAlchemy nulled its `data_source_id` to keep the one-to-one
+    # true, which the column does not allow.
+    data_source = db.relationship(DataSource, backref=db.backref("streams", cascade="all, delete-orphan"))
     topic = Column(db.String(255), nullable=False)
 
     #: Overrides for this stream alone, where 0 means "use the install's".
@@ -1764,7 +1769,10 @@ class Stream(TimestampMixin, BelongsToOrgMixin, db.Model):
     last_flush_at = Column(db.DateTime(True), nullable=True)
 
     __tablename__ = "streams"
-    __table_args__ = (db.Index("streams_data_source_id", "data_source_id", unique=True),)
+    #: One row per topic per cluster. Unique on the pair rather than on the
+    #: data source: a cluster has as many streams as it has enabled topics, and
+    #: enabling the same topic twice is the mistake worth refusing.
+    __table_args__ = (db.Index("streams_data_source_topic", "data_source_id", "topic", unique=True),)
 
     def __str__(self):
         return self.topic
