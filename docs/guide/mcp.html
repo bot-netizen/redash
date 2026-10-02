@@ -212,6 +212,26 @@ when it runs SQL. Running SQL, <code>EXPLAIN</code> included, needs <em>full</em
 the same as the query editor: a user in a view-only group can look things up but not ask new questions. There is no service account and no way to configure one, which is deliberate:
 a tool server with more access than its user is a way to launder permissions.</p>
 
+<h3 id="cost">A ceiling on what a query may cost</h3>
+<p>A model exploring a warehouse writes queries nobody reviewed. Most are cheap; the expensive ones are
+expensive in a way that shows up on a bill or on somebody else&rsquo;s dashboard, and by the time either
+happens the model has moved on. So <code>run_query</code> can be given a limit, and the estimate it is
+checked against is <strong>the engine&rsquo;s own</strong> &mdash; never a guess from the SQL.</p>
+<table>
+  <tr><th>Setting</th><th>Applies to</th></tr>
+  <tr><td><code>SQLDESK_MCP_MAX_QUERY_COST</code></td><td>Postgres and its family, from <code>EXPLAIN (FORMAT JSON)</code>. Arbitrary units &mdash; a sequential page fetch is 1.0 &mdash; so the figure is one you arrive at by looking at your own queries. Comparable between queries on one database, which is all it has to be.</td></tr>
+  <tr><td><code>SQLDESK_MCP_MAX_QUERY_BYTES</code></td><td>BigQuery, from a dry run. This is what BigQuery bills on, so it is the one estimate here that is money rather than a proxy for it.</td></tr>
+</table>
+<p>Both default to <code>0</code>, which is no limit. A figure we picked would refuse reasonable work on one
+warehouse and allow ruinous work on another.</p>
+<p><strong>Every other engine is unaffected</strong>, and that is deliberate rather than a gap: a cost model
+of our own would be a second opinion about a question the engine answers authoritatively, and it would have
+to be written again for each of the thirty-five connectors. The same rule covers an
+<code>EXPLAIN</code> that fails and a dry run that errors: <strong>no answer is never a refusal</strong>.
+Refusing a query for a reason that is not true is worse than running an expensive one.</p>
+<p>A refusal says the estimate, the limit and what to do about it, so the next query the model writes can be
+narrower rather than another guess.</p>
+
 <h2 id="tools">The tools</h2>
 <p>Eight, and the order matters. The first question is not "what SQL should I write" but "has
 somebody already answered this".</p>

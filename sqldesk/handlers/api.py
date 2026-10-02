@@ -56,7 +56,7 @@ from sqldesk.handlers.groups import (
     GroupPermissionsResource,
     GroupResource,
 )
-from sqldesk.handlers.mcp import McpAuditResource
+from sqldesk.handlers.mcp import McpAuditResource, MyMcpResource
 from sqldesk.handlers.permissions import (
     CheckPermissionResource,
     ObjectPermissionsListResource,
@@ -142,6 +142,7 @@ def json_representation(data, code, headers=None):
 
 
 api.add_org_resource(McpAuditResource, "/api/mcp/audit", endpoint="mcp_audit")
+api.add_org_resource(MyMcpResource, "/api/mcp/mine", endpoint="mcp_mine")
 
 api.add_org_resource(AlertResource, "/api/alerts/<alert_id>", endpoint="alert")
 api.add_org_resource(AlertMuteResource, "/api/alerts/<alert_id>/mute", endpoint="alert_mute")

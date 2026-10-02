@@ -147,20 +147,17 @@ export default function DesktopNavbar() {
         <Link href="users/me">Profile</Link>
       </Menu.Item>
       {/*
-        Here as well as under Admin, and for a different reason: the page
-        tells you how to point a client at SQLDesk with your own API key,
-        which is a thing every user needs and not an administrator's job.
-        Reachable only from the Admin menu, nobody without super_admin could
-        find it at all.
+        Everybody who may connect a client, not administrators: the page says
+        how to point one at SQLDesk and what yours has been doing. Reachable
+        only from the Admin menu, nobody without super_admin could find it at
+        all -- which was the state before this.
+
+        System Status used to be here. It is in the Admin menu now, and a
+        profile menu is not where somebody looks for the queue depth.
       */}
-      {clientConfig.mcpEnabled && (
+      {currentUser.can("use_mcp") && (
         <Menu.Item key="mcp">
-          <Link href="admin/mcp">Connect over MCP</Link>
-        </Menu.Item>
-      )}
-      {currentUser.hasPermission("super_admin") && (
-        <Menu.Item key="status">
-          <Link href="admin/status">System Status</Link>
+          <Link href="mcp/mine">My MCP</Link>
         </Menu.Item>
       )}
       <Menu.Divider />

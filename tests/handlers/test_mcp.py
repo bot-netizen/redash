@@ -3,6 +3,7 @@ import json
 from unittest import mock
 
 from sqldesk import models, settings
+from sqldesk.handlers.mcp import MyMcpResource
 from tests import BaseTestCase
 
 
@@ -1406,3 +1407,320 @@ class TestSayingTheCatalogIsOld(McpTestCase):
 
             self.assertIn("orders(id int", text)
             self.assertNotIn("Warning", text)
+
+
+class TestRefusingAQueryThatCostsTooMuch(McpTestCase):
+    """
+    A model exploring a warehouse writes queries nobody reviewed. Most are
+    cheap; the expensive ones show up on a bill or on somebody else's
+    dashboard, and by then the model has moved on.
+
+    The estimate is always the engine's own, and **no answer is never a
+    refusal** -- refusing a query for a reason that is not true would be worse
+    than running an expensive one.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.source = self.factory.create_data_source(name="Warehouse", type="pg", group=self.factory.default_group)
+
+    def call(self, sql="select * from orders"):
+        body = json.loads(
+            self.post(
+                rpc("tools/call", {"name": "run_query", "arguments": {"sql": sql, "data_source": "Warehouse"}})
+            ).data
+        )
+        return body["result"]
+
+    def answering(self, plan_cost=None, rows=None):
+        """Stand in for the worker that runs EXPLAIN and the query."""
+
+        def run(user, source, statement, timeout=None):
+            if "FORMAT JSON" in statement:
+                if plan_cost is None:
+                    return None, ["no plan"]
+                return {"rows": [{"QUERY PLAN": [{"Plan": {"Total Cost": plan_cost}}]}]}, None
+            return rows or {"columns": [{"name": "n"}], "rows": [{"n": 1}]}, None
+
+        return mock.patch("sqldesk.mcp._on_a_worker", side_effect=run)
+
+    def test_a_query_over_the_ceiling_is_refused(self):
+        with mock.patch("sqldesk.settings.MCP_MAX_QUERY_COST", 1000):
+            with self.answering(plan_cost=50_000):
+                result = self.call()
+
+        self.assertTrue(result["isError"])
+        self.assertIn("50,000", result["content"][0]["text"])
+        self.assertIn("1,000", result["content"][0]["text"])
+
+    def test_and_told_what_to_do_instead(self):
+        with mock.patch("sqldesk.settings.MCP_MAX_QUERY_COST", 1000):
+            with self.answering(plan_cost=50_000):
+                result = self.call()
+
+        self.assertIn("Narrow it", result["content"][0]["text"])
+
+    def test_one_under_it_runs(self):
+        with mock.patch("sqldesk.settings.MCP_MAX_QUERY_COST", 1000):
+            with self.answering(plan_cost=10):
+                result = self.call()
+
+        self.assertFalse(result["isError"])
+
+    def test_with_no_ceiling_nothing_is_estimated(self):
+        # And no EXPLAIN is run: a round trip per query to compare against
+        # nothing is a round trip for nobody.
+        statements = []
+
+        def run(user, source, statement, timeout=None):
+            statements.append(statement)
+            return {"columns": [{"name": "n"}], "rows": [{"n": 1}]}, None
+
+        with mock.patch("sqldesk.settings.MCP_MAX_QUERY_COST", 0):
+            with mock.patch("sqldesk.mcp._on_a_worker", side_effect=run):
+                self.call()
+
+        self.assertEqual([], [s for s in statements if "FORMAT JSON" in s])
+
+    def test_an_explain_that_failed_lets_the_query_run(self):
+        # Usually the engine saying the SQL is wrong, which it will say again
+        # in its own words when the query runs.
+        with mock.patch("sqldesk.settings.MCP_MAX_QUERY_COST", 1000):
+            with self.answering(plan_cost=None):
+                result = self.call()
+
+        self.assertFalse(result["isError"])
+
+    def test_an_estimate_that_broke_lets_the_query_run(self):
+        # Not a refusal, and not a 500 either. Whatever went wrong in the
+        # estimate -- a runner that raised, a plan shaped in a way nothing
+        # here expected -- the query itself is still a query somebody asked
+        # for, and refusing it would refuse it for a reason that is not true.
+        with mock.patch("sqldesk.settings.MCP_MAX_QUERY_COST", 1000):
+            with mock.patch("sqldesk.mcp.cost.estimate", side_effect=RuntimeError("the estimate broke")):
+                with self.answering(plan_cost=10):
+                    result = self.call()
+
+        self.assertFalse(result["isError"])
+
+    def test_an_engine_with_no_estimate_is_unaffected(self):
+        mysql = self.factory.create_data_source(name="MySQL", type="mysql", group=self.factory.default_group)
+        statements = []
+
+        def run(user, source, statement, timeout=None):
+            statements.append(statement)
+            return {"columns": [{"name": "n"}], "rows": [{"n": 1}]}, None
+
+        with mock.patch("sqldesk.settings.MCP_MAX_QUERY_COST", 1):
+            with mock.patch("sqldesk.mcp._on_a_worker", side_effect=run):
+                body = json.loads(
+                    self.post(
+                        rpc(
+                            "tools/call",
+                            {"name": "run_query", "arguments": {"sql": "select 1", "data_source": mysql.name}},
+                        )
+                    ).data
+                )
+
+        self.assertFalse(body["result"]["isError"])
+        self.assertEqual([], [s for s in statements if "FORMAT JSON" in s])
+
+    def test_the_estimate_is_of_the_query_as_written(self):
+        # Not of the auto-limited form: a LIMIT does not make a full scan
+        # cheap, and estimating the limited query would let one through on a
+        # number that is not the one that matters.
+        estimated = []
+
+        def run(user, source, statement, timeout=None):
+            if "FORMAT JSON" in statement:
+                estimated.append(statement)
+                return {"rows": [{"QUERY PLAN": [{"Plan": {"Total Cost": 10}}]}]}, None
+            return {"columns": [{"name": "n"}], "rows": [{"n": 1}]}, None
+
+        with mock.patch("sqldesk.settings.MCP_MAX_QUERY_COST", 1000):
+            with mock.patch("sqldesk.mcp._on_a_worker", side_effect=run):
+                self.call(sql="select * from orders")
+
+        self.assertNotIn("LIMIT", estimated[0].upper())
+
+    def test_a_refused_query_is_never_run(self):
+        ran = []
+
+        def run(user, source, statement, timeout=None):
+            if "FORMAT JSON" in statement:
+                return {"rows": [{"QUERY PLAN": [{"Plan": {"Total Cost": 50_000}}]}]}, None
+            ran.append(statement)
+            return {"columns": [], "rows": []}, None
+
+        with mock.patch("sqldesk.settings.MCP_MAX_QUERY_COST", 1000):
+            with mock.patch("sqldesk.mcp._on_a_worker", side_effect=run):
+                self.call()
+
+        self.assertEqual([], ran)
+
+
+class TestMyOwnMcpActivity(McpTestCase):
+    """
+    The My MCP page's endpoint.
+
+    The difference from the audit is the point. The audit names every user,
+    every question and every address, which is what it is for. This names
+    nobody else and carries **no question, no SQL and no arguments** -- and it
+    cannot be asked about another user at all, which is a stronger statement
+    than a page that merely does not ask.
+    """
+
+    def mine(self, user=None):
+        return self.make_request("get", "/api/mcp/mine", user=user or self.factory.user)
+
+    def event(self, user=None, minutes_ago=1, **fields):
+        row = models.McpEvent(
+            **{
+                "org": self.factory.org,
+                "user": user if user is not None else self.factory.user,
+                "method": "tools/call",
+                "tool": "find_context",
+                "outcome": "ok",
+                "duration_ms": 42,
+                **fields,
+            }
+        )
+        models.db.session.add(row)
+        models.db.session.flush()
+        row.created_at = models.utcnow() - datetime.timedelta(minutes=minutes_ago)
+        models.db.session.commit()
+        return row
+
+    def test_before_a_first_call_it_says_so(self):
+        # The page shows only how to connect: a table of nothing under a
+        # heading about activity reads as something being broken.
+        response = self.mine()
+
+        self.assertEqual(200, response.status_code)
+        self.assertFalse(response.json["ever_connected"])
+        self.assertEqual([], response.json["calls"])
+
+    def test_a_recent_call_counts_as_connected(self):
+        # The transport holds no socket open, so "connected" can only mean
+        # "recently active".
+        self.event(minutes_ago=1)
+
+        response = self.mine()
+
+        self.assertTrue(response.json["connected"])
+        self.assertTrue(response.json["ever_connected"])
+
+    def test_an_old_one_does_not(self):
+        self.event(minutes_ago=120)
+
+        response = self.mine()
+
+        self.assertFalse(response.json["connected"])
+        self.assertTrue(response.json["ever_connected"])
+        self.assertIsNotNone(response.json["last_call_at"])
+
+    def test_the_calls_say_what_and_when_and_how_long(self):
+        self.event()
+
+        call = self.mine().json["calls"][0]
+
+        self.assertEqual("find_context", call["tool"])
+        self.assertEqual("ok", call["outcome"])
+        self.assertEqual(42, call["duration_ms"])
+
+    def test_the_newest_call_is_first(self):
+        # The page shows the most recent fifty, so the order is also what gets
+        # kept when there are more than fifty: oldest-first would show somebody
+        # their first fifty calls forever and never their last one.
+        self.event(tool="find_context", minutes_ago=30)
+        self.event(tool="run_query", minutes_ago=1)
+
+        tools = [call["tool"] for call in self.mine().json["calls"]]
+
+        self.assertEqual(["run_query", "find_context"], tools)
+
+    def test_but_never_the_question_or_the_sql(self):
+        # `detail` holds one or the other. This endpoint carries neither, so
+        # there is no version of this page that leaks somebody's query.
+        self.event(detail="question: what did we take last month")
+
+        body = json.dumps(self.mine().json)
+
+        self.assertNotIn("what did we take", body)
+        self.assertNotIn("detail", body)
+
+    def test_nor_the_address_it_came_from(self):
+        self.event(remote_addr="203.0.113.7")
+
+        self.assertNotIn("203.0.113.7", json.dumps(self.mine().json))
+
+    def test_somebody_elses_calls_are_not_mine(self):
+        other = self.factory.create_user()
+        self.event(user=other, tool="run_query")
+
+        response = self.mine()
+
+        self.assertEqual([], response.json["calls"])
+        self.assertFalse(response.json["ever_connected"])
+
+    def test_and_cannot_be_asked_for(self):
+        # There is no parameter to ask with. The test is that adding one
+        # changes nothing, so a future "convenience" has to be a deliberate
+        # change to the endpoint rather than a query string somebody tries.
+        other = self.factory.create_user()
+        self.event(user=other)
+
+        response = self.make_request("get", "/api/mcp/mine?user_id={}".format(other.id), user=self.factory.user)
+
+        self.assertEqual([], response.json["calls"])
+
+    def test_another_organisations_calls_are_not_mine_either(self):
+        other_org = self.factory.create_org()
+        models.db.session.add(
+            models.McpEvent(org=other_org, user=self.factory.user, method="tools/call", outcome="ok")
+        )
+        models.db.session.commit()
+
+        self.assertEqual([], self.mine().json["calls"])
+
+    def test_it_names_the_clients_that_have_been_calling(self):
+        self.event(client="Claude Code 1.2")
+
+        self.assertEqual(["Claude Code 1.2"], self.mine().json["clients"])
+
+    def test_only_the_clients_still_calling_are_named(self):
+        # The list sits under "connected", so it answers "what is talking to
+        # SQLDesk now". A client somebody uninstalled last month named there
+        # would be somebody looking for a machine that is not running.
+        self.event(minutes_ago=120, **{"client": "an-old-client 0.1"})
+        self.event(minutes_ago=1, **{"client": "claude-code 1.2.3"})
+
+        self.assertEqual(["claude-code 1.2.3"], self.mine().json["clients"])
+
+    def test_the_page_asks_for_a_bounded_number_of_calls(self):
+        # A client calls a tool per question and a busy afternoon is thousands.
+        # Without the limit the page grows until the browser gives up, and the
+        # part anybody reads is the first screen of it.
+        for index in range(models.McpEvent.query.count(), MyMcpResource.LIMIT + 5):
+            self.event(minutes_ago=index + 1)
+
+        self.assertEqual(MyMcpResource.LIMIT, len(self.mine().json["calls"]))
+
+    def test_somebody_without_the_permission_may_not_look(self):
+        # Nothing to see, and offering the page would be offering a page about
+        # a feature they do not have.
+        self.factory.default_group.permissions = models.Group.DEFAULT_PERMISSIONS
+        models.db.session.add(self.factory.default_group)
+        models.db.session.commit()
+
+        self.assertEqual(403, self.mine().status_code)
+
+    def test_a_refused_call_of_mine_is_still_mine_to_see(self):
+        # Knowing a client was refused is how somebody discovers they need a
+        # permission, rather than concluding the server is broken.
+        self.event(outcome="refused", method="authenticate", tool=None)
+
+        call = self.mine().json["calls"][0]
+
+        self.assertEqual("refused", call["outcome"])
+        self.assertEqual("authenticate", call["method"])

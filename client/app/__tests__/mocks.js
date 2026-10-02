@@ -24,3 +24,15 @@ if (typeof window !== "undefined" && !window.matchMedia) {
     dispatchEvent: () => false,
   });
 }
+
+// jsdom implements none of the old clipboard API either, and `InputWithCopy`
+// asks whether copying is supported in its constructor -- so any page that
+// offers a command to copy fails on `document.queryCommandSupported is not a
+// function` before it has rendered a word.
+//
+// It answers no, which is the truth here: there is no clipboard to copy to.
+// The component renders its input without the copy button, which is what it
+// does in a browser too old to copy.
+if (typeof document !== "undefined" && !document.queryCommandSupported) {
+  document.queryCommandSupported = () => false;
+}

@@ -530,6 +530,21 @@ MCP_OAUTH_ENABLED = parse_boolean(os.environ.get("SQLDESK_MCP_OAUTH_ENABLED", "t
 #: when it recognises the hostname.
 MCP_OAUTH_ALLOW_HTTP = parse_boolean(os.environ.get("SQLDESK_MCP_OAUTH_ALLOW_HTTP", "false"))
 
+#: A ceiling on what an AI client's `run_query` may cost, in the engine's own
+#: units. 0 is no ceiling, which is the default: both of these are numbers an
+#: administrator arrives at by looking at their own queries, and a figure we
+#: picked would refuse reasonable work on somebody's warehouse and allow
+#: ruinous work on somebody else's.
+#:
+#: Plan cost, for Postgres and its family. Arbitrary units -- a sequential page
+#: fetch is 1.0 -- comparable between queries on one database, which is all it
+#: has to be.
+MCP_MAX_QUERY_COST = float(os.environ.get("SQLDESK_MCP_MAX_QUERY_COST", "0"))
+
+#: Bytes, for BigQuery, from a dry run. This is what BigQuery bills on, so it
+#: is the one estimate here that is money rather than a proxy for it.
+MCP_MAX_QUERY_BYTES = int(os.environ.get("SQLDESK_MCP_MAX_QUERY_BYTES", "0"))
+
 # --- Streams ---------------------------------------------------------------
 #
 # A stream is a window, not a pipeline: SQLDesk keeps minutes of raw events and

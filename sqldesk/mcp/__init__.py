@@ -1139,12 +1139,51 @@ def tool_explain_query(user, org, arguments):
     return _text("Plan from {}:\n\n{}".format(source.name, _rows_as_text(result, limit=100)))
 
 
+def _over_the_ceiling(user, source, sql):
+    """
+    The refusal, or None.
+
+    Never raises and never refuses on an answer it did not get: an engine with
+    no estimate, a ceiling nobody set, or an EXPLAIN that failed all mean "let
+    it run". Refusing a query for a reason that is not true would be worse than
+    running an expensive one.
+    """
+    from sqldesk.mcp import cost
+
+    def run(statement):
+        return _on_a_worker(user, source, statement, timeout=EXPLAIN_TIMEOUT)
+
+    try:
+        estimate = cost.estimate(source, sql, run)
+    except Exception:
+        logger.warning("could not estimate the cost of a query on %s", source.name, exc_info=True)
+        return None
+    if estimate is None or not estimate.over:
+        return None
+    logger.info(
+        "mcp refused a query on %s: %s over a limit of %s",
+        source.name,
+        estimate.described,
+        estimate.described_ceiling,
+    )
+    return estimate.refusal()
+
+
 def tool_run_query(user, org, arguments):
     sql = _sql_argument(arguments)
     source = _runnable_source(user, org, arguments, "`data_source` is required.")
     refused = _why_not_a_read(sql, source)
     if refused:
         return {"content": [{"type": "text", "text": refused}], "isError": True}
+
+    # What the engine says it will cost, where the engine will say and an
+    # administrator has set a ceiling. Checked on the SQL as written rather
+    # than the limited form below: a `LIMIT` does not make a full scan cheap,
+    # and estimating the limited query would let one through on a number that
+    # is not the one that matters.
+    too_dear = _over_the_ceiling(user, source, sql)
+    if too_dear:
+        return {"content": [{"type": "text", "text": too_dear}], "isError": True}
 
     # The editor's own ceiling, applied by the runner that knows the dialect
     # -- `LIMIT` is not spelled the same everywhere, and a query that already

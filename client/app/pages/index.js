@@ -16,4 +16,5 @@ import "./dashboards/dashboards.routes";
 import "./queries/queries.routes";
 import "./alert/alerts.routes";
 import "./admin/admin.routes";
+import "./mcp/mcp.routes";
 import "./settings.routes";

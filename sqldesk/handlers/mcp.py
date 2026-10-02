@@ -14,12 +14,14 @@ Every request is recorded, including the ones refused before anyone was
 identified. Those are the rows worth having.
 """
 
+import datetime
 import logging
 import re
 import time
 import uuid
 
 from flask import jsonify, request
+from flask_restful import abort
 from sqlalchemy.orm.exc import NoResultFound
 
 from sqldesk import features, models, oauth, redis_connection, settings
@@ -362,6 +364,64 @@ def _answer(messages, org, user, session_id, token=None):
         if result is not None:
             replies.append({"jsonrpc": "2.0", "id": message_id, "result": result})
     return replies, issued_session
+
+
+class MyMcpResource(BaseResource):
+    """
+    One person's own MCP activity, for the My MCP page.
+
+    Separate from the audit above, and the difference is the point. The audit
+    names every user, every question and every address; this names nobody else
+    and carries **no question, no SQL and no arguments** -- only which tool was
+    called, when, whether it worked and how long it took. A page that showed
+    somebody their own questions would be harmless; a page that showed them
+    through an endpoint that could be asked about another user would not, so
+    the endpoint cannot be asked about another user at all.
+
+    Behind `use_mcp`: somebody who may not connect a client has nothing to see
+    here, and offering the page would be offering a page about a feature they
+    do not have.
+    """
+
+    #: Enough to see what a client has been doing without reading a log.
+    LIMIT = 50
+    #: The transport holds no socket open, so "connected" can only mean
+    #: "recently active". Saying otherwise with a green dot would be a lie.
+    ACTIVE_MINUTES = 15
+
+    def get(self):
+        if not features.can(self.current_user, features.USE_MCP):
+            abort(403, message="Your account may not use MCP.")
+
+        since = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=self.ACTIVE_MINUTES)
+        mine = models.McpEvent.query.filter(
+            models.McpEvent.org == self.current_org,
+            models.McpEvent.user_id == self.current_user.id,
+        )
+
+        events = mine.order_by(models.McpEvent.created_at.desc()).limit(self.LIMIT).all()
+        recent = [event for event in events if event.created_at >= since]
+
+        return {
+            # Before a first call the page shows only how to connect, so it
+            # needs to know there has not been one.
+            "ever_connected": bool(events),
+            "connected": bool(recent),
+            "last_call_at": events[0].created_at if events else None,
+            "clients": sorted({event.client for event in recent if event.client}),
+            "calls": [
+                {
+                    "at": event.created_at,
+                    "method": event.method,
+                    "tool": event.tool,
+                    "outcome": event.outcome,
+                    "duration_ms": event.duration_ms,
+                    # Deliberately not `detail`: it holds the question or the
+                    # SQL, and this endpoint carries neither.
+                }
+                for event in events
+            ],
+        }
 
 
 class McpAuditResource(BaseResource):

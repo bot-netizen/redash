@@ -6,7 +6,7 @@ import MenuOutlinedIcon from "@ant-design/icons/MenuOutlined";
 import Dropdown from "antd/lib/dropdown";
 import Menu from "antd/lib/menu";
 import Link from "@/components/Link";
-import { Auth, clientConfig, currentUser } from "@/services/auth";
+import { Auth, currentUser } from "@/services/auth";
 import settingsMenu from "@/services/settingsMenu";
 import logoUrl from "@/assets/images/sqldesk_icon.svg";
 
@@ -52,11 +52,12 @@ export default function MobileNavbar({ getPopupContainer }) {
               <Menu.Item key="profile">
                 <Link href="users/me">Edit Profile</Link>
               </Menu.Item>
-              {/* How to point a client at SQLDesk with your own API key --
-                  every user's business, not only an administrator's. */}
-              {clientConfig.mcpEnabled && (
+              {/* How to point a client at SQLDesk, and what yours has been
+                  doing -- every user's business, not only an
+                  administrator's. */}
+              {currentUser.can("use_mcp") && (
                 <Menu.Item key="mcp">
-                  <Link href="admin/mcp">Connect over MCP</Link>
+                  <Link href="mcp/mine">My MCP</Link>
                 </Menu.Item>
               )}
               <Menu.Divider />
@@ -65,12 +66,9 @@ export default function MobileNavbar({ getPopupContainer }) {
                   <Link href={firstSettingsTab.path}>Settings</Link>
                 </Menu.Item>
               )}
-              {currentUser.hasPermission("super_admin") && (
-                <Menu.Item key="status">
-                  <Link href="admin/status">System Status</Link>
-                </Menu.Item>
-              )}
-              {currentUser.hasPermission("super_admin") && <Menu.Divider />}
+              {/* System Status used to be here. It is in the Admin menu now,
+                  and a profile menu is not where somebody looks for the queue
+                  depth. */}
               <Menu.Item key="help">
                 {/* eslint-disable-next-line react/jsx-no-target-blank */}
                 <Link href="https://bot-netizen.github.io/sqldesk" target="_blank" rel="noopener">
