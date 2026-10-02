@@ -1,6 +1,6 @@
 from unittest import mock
 
-from sqldesk import features, settings
+from sqldesk import features, models, settings
 from sqldesk.models import db
 from tests import BaseTestCase
 
@@ -107,3 +107,53 @@ class TestGrantingThroughTheEndpoint(BaseTestCase):
         self.assertTrue(
             all("label" in f and "description" in f for f in rv.json["client_config"]["grantableFeatures"])
         )
+
+
+class TestTheStreamPermissions(BaseTestCase):
+    """
+    Two of them, because they are two different decisions.
+
+    `manage_streams` chooses which of a cluster's topics can be queried at all,
+    which is the real access decision on a Kafka cluster -- the data source
+    permission is per cluster, so what gets enabled on it is what people can
+    see. `use_streams` starts one, which takes a slot away from everybody else.
+
+    Watching a stream somebody else started needs neither: you are not choosing
+    what is visible and you are not taking a slot.
+    """
+
+    def available(self):
+        return {feature.name for feature in features.grantable()}
+
+    def test_both_exist_and_are_gated_on_the_same_thing(self):
+        named = {feature.name: feature for feature in features.all_features()}
+
+        self.assertIn(features.MANAGE_STREAMS, named)
+        self.assertIn(features.USE_STREAMS, named)
+        self.assertEqual(named[features.MANAGE_STREAMS].enabled, named[features.USE_STREAMS].enabled)
+
+    def test_neither_is_offered_without_the_kafka_runner(self):
+        # Offering somebody a permission to watch streams on an install that
+        # cannot connect to a broker is offering a permission to do nothing.
+        with mock.patch("sqldesk.query_runner.get_query_runner", lambda *a, **k: None):
+            self.assertFalse(features._streams_are_on())
+
+    def test_a_user_without_them_has_neither(self):
+        user = self.factory.create_user()
+
+        self.assertFalse(features.can(user, features.MANAGE_STREAMS))
+        self.assertFalse(features.can(user, features.USE_STREAMS))
+
+    def test_and_one_granted_the_watching_one_cannot_set_topics_up(self):
+        group = self.factory.create_group(permissions=["use_streams"])
+        models.db.session.add(group)
+        models.db.session.commit()
+        user = self.factory.create_user(group_ids=[group.id])
+
+        # Both features are gated on the Kafka runner being installed, which it
+        # is not in this image -- so the gate has to be held open to ask the
+        # question this test is about, which is about the grant.
+        with mock.patch.object(features.by_name(features.USE_STREAMS), "_enabled", lambda: True):
+            with mock.patch.object(features.by_name(features.MANAGE_STREAMS), "_enabled", lambda: True):
+                self.assertTrue(features.can(user, features.USE_STREAMS))
+                self.assertFalse(features.can(user, features.MANAGE_STREAMS))

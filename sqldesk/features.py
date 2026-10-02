@@ -56,11 +56,27 @@ def _rendering_is_on():
     return settings.FEATURE_ALERT_SCREENSHOTS and bool(settings.SCREENSHOT_URL)
 
 
+def _streams_are_on():
+    """
+    Whether this install can consume a topic at all.
+
+    The runner needs librdkafka, which is in the optional dependency group with
+    every other data source's SDK. Offering somebody a permission to watch
+    streams on an install that cannot connect to a broker is offering a
+    permission to do nothing.
+    """
+    from sqldesk.query_runner import get_query_runner
+
+    return get_query_runner("kafka_stream", {}) is not None
+
+
 USE_MCP = "use_mcp"
 MANAGE_CATALOG = "manage_catalog"
 MANAGE_LIVE_DASHBOARDS = "manage_live_dashboards"
 SEND_DASHBOARDS = "send_dashboards"
 KEEP_UPLOADS = "keep_uploads"
+MANAGE_STREAMS = "manage_streams"
+USE_STREAMS = "use_streams"
 
 #: Every feature, whether or not this install offers it.
 FEATURES = (
@@ -86,6 +102,18 @@ FEATURES = (
         "Send dashboards",
         "Mail a dashboard to colleagues on a schedule, and share one to Slack.",
         enabled=_rendering_is_on,
+    ),
+    Feature(
+        MANAGE_STREAMS,
+        "Set up streams",
+        "Choose which of a Kafka cluster's topics can be queried, and how much of each is kept.",
+        enabled=_streams_are_on,
+    ),
+    Feature(
+        USE_STREAMS,
+        "Watch streams",
+        "Start a stream and watch it live. Starting one takes a slot; watching somebody else's does not.",
+        enabled=_streams_are_on,
     ),
     Feature(
         KEEP_UPLOADS,
