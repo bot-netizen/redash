@@ -160,7 +160,18 @@ class UploadedFilesPanel extends React.Component {
             >
               <List.Item.Meta
                 title={file.display_name || file.filename}
-                description={`Table name: ${file.view_name} · ${formatSize(file.size)}`}
+                description={
+                  file.missing ? (
+                    // Said here as well as on the Storage page: this is where
+                    // somebody looks when a table they uploaded has stopped
+                    // existing, and an empty schema explains nothing.
+                    <span className="text-danger">
+                      Table name: {file.view_name} · the file is no longer on disk — upload it again
+                    </span>
+                  ) : (
+                    `Table name: ${file.view_name} · ${formatSize(file.size)}`
+                  )
+                }
               />
             </List.Item>
           )}

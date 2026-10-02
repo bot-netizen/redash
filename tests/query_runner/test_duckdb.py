@@ -272,3 +272,75 @@ class TestUnloadingAFileNobodyQueries(TestCase):
         self.register(("sales", True), ("old_notes", False))
 
         self.assertNotIn("old_notes", self.runner._existing_views())
+
+
+class TestTheSchemaShowsEveryUploadedFile(TestCase):
+    """
+    Reading the schema is the one place unloading must not reach.
+
+    Unloading saves query time: a file nobody asks about should not cost schema
+    inference on every query that names something else. But the catalog harvest
+    and the editor's schema browser both ask for the schema, and an unloaded
+    file was simply missing from both -- which reads as the file having been
+    deleted.
+
+    What that looked like in practice: the harvest found an empty schema, kept
+    the old entries rather than emptying them, and the Catalog page went on
+    saying "last harvested 7 days ago" however often somebody pressed Harvest.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.folder = tempfile.mkdtemp()
+        for name, column in (("sales", "x"), ("old_notes", "y")):
+            with open(os.path.join(self.folder, "{}.csv".format(name)), "w") as handle:
+                handle.write("{}\n1\n".format(column))
+        self.runner = DuckDB({"dbpath": ":memory:"})
+        self.runner.confine_to(self.folder)
+        self.runner.register_uploaded_files(
+            [
+                ("sales", os.path.join(self.folder, "sales.csv"), True),
+                ("old_notes", os.path.join(self.folder, "old_notes.csv"), False),
+            ]
+        )
+
+    def names(self):
+        return {table["name"].split(".")[-1] for table in self.runner.get_schema()}
+
+    def test_an_unloaded_file_is_in_the_schema(self):
+        self.assertEqual({"sales", "old_notes"}, self.names())
+
+    def test_with_its_columns(self):
+        # The whole point of harvesting it: a name with no columns tells a
+        # model nothing it could write SQL against.
+        found = {table["name"].split(".")[-1]: table for table in self.runner.get_schema()}
+
+        self.assertEqual(["y"], [column["name"] for column in found["old_notes"]["columns"]])
+
+    def test_and_it_is_unloaded_again_afterwards(self):
+        # Reading the schema is not somebody querying the file, so it must not
+        # quietly undo the unload for every query that follows.
+        self.runner.get_schema()
+
+        self.assertNotIn("old_notes", self.runner._existing_views())
+        self.assertIn("sales", self.runner._existing_views())
+
+    def test_a_file_that_cannot_be_read_does_not_lose_the_rest_of_the_schema(self):
+        self.runner.register_uploaded_files(
+            [
+                ("sales", os.path.join(self.folder, "sales.csv"), True),
+                ("mystery", os.path.join(self.folder, "mystery.doc"), False),
+            ]
+        )
+
+        self.assertEqual({"sales"}, self.names())
+
+    def test_a_source_with_no_uploads_at_all_still_reports_its_schema(self):
+        # `_unloaded` is only ever assigned by `register_uploaded_files`, so a
+        # DuckDB source pointed at a database of its own never sets it.
+        # Its own database file rather than `:memory:`, whose catalog is cached
+        # per process and shared with every other test in this file.
+        plain = DuckDB({"dbpath": os.path.join(self.folder, "own.duckdb")})
+        plain.run_query("CREATE TABLE t (a INTEGER)", None)
+
+        self.assertEqual(["t"], [table["name"].split(".")[-1] for table in plain.get_schema()])

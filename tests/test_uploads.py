@@ -851,3 +851,40 @@ class TestWhatTheChartSays(BaseTestCase):
                 settings_source,
                 "{} is set by the chart and read by nothing".format(name),
             )
+
+
+class TestAnUploadWhoseFileIsGone(BaseTestCase):
+    """
+    A record with no file behind it.
+
+    It should not happen -- deleting an upload deletes both -- but it does when
+    the volume holding uploads is replaced underneath an install, and then
+    every page goes on reporting the upload as though it were there. The
+    symptom is a data source whose schema is silently empty: no table to query,
+    nothing for the catalog to harvest, and no page saying why.
+    """
+
+    def upload(self, stored_filename="orders.parquet"):
+        source = self.factory.create_data_source(name="Files", type="duckdb")
+        return models.UploadedFile(
+            org=self.factory.org,
+            data_source=source,
+            filename="orders.parquet",
+            stored_filename=stored_filename,
+            content_type="application/octet-stream",
+            size=1008,
+        )
+
+    def test_it_is_reported_as_missing(self):
+        # `path` is built from the upload root, the org and the data source, so
+        # a row with nothing written under it has no file.
+        self.assertTrue(self.upload().to_dict()["missing"])
+
+    def test_and_one_that_is_there_is_not(self):
+        row = self.upload()
+        os.makedirs(row.directory, exist_ok=True)
+        with open(row.path, "wb") as handle:
+            handle.write(b"x")
+        self.addCleanup(os.remove, row.path)
+
+        self.assertFalse(row.to_dict()["missing"])

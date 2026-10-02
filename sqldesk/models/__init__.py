@@ -431,6 +431,13 @@ class UploadedFile(TimestampMixin, BelongsToOrgMixin, db.Model):
             "kept_by": self.kept_by.name if self.kept_by else None,
             "last_queried_at": self.last_queried_at,
             "unloaded": self.unloaded_at is not None,
+            # A row whose file is not on the disk any more. It should not
+            # happen -- deleting an upload deletes both -- but it does when the
+            # volume holding uploads is replaced underneath an install, and the
+            # only symptom otherwise is a data source whose schema is silently
+            # empty: queries find no table, the catalog harvests nothing, and
+            # every page goes on reporting the upload as though it were there.
+            "missing": not os.path.exists(self.path),
         }
 
     @staticmethod

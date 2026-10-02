@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+from contextlib import contextmanager
 
 from sqldesk.query_runner import (
     TYPE_BOOLEAN,
@@ -121,6 +122,11 @@ class DuckDB(BaseSQLQueryRunner):
     # is what keeps a cached :memory: catalog honest when an upload is added or
     # deleted, and it is cheap.
     _connections = {}
+
+    #: Uploaded files that have no view, by name and path. Set per runner by
+    #: `register_uploaded_files`; empty for a DuckDB source with no uploads at
+    #: all, which is why it has a default here rather than only an assignment.
+    _unloaded = {}
 
     def _connection_key(self):
         return (self.dbpath, tuple(self.extensions), self.upload_dir)
@@ -255,7 +261,7 @@ class DuckDB(BaseSQLQueryRunner):
         exist" for a file that is sitting right there on the disk, which is the
         one outcome unloading must never produce.
         """
-        for view_name in list(getattr(self, "_unloaded", {})):
+        for view_name in list(self._unloaded):
             if re.search(r"\b{}\b".format(re.escape(view_name)), query, re.IGNORECASE):
                 self._create_view(view_name, self._unloaded.pop(view_name))
 
@@ -287,7 +293,42 @@ class DuckDB(BaseSQLQueryRunner):
             logger.exception("Error running query: %s", e)
             return None, str(e)
 
+    @contextmanager
+    def _everything_loaded(self):
+        """
+        Every uploaded file visible, including ones nobody has queried lately.
+
+        Unloading is a saving at *query* time: a file nobody asks about should
+        not cost schema inference on every query that names something else.
+        Reading the schema is the one operation where that inference is the
+        whole point -- the catalog harvest and the editor's schema browser both
+        arrive here -- and an unloaded file was simply absent from both, which
+        reads as the file having been deleted. The catalog harvest then found
+        an empty schema, kept the old entries rather than emptying them, and
+        the Catalog page showed a source that had not been harvested for days
+        however often somebody pressed Harvest.
+
+        Brought back for the read and dropped again afterwards, so a file that
+        had gone quiet stays quiet for the queries that follow.
+        """
+        brought_back = []
+        for view_name, path in list(self._unloaded.items()):
+            self._create_view(view_name, path)
+            brought_back.append(view_name)
+        try:
+            yield
+        finally:
+            for view_name in brought_back:
+                try:
+                    self.con.execute(f'DROP VIEW IF EXISTS "{view_name}"')
+                except Exception as e:
+                    logger.warning("Failed to unload view %s again: %s", view_name, e)
+
     def get_schema(self, get_stats=False) -> list:
+        with self._everything_loaded():
+            return self._read_schema()
+
+    def _read_schema(self) -> list:
         tables_query = """
             SELECT table_catalog, table_schema, table_name FROM information_schema.tables
             WHERE table_schema NOT IN ('information_schema', 'pg_catalog');

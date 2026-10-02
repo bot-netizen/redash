@@ -114,9 +114,16 @@ function FilesTable({ files, onChanged }) {
           <strong>{row.display_name || filename}</strong>
           <div className="storage-muted">
             queried as <code>{row.view_name}</code>
-            {row.unloaded && (
+            {row.unloaded && !row.missing && (
               <Tooltip title="Not registered with DuckDB at the moment, because nothing has queried it for a few days. The file is untouched and the next query that names it brings it back.">
                 <Tag className="m-l-5">unloaded</Tag>
+              </Tooltip>
+            )}
+            {row.missing && (
+              <Tooltip title="The record is here but the file is not on disk, so nothing can query it and the catalog harvests nothing from it. Usually the storage volume was replaced underneath the install. Upload it again, or remove the record.">
+                <Tag color="red" className="m-l-5">
+                  file missing
+                </Tag>
               </Tooltip>
             )}
           </div>
