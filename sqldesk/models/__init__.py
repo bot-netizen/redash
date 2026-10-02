@@ -770,6 +770,13 @@ class Query(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model):
     __tablename__ = "queries"
     __mapper_args__ = {"version_id_col": version, "version_id_generator": False}
 
+    #: On top of the mixin's own. The API key is a credential, and a change
+    #: record is a copy of it that nothing ever expires -- it is not part of
+    #: what a version of a query says, and the history endpoint would have to
+    #: remember not to serve it. The search vector is a derived blob nobody
+    #: reads in this form.
+    skipped_fields = ChangeTrackingMixin.skipped_fields + ("api_key", "search_vector")
+
     def __str__(self):
         return str(self.id)
 

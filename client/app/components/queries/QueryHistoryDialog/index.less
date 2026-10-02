@@ -1,0 +1,127 @@
+@import (reference) "~@/assets/less/ant";
+
+.query-history {
+  min-height: 320px;
+
+  &-loading {
+    text-align: center;
+    padding: 60px 0;
+  }
+
+  &-body {
+    display: flex;
+    gap: 16px;
+  }
+
+  &-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    width: 300px;
+    flex: 0 0 300px;
+    max-height: 420px;
+    overflow-y: auto;
+    border-right: 1px solid @border-color-split;
+  }
+
+  &-entry {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: 0;
+    border-radius: 2px;
+    padding: 6px 8px;
+    cursor: pointer;
+    font-size: 12px;
+    color: @text-color-secondary;
+
+    &:hover {
+      background: @item-hover-bg;
+    }
+
+    &.is-chosen {
+      background: fade(@primary-color, 8%);
+      color: @text-color;
+    }
+  }
+
+  &-number {
+    font-weight: 600;
+    margin-right: 6px;
+    color: @text-color;
+  }
+
+  &-who {
+    display: block;
+  }
+
+  &-changed {
+    display: block;
+    margin-top: 2px;
+
+    .ant-tag {
+      margin-right: 4px;
+      font-size: 11px;
+      line-height: 16px;
+    }
+  }
+
+  &-detail {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  &-field {
+    font-size: 12px;
+    margin-bottom: 4px;
+
+    &-name {
+      font-weight: 600;
+      margin-right: 8px;
+    }
+
+    &-from {
+      text-decoration: line-through;
+      color: @text-color-secondary;
+    }
+  }
+
+  &-diff {
+    max-height: 360px;
+    overflow: auto;
+    background: @component-background;
+    border: 1px solid @border-color-split;
+    border-radius: 2px;
+    padding: 8px 0;
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  &-line {
+    padding: 0 8px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  &-added {
+    background: fade(#52c41a, 12%);
+  }
+
+  &-removed {
+    background: fade(#f5222d, 10%);
+  }
+
+  &-gutter {
+    display: inline-block;
+    width: 12px;
+    color: @text-color-secondary;
+    user-select: none;
+  }
+
+  &-same {
+    color: @text-color-secondary;
+    font-size: 12px;
+  }
+}

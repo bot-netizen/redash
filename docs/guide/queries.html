@@ -99,6 +99,18 @@ runs no new SQL. With <em>Enable experimental multiple owners support</em> on (S
 query can be shared for editing with specific people; without that, others can run and view it but not
 change it.</p>
 
+<h2 id="history">History</h2>
+<p><strong>History</strong>, in the query's &vellip; menu, lists every version of it: when it changed, who
+changed it, and what they changed. Pick one to see the diff &mdash; either what that version changed, or
+how it compares with the query as it is now, which is the question to ask before restoring.</p>
+<p><strong>Restore</strong> writes a <em>new</em> version that says what the old one said. Nothing is
+rewritten and nothing is deleted, so the version you restored stays in the list. A restore puts back the
+SQL, the name, the description, the parameters, the schedule and the tags &mdash; not the data source, and
+not whether the query is published or archived: those have their own controls, and an undo that quietly
+moved a query to another warehouse would be a surprise.</p>
+<p>Anyone who can read the query can read its history; the restore is offered only to somebody who could
+have made the same edit by hand.</p>
+
 <h2>Snippets and formatting</h2>
 <p>Snippets are reusable fragments — Settings &rarr; Query Snippets — inserted by typing their trigger.
 <strong>Format Query</strong> tidies SQL for the dialects that support it.</p>

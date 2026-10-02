@@ -5,7 +5,7 @@ from flask_restful import abort
 from funcy import partial
 from sqlalchemy.orm.exc import StaleDataError
 
-from sqldesk import models, settings
+from sqldesk import history, models, settings
 from sqldesk.authentication.org_resolving import current_org
 from sqldesk.handlers.base import (
     BaseResource,
@@ -432,7 +432,6 @@ class QueryResource(BaseResource):
             require_access(data_source, self.current_user, not_view_only)
 
         query_def["last_modified_by"] = self.current_user
-        query_def["changed_by"] = self.current_user
         # SQLAlchemy handles the case where a concurrent transaction beats us
         # to the update. But we still have to make sure that we're not starting
         # out behind.
@@ -441,6 +440,16 @@ class QueryResource(BaseResource):
 
         try:
             self.update_model(query, query_def)
+            # The version somebody can look at later. `changes` has recorded
+            # queries being created and archived since long before this fork and
+            # never recorded one being edited, so the history it held was almost
+            # empty -- the handler set a `changed_by` that nothing read.
+            #
+            # Only when something moved: the editor sends the whole query
+            # whether or not anything in it did, and a version that says nothing
+            # happened is a version somebody has to read to find that out.
+            if query.pending_changes():
+                query.record_changes(self.current_user)
             models.db.session.commit()
             query.update_latest_result_by_query_hash()
             models.db.session.commit()
@@ -615,3 +624,69 @@ class QueryFavoriteListResource(BaseResource):
         )
 
         return response
+
+
+class QueryVersionListResource(BaseResource):
+    @require_permission("view_query")
+    def get(self, query_id):
+        """
+        This query's versions, newest first.
+
+        Anyone who may read the query may read its history. The SQL is the
+        whole of what a version holds, and they can already read the SQL.
+        """
+        query = get_object_or_404(models.Query.get_by_id_and_org, query_id, self.current_org)
+        require_access(query, self.current_user, view_only)
+
+        return {"versions": history.versions(query)}
+
+
+class QueryVersionRestoreResource(BaseResource):
+    @require_permission("edit_query")
+    def post(self, query_id, change_id):
+        """
+        Put a version back, as a new version.
+
+        Never a rewrite: restoring version 2 writes a new one that says what 2
+        said, and version 2 stays where it was.
+
+        It asks for exactly what editing by hand asks for. A restore writes the
+        SQL, the parameters and the schedule, which is deciding what runs on the
+        data source -- so somebody with view-only access to the source, or
+        editing rights on this query alone, cannot do by restoring what they
+        cannot do by typing.
+        """
+        query = get_object_or_404(models.Query.get_by_id_and_org, query_id, self.current_org)
+        require_object_modify_permission(query, self.current_user)
+        if query.data_source is not None:
+            require_access(query.data_source, self.current_user, not_view_only)
+
+        version = history.version(query, change_id)
+        if version is None:
+            abort(404, message="No such version of this query.")
+
+        taken = history.snapshot(version)
+        if taken.get("schedule") != query.schedule:
+            require_permission_to_schedule(self.current_user)
+        # A schedule that was valid when it was saved and is not now -- a cron
+        # expression a later version of croniter rejects, an interval below a
+        # minimum somebody has since set. Caught here rather than stored again
+        # and failing quietly in the refresh loop.
+        require_valid_schedule({"schedule": taken.get("schedule")})
+
+        moved = history.restore(query, version)
+        if moved:
+            query.last_modified_by = self.current_user
+            query.record_changes(self.current_user)
+            models.db.session.commit()
+
+        self.record_event(
+            {
+                "action": "restore_version",
+                "object_id": query.id,
+                "object_type": "query",
+                "params": {"change_id": version.id, "restored": moved},
+            }
+        )
+
+        return QuerySerializer(query, with_visualizations=True, with_api_key=True).serialize()

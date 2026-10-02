@@ -24,6 +24,7 @@ import useDuplicateQuery from "../hooks/useDuplicateQuery";
 import useApiKeyDialog from "../hooks/useApiKeyDialog";
 import usePermissionsEditorDialog from "../hooks/usePermissionsEditorDialog";
 import useVerifyQuery from "../hooks/useVerifyQuery";
+import useQueryHistoryDialog from "../hooks/useQueryHistoryDialog";
 
 import "./QueryPageHeader.less";
 
@@ -73,6 +74,7 @@ export default function QueryPageHeader({
   headerExtra,
   tagsExtra,
   onChange,
+  onSaved,
 }) {
   const isDesktop = useMedia({ minWidth: 768 });
   const queryFlags = useQueryFlags(query, dataSource);
@@ -85,6 +87,9 @@ export default function QueryPageHeader({
   const openApiKeyDialog = useApiKeyDialog(query, onChange);
   const openPermissionsEditorDialog = usePermissionsEditorDialog(query);
   const verifying = useVerifyQuery(query);
+  // `onSaved` rather than `onChange`: a restore has already been written, so
+  // the editor's idea of what is saved has to move with it.
+  const openHistoryDialog = useQueryHistoryDialog(query, queryFlags.canEdit, onSaved || onChange);
 
   const moreActionsMenu = useMemo(
     () =>
@@ -148,6 +153,16 @@ export default function QueryPageHeader({
           },
         },
         {
+          // Reading what a query used to say needs nothing but being able to
+          // read the query; the dialog offers the restore only to somebody who
+          // could have made the same edit by hand.
+          history: {
+            isAvailable: !queryFlags.isNew,
+            title: "History",
+            onClick: openHistoryDialog,
+          },
+        },
+        {
           showAPIKey: {
             // The key is a credential that outlives group membership, so the
             // server hands it only to people who may also regenerate it.
@@ -171,6 +186,7 @@ export default function QueryPageHeader({
       publishQuery,
       unpublishQuery,
       openApiKeyDialog,
+      openHistoryDialog,
       verifying.canVerify,
       verifying.verification,
       verifying.confirm,
@@ -271,6 +287,10 @@ QueryPageHeader.propTypes = {
   headerExtra: PropTypes.node,
   tagsExtra: PropTypes.node,
   onChange: PropTypes.func,
+  // The query as the server now holds it, for a change this header made that
+  // was already written -- a restore. Falls back to `onChange` for the pages
+  // with no editor to keep in step.
+  onSaved: PropTypes.func,
 };
 
 QueryPageHeader.defaultProps = {

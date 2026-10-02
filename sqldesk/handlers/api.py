@@ -73,6 +73,8 @@ from sqldesk.handlers.queries import (
     QueryResource,
     QuerySearchResource,
     QueryTagsResource,
+    QueryVersionListResource,
+    QueryVersionRestoreResource,
 )
 from sqldesk.handlers.query_results import (
     JobResource,
@@ -277,6 +279,12 @@ api.add_org_resource(MyQueriesResource, "/api/queries/my", endpoint="my_queries"
 api.add_org_resource(QueryRefreshResource, "/api/queries/<query_id>/refresh", endpoint="query_refresh")
 api.add_org_resource(QueryResource, "/api/queries/<query_id>", endpoint="query")
 api.add_org_resource(QueryForkResource, "/api/queries/<query_id>/fork", endpoint="query_fork")
+api.add_org_resource(QueryVersionListResource, "/api/queries/<query_id>/versions", endpoint="query_versions")
+api.add_org_resource(
+    QueryVersionRestoreResource,
+    "/api/queries/<query_id>/versions/<change_id>/restore",
+    endpoint="query_version_restore",
+)
 api.add_org_resource(
     QueryRegenerateApiKeyResource,
     "/api/queries/<query_id>/regenerate_api_key",

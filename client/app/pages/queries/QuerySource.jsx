@@ -60,7 +60,7 @@ const EDITOR_MIN_LINES = 3;
 const EDITOR_MAX_LINES = 20;
 
 function QuerySource(props) {
-  const { query, setQuery, isDirty, saveQuery } = useQuery(props.query);
+  const { query, setQuery, markSaved, isDirty, saveQuery } = useQuery(props.query);
   const { dataSourcesLoaded, dataSources, dataSource } = useQueryDataSources(query);
   const [schema, setSchema] = useState([]);
   const queryFlags = useQueryFlags(query, dataSource);
@@ -256,6 +256,7 @@ function QuerySource(props) {
             </DynamicComponent>
           }
           onChange={setQuery}
+          onSaved={markSaved}
         />
       </div>
       <main className="query-fullscreen">
