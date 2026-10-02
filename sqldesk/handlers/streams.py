@@ -18,10 +18,11 @@ import logging
 from flask import request
 from flask_restful import abort
 
-from sqldesk import models
+from sqldesk import features, models, settings
 from sqldesk.handlers.base import BaseResource, get_object_or_404
 from sqldesk.permissions import require_access, require_admin, view_only
-from sqldesk.streams import activity, rollup, window
+from sqldesk.query_runner.kafka_stream import table_name
+from sqldesk.streams import activity, rollup, slots, watching, window
 from sqldesk.streams.store import Store
 
 logger = logging.getLogger(__name__)
@@ -223,3 +224,249 @@ class StreamRollupResource(BaseResource):
                 for row in rows
             ],
         }
+
+
+def _cluster(data_source_id, org, user, feature):
+    """A Kafka cluster somebody with the given permission may work on."""
+    if not features.can(user, feature):
+        abort(403, message="Your account may not do that with streams.")
+    source = get_object_or_404(models.DataSource.get_by_id_and_org, data_source_id, org)
+    require_access(source, user, view_only)
+    if source.type != "kafka_stream":
+        abort(400, message="That data source is not a Kafka cluster.")
+    return source
+
+
+class ClusterTopicsResource(BaseResource):
+    """
+    Every topic on a cluster, and which of them are enabled.
+
+    Metadata only -- no consumer, no messages -- so it answers a page load.
+    Behind `manage_streams`, because the list of what a cluster carries is
+    itself worth not handing to everybody: topic names leak the shape of a
+    business.
+    """
+
+    def get(self, data_source_id):
+        source = _cluster(data_source_id, self.current_org, self.current_user, features.MANAGE_STREAMS)
+        from sqldesk.streams.consumer import list_topics
+
+        try:
+            topics = list_topics(source.options.to_dict(mask_secrets=False))
+        except Exception as error:
+            logger.warning("could not list the topics on %s", source.name, exc_info=True)
+            abort(502, message="Could not ask the cluster what topics it has: {}".format(error))
+
+        enabled = {stream.topic: stream for stream in source.streams}
+        for topic in topics:
+            stream = enabled.get(topic["name"])
+            topic["enabled"] = stream is not None
+            topic["stream_id"] = stream.id if stream else None
+            topic["columns"] = len(stream.columns or []) if stream else 0
+        return {"topics": topics}
+
+
+class TopicAnalysisResource(BaseResource):
+    """
+    What is actually on a topic: columns, how many do not parse, the rate, and
+    what a window of it would hold.
+
+    A POST because it opens a connection to the broker and reads: it is not
+    free, and it is not something a browser should repeat on a refresh.
+    """
+
+    def post(self, data_source_id, topic):
+        source = _cluster(data_source_id, self.current_org, self.current_user, features.MANAGE_STREAMS)
+        from sqldesk.streams.analysis import analyse
+
+        try:
+            found = analyse(source.options.to_dict(mask_secrets=False), topic)
+        except Exception as error:
+            logger.warning("could not analyse %s on %s", topic, source.name, exc_info=True)
+            abort(502, message=str(error))
+
+        self.record_event(
+            {
+                "action": "analyse_topic",
+                "object_id": source.id,
+                "object_type": "data_source",
+                "params": {"topic": topic},
+            }
+        )
+        return found
+
+
+class EnabledTopicResource(BaseResource):
+    """
+    Enabling a topic, and turning one off again.
+
+    This is the access decision on a Kafka cluster. The data source permission
+    is per cluster, so what somebody enables here is what everybody with access
+    to that cluster can then query -- which is why it is behind a permission of
+    its own rather than being something any reader can do.
+    """
+
+    def post(self, data_source_id, topic):
+        source = _cluster(data_source_id, self.current_org, self.current_user, features.MANAGE_STREAMS)
+        body = request.get_json(force=True, silent=True) or {}
+
+        stream = models.Stream.query.filter(
+            models.Stream.data_source_id == source.id, models.Stream.topic == topic
+        ).first()
+        if stream is None:
+            stream = models.Stream(org=source.org, data_source=source, topic=topic)
+            models.db.session.add(stream)
+
+        for field in ("row_budget", "events_per_second"):
+            if field in body:
+                value = body[field]
+                if not isinstance(value, int) or value < 0:
+                    abort(400, message="{} has to be a whole number, or 0 for the install's.".format(field))
+                setattr(stream, field, value)
+        if "pinned" in body:
+            # A pin keeps a worker and a disk busy with nobody watching, which
+            # is an administrator's decision rather than a curator's.
+            require_admin_or_abort(self.current_user)
+            stream.pinned = bool(body["pinned"])
+        if "group_by" in body or "measures" in body:
+            problem = rollup.check(
+                body.get("group_by") or [],
+                body.get("measures") or [],
+                [(column["name"], column.get("type", "VARCHAR")) for column in (stream.columns or [])],
+            )
+            if problem and stream.columns:
+                abort(400, message=problem)
+            stream.group_by = body.get("group_by") or None
+            stream.measures = body.get("measures") or None
+
+        models.db.session.commit()
+        self.record_event(
+            {
+                "action": "enable_topic",
+                "object_id": source.id,
+                "object_type": "data_source",
+                "params": {"topic": topic},
+            }
+        )
+        return _stream_dict(stream, source.name)
+
+    def delete(self, data_source_id, topic):
+        source = _cluster(data_source_id, self.current_org, self.current_user, features.MANAGE_STREAMS)
+        stream = models.Stream.query.filter(
+            models.Stream.data_source_id == source.id, models.Stream.topic == topic
+        ).first()
+        if stream is None:
+            abort(404, message="That topic is not enabled.")
+
+        # The window goes with it. Keeping a file for a topic nobody can query
+        # any more is disk nothing will ever claim back.
+        import os
+
+        path = stream.store_path()
+        slots.release(stream.id)
+        models.db.session.delete(stream)
+        models.db.session.commit()
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            logger.warning("could not remove the window for %s", topic, exc_info=True)
+        return {"ok": True}
+
+
+def require_admin_or_abort(user):
+    if not user.has_permission("admin"):
+        abort(403, message="Pinning a stream is an administrator's decision.")
+
+
+def _stream_dict(stream, source_name=None):
+    state = watching.state(stream)
+    return {
+        "id": stream.id,
+        "topic": stream.topic,
+        "table": table_name(stream.topic),
+        "data_source_id": stream.data_source_id,
+        "data_source_name": source_name,
+        "state": state,
+        "watchers": watching.watchers(stream.id),
+        "started_by": stream.started_by.name if stream.started_by else None,
+        "pinned": stream.pinned,
+        "rows": stream.rows,
+        "malformed": stream.malformed,
+        "observed_rate": stream.observed_rate,
+        "window_seconds": stream.window_seconds,
+        "sample_rate": stream.sample_rate,
+        "sampled": (stream.sample_rate or 1) > 1,
+        "describes": window.describe(stream.window_seconds, stream.rows),
+        "last_flush_at": stream.last_flush_at,
+        "last_error": stream.last_error,
+        "columns": stream.columns or [],
+    }
+
+
+class RunningStreamsResource(BaseResource):
+    """
+    What is consuming right now, and how much room is left.
+
+    Everybody may read it: "all the slots are in use" is only actionable if you
+    can see what is using them and who to ask. Stopping one is for its owner or
+    an administrator.
+    """
+
+    def get(self):
+        taken = slots.held()
+        streams = models.Stream.query.filter(models.Stream.org == self.current_org).order_by(models.Stream.topic).all()
+        names = dict(
+            models.db.session.query(models.DataSource.id, models.DataSource.name).filter(
+                models.DataSource.org == self.current_org
+            )
+        )
+        running = [_stream_dict(stream, names.get(stream.data_source_id)) for stream in streams]
+        return {
+            "streams": [one for one in running if one["state"] != watching.COLD],
+            "slots": {
+                "used": len(taken),
+                "limit": settings.STREAM_MAX_CONCURRENT,
+                "per_user": settings.STREAM_MAX_PER_USER,
+                "minutes": settings.STREAM_MAX_MINUTES,
+            },
+        }
+
+
+class StreamWatchResource(BaseResource):
+    """
+    Saying "I am looking at this", every few seconds, while a tab is open.
+
+    The first check-in takes a slot, which is why starting needs the
+    permission; the ones after it only keep the stream alive. A viewer of
+    somebody else's running stream needs neither a slot nor the permission --
+    they are not choosing what is visible and not taking anything from anybody.
+    """
+
+    def post(self, stream_id):
+        stream = get_object_or_404(models.Stream.query.get, stream_id)
+        if stream.org_id != self.current_org.id:
+            abort(404, message="No such stream.")
+        require_access(stream.data_source, self.current_user, view_only)
+
+        already = watching.state(stream) == watching.RUNNING
+        if not already:
+            if not features.can(self.current_user, features.USE_STREAMS):
+                abort(403, message="Your account may watch streams but not start them.")
+            refused = slots.acquire(stream.id, owner=self.current_user.id)
+            if refused:
+                abort(429, message=refused)
+            stream.started_by = self.current_user
+
+        watching.check_in(stream.id, self.current_user.id)
+        activity.note_viewed(stream)
+        models.db.session.commit()
+        return _stream_dict(stream)
+
+    def delete(self, stream_id):
+        """A tab going away, rather than being timed out."""
+        stream = get_object_or_404(models.Stream.query.get, stream_id)
+        if stream.org_id != self.current_org.id:
+            abort(404, message="No such stream.")
+        watching.left(stream.id, self.current_user.id)
+        return {"ok": True}

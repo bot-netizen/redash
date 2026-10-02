@@ -94,9 +94,14 @@ from sqldesk.handlers.slack import (
     SlackSettingsResource,
 )
 from sqldesk.handlers.streams import (
+    ClusterTopicsResource,
+    EnabledTopicResource,
+    RunningStreamsResource,
     StreamListResource,
     StreamResource,
     StreamRollupResource,
+    StreamWatchResource,
+    TopicAnalysisResource,
 )
 from sqldesk.handlers.subscriptions import (
     DashboardSubscriptionListResource,
@@ -207,6 +212,17 @@ api.add_org_resource(
 
 api.add_org_resource(StreamListResource, "/api/streams", endpoint="streams")
 api.add_org_resource(StreamResource, "/api/data_sources/<data_source_id>/stream", endpoint="data_source_stream")
+api.add_org_resource(ClusterTopicsResource, "/api/data_sources/<data_source_id>/topics", endpoint="cluster_topics")
+api.add_org_resource(
+    TopicAnalysisResource,
+    "/api/data_sources/<data_source_id>/topics/<topic>/analyse",
+    endpoint="topic_analysis",
+)
+api.add_org_resource(
+    EnabledTopicResource, "/api/data_sources/<data_source_id>/topics/<topic>", endpoint="enabled_topic"
+)
+api.add_org_resource(RunningStreamsResource, "/api/streams/running", endpoint="streams_running")
+api.add_org_resource(StreamWatchResource, "/api/streams/<stream_id>/watch", endpoint="stream_watch")
 api.add_org_resource(
     StreamRollupResource,
     "/api/data_sources/<data_source_id>/stream/rollup",
