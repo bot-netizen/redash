@@ -249,9 +249,7 @@ class TestRestoring(VersionTestCase):
             models.Change.object_id == theirs.id, models.Change.object_type == "queries"
         ).first()
 
-        rv = self.make_request(
-            "post", "/api/queries/{}/versions/{}/restore".format(theirs.id, version.id)
-        )
+        rv = self.make_request("post", "/api/queries/{}/versions/{}/restore".format(theirs.id, version.id))
 
         self.assertEqual(404, rv.status_code)
 
