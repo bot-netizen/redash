@@ -13,6 +13,7 @@ import datetime
 import json
 import shutil
 import tempfile
+import unittest
 from unittest import mock
 
 from sqldesk import models
@@ -308,3 +309,53 @@ class TestTheRollupEndpoint(StreamHandlerTestCase):
         stream = self.stream()
 
         self.assertEqual(60 * 48, self.rows_for(stream, minutes=999999).json["minutes"])
+
+
+def _kafka_runner_available():
+    from sqldesk.query_runner import get_query_runner
+
+    return get_query_runner("kafka_stream", {}) is not None
+
+
+WHY_NOT_KAFKA = (
+    "the kafka_stream runner is not registered here -- confluent-kafka is in "
+    "the optional all_ds group, so rebuild the image to run this"
+)
+
+
+@unittest.skipUnless(_kafka_runner_available(), WHY_NOT_KAFKA)
+class TestARunnerFindsItsStream(BaseTestCase):
+    """
+    A Kafka data source's runner has to find the window belonging to it.
+
+    A runner is normally told nothing about the row it came from, and this one
+    looked for `data_source_id` in its own configuration -- which nothing ever
+    put there. So `_stream()` returned None for every data source built through
+    the application, and every query answered "This data source has no stream
+    yet" however long it had been consuming. Nothing noticed because the tests
+    construct the runner by hand, with that key supplied.
+    """
+
+    def source(self):
+        return self.factory.create_data_source(
+            name="Orders topic",
+            type="kafka_stream",
+            options={"brokers": "broker:9092", "topic": "orders"},
+        )
+
+    def test_the_runner_is_told_which_data_source_it_is_for(self):
+        source = self.source()
+        stream = models.Stream(org=source.org, data_source=source, topic="orders")
+        models.db.session.add(stream)
+        models.db.session.commit()
+
+        found = source.query_runner._stream()
+
+        self.assertIsNotNone(found)
+        self.assertEqual(stream.id, found.id)
+
+    def test_and_a_data_source_with_no_stream_still_says_so(self):
+        source = self.source()
+        models.db.session.commit()
+
+        self.assertIsNone(source.query_runner._stream())

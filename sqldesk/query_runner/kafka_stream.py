@@ -52,6 +52,25 @@ TYPES = {
 }
 
 
+def _described(connection, query):
+    """
+    `{column: DuckDB type}` for a query, or nothing if it cannot be planned.
+
+    Normalised to the names `TYPES` is keyed by: a parameterised type arrives
+    as `DECIMAL(18,3)`, and the part in brackets says nothing about how to
+    chart it.
+    """
+    try:
+        rows = connection.execute("DESCRIBE {}".format(query)).fetchall()
+    except Exception:
+        # The query itself will raise in a moment and say something better.
+        return {}
+    kinds = {}
+    for row in rows:
+        kinds[row[0]] = (row[1] or "").split("(")[0].strip().upper()
+    return kinds
+
+
 class KafkaStream(BaseSQLQueryRunner):
     should_annotate_query = False
 
@@ -131,6 +150,19 @@ class KafkaStream(BaseSQLQueryRunner):
     def __init__(self, configuration):
         super().__init__(configuration)
         self._store = None
+        self._data_source_id = None
+
+    def for_data_source(self, data_source_id):
+        """
+        Which data source this runner was built for.
+
+        A runner is normally told nothing about the row it came from -- its
+        configuration is the connection and nothing else. This one needs it,
+        because the window it queries belongs to the `Stream` that hangs off
+        the data source, and `DataSource.query_runner` is the only place that
+        knows which one that is.
+        """
+        self._data_source_id = data_source_id
 
     # --- what the rest of SQLDesk asks of a data source --------------------
 
@@ -144,7 +176,9 @@ class KafkaStream(BaseSQLQueryRunner):
         """
         from sqldesk import models
 
-        source_id = self.configuration.get("data_source_id")
+        # The configuration fallback is for a runner built by hand, in a test
+        # or a shell; through the application it arrives by `for_data_source`.
+        source_id = self._data_source_id or self.configuration.get("data_source_id")
         if not source_id:
             return None
         return models.Stream.query.filter(models.Stream.data_source_id == source_id).first()
@@ -153,7 +187,9 @@ class KafkaStream(BaseSQLQueryRunner):
         from sqldesk.streams.store import Store
 
         if self._store is None:
-            self._store = Store(stream.store_path())
+            # Read-only, and waiting out a flush rather than failing on one:
+            # the consumer owns the write lock, and a query is a reader.
+            self._store = Store(stream.store_path(), read_only=True)
         return self._store
 
     def run_query(self, query, user):
@@ -175,9 +211,17 @@ class KafkaStream(BaseSQLQueryRunner):
         store = self._opened_store(stream)
         try:
             cursor = store.connection.cursor()
+            # The column types come from DESCRIBE rather than from the cursor.
+            # DuckDB's DB-API `description` reports the generic DB-API codes --
+            # every number is "NUMBER", every string "STRING" -- so reading
+            # types from it typed every column as text, and a chart cannot plot
+            # a number it has been told is a word. DESCRIBE answers in DuckDB's
+            # own names, which is what `TYPES` is keyed by, and it plans the
+            # query rather than running it.
+            kinds = _described(store.connection, query)
             cursor.execute(query)
             columns = self.fetch_columns(
-                [(name, TYPES.get((kind or "").upper(), TYPE_STRING)) for name, kind in cursor.description]
+                [(column[0], TYPES.get(kinds.get(column[0], ""), TYPE_STRING)) for column in cursor.description]
             )
             rows = [dict(zip((column["name"] for column in columns), row)) for row in cursor.fetchall()]
             return json_dumps({"columns": columns, "rows": rows}), None

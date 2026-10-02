@@ -210,7 +210,10 @@ def _roll_up_one(stream):
     if not measures:
         return 0
 
-    store = Store(stream.store_path())
+    # A reader too: the rollup aggregates what the consumer has written and
+    # writes its buckets to Postgres, so taking the window's write lock would
+    # only stall the consumer that fills it.
+    store = Store(stream.store_path(), read_only=True)
     try:
         problem = rollup.check(group_by, measures, store.columns())
         if problem:

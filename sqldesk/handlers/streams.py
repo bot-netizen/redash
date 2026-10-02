@@ -178,7 +178,7 @@ class StreamResource(BaseResource):
         first event has arrived would mean setting it up twice.
         """
         try:
-            store = Store(stream.store_path())
+            store = Store(stream.store_path(), read_only=True)
             try:
                 found = store.columns()
             finally:

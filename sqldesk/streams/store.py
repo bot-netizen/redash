@@ -21,6 +21,7 @@ anything else on the machine.
 
 import logging
 import os
+import time
 
 from sqldesk.query_runner import deferred
 
@@ -47,8 +48,15 @@ class Store:
     One stream's events. Cheap to construct; the file is opened on first use.
     """
 
-    def __init__(self, path):
+    #: How long a reader waits for a writer to finish a flush, and how often it
+    #: tries. A flush is milliseconds; this is generous and still far inside
+    #: the time anybody would wait for a page.
+    READ_ATTEMPTS = 6
+    READ_PAUSE_SECONDS = 0.25
+
+    def __init__(self, path, read_only=False):
         self.path = path
+        self.read_only = read_only
         self._connection = None
 
     # --- the connection -----------------------------------------------------
@@ -57,9 +65,33 @@ class Store:
     def connection(self):
         if self._connection is None:
             self._ensure_directory()
-            self._connection = duckdb.connect(self.path)
+            self._connection = self._connect()
             self._lock_down(self._connection)
         return self._connection
+
+    def _connect(self):
+        """
+        Open the window, waiting out a flush if one is in progress.
+
+        DuckDB gives a database file to **one process at a time**: a reader
+        cannot open it while a consumer holds it, read-only or not. The
+        consumer therefore closes between flushes (see `streams.consumer`), and
+        a reader that arrives during one waits rather than failing -- a page
+        that errored whenever it happened to land on a flush would be a page
+        that errored at random.
+        """
+        if not self.read_only:
+            return duckdb.connect(self.path)
+
+        last = None
+        for attempt in range(self.READ_ATTEMPTS):
+            try:
+                return duckdb.connect(self.path, read_only=True)
+            except duckdb.IOException as error:
+                last = error
+                if attempt + 1 < self.READ_ATTEMPTS:
+                    time.sleep(self.READ_PAUSE_SECONDS)
+        raise last
 
     def _ensure_directory(self):
         """

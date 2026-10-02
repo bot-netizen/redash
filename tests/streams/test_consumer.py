@@ -352,3 +352,50 @@ class TestTheLoop(ConsumerTestCase):
                 consumer.consume(stream, broker, until_drained(broker))
 
         self.assertEqual(2, models.Stream.query.get(stream.id).rows)
+
+
+class TestTheWindowIsNotHeldOpen(ConsumerTestCase):
+    """
+    A consumer must not hold the window's file for its whole run.
+
+    DuckDB gives a database file to one process at a time. A consumer that
+    opened the window and kept it until its deadline locked out every other
+    process for minutes: the Streams page silently fell back to the schema
+    stored on the row, the rollup job could not aggregate, and a query against
+    the stream failed outright with a conflicting lock. The fault was invisible
+    to every test here, because a fake broker and a reader in the same process
+    never contend.
+    """
+
+    def test_every_flush_is_followed_by_releasing_the_file(self):
+        # The order is the whole of it: a close at the end of the run would
+        # satisfy a count and leave the lock held for the minutes in between.
+        from sqldesk.streams import consumer as consumer_module
+        from sqldesk.streams.store import Store
+
+        stream = self.stream()
+        broker = FakeBroker([message({"x": 1})], [message({"x": 2})], [message({"x": 3})])
+        carry_on = iter([True] * 6 + [False])
+        happened = []
+
+        original_flush = consumer_module.flush_once
+        original_close = Store.close
+
+        def noted_flush(*args, **kwargs):
+            happened.append("flush")
+            return original_flush(*args, **kwargs)
+
+        def noted_close(self):
+            happened.append("close")
+            return original_close(self)
+
+        with mock.patch("sqldesk.settings.STREAM_FLUSH_SECONDS", 0):
+            with mock.patch.object(consumer_module, "flush_once", noted_flush):
+                with mock.patch.object(Store, "close", noted_close):
+                    consumer.consume(stream, broker, lambda: next(carry_on, False))
+
+        self.assertIn("flush", happened)
+        # Nothing between a flush and the release of the file.
+        for index, event in enumerate(happened):
+            if event == "flush":
+                self.assertEqual("close", happened[index + 1])

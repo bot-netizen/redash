@@ -295,6 +295,11 @@ class DataSource(BelongsToOrgMixin, db.Model):
         if self.uses_ssh_tunnel:
             query_runner = with_ssh_tunnel(query_runner, self.options.get("ssh_tunnel"))
 
+        if hasattr(query_runner, "for_data_source"):
+            # A stream's window belongs to the data source, not to the
+            # connection, and this is the only place that knows which row the
+            # runner was built from.
+            query_runner.for_data_source(self.id)
         if hasattr(query_runner, "confine_to"):
             query_runner.confine_to(os.path.join(settings.UPLOAD_ROOT, str(self.org_id), str(self.id)))
         if hasattr(query_runner, "register_uploaded_files"):

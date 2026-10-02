@@ -272,6 +272,15 @@ def consume(stream, broker, should_continue, now=None):
                 if time.monotonic() - started >= settings.STREAM_FLUSH_SECONDS:
                     break
             flush_once(stream, store, collected, now=now)
+            # The window is a file and DuckDB gives it to one process at a
+            # time. Held open for the whole run -- minutes -- this consumer
+            # locked out every reader: the Streams page quietly fell back to
+            # the schema stored on the row, and a query against the stream
+            # failed outright with a conflicting lock. Closed after each flush,
+            # the lock is held for the moment it is written and the seconds in
+            # between belong to whoever wants to read. The next flush reopens
+            # it; `Store.connection` is lazy.
+            store.close()
     finally:
         broker.close()
         store.close()

@@ -268,3 +268,89 @@ class TestTheSandbox(StoreTestCase):
         # Ours, so a producer with a field of that name cannot shadow it.
         self.assertTrue(MALFORMED.startswith("_"))
         self.assertTrue(RECEIVED.startswith("_"))
+
+
+class TestItCanBeClosedAndUsedAgain(StoreTestCase):
+    """
+    Closing between flushes is only useful if writing still works afterwards.
+
+    The consumer releases the file after every flush so that readers can get
+    in; the next flush has to reopen it without being handed a new Store.
+    """
+
+    def test_a_closed_store_reopens_to_write(self):
+        store = Store(os.path.join(self.folder, "stream.duckdb"))
+        store.append(events({"x": 1}))
+        store.close()
+
+        store.append(events({"x": 2}))
+
+        self.assertEqual(2, store.rows())
+        store.close()
+
+    def test_a_read_only_store_will_not_write(self):
+        # The page, the rollup and the query runner all open it this way. A
+        # reader that could write would be a second writer, which is the thing
+        # the lock exists to prevent.
+        path = os.path.join(self.folder, "stream.duckdb")
+        writer = Store(path)
+        writer.append(events({"x": 1}))
+        writer.close()
+
+        reader = Store(path, read_only=True)
+        try:
+            self.assertEqual(1, reader.rows())
+            with self.assertRaises(Exception):
+                reader.append(events({"x": 2}))
+        finally:
+            reader.close()
+
+
+class TestTheTypesAQueryReportsBack(StoreTestCase):
+    """
+    Column types come from DESCRIBE, not from the cursor.
+
+    DuckDB's DB-API `description` answers in the generic DB-API codes -- every
+    number is "NUMBER", every string "STRING" -- which match none of the names
+    the runner's type map is keyed by. Reading types from it typed every column
+    in every stream query as text: the query worked, the table looked right,
+    and no chart would plot a value until somebody cast it by hand.
+
+    The same line also unpacked `description` into two names, and it holds
+    seven, so in fact nothing ran at all.
+    """
+
+    def described(self, query):
+        from sqldesk.query_runner.kafka_stream import _described
+
+        store = Store(os.path.join(self.folder, "stream.duckdb"))
+        try:
+            return _described(store.connection, query)
+        finally:
+            store.close()
+
+    def test_duckdbs_own_names_come_back(self):
+        found = self.described("SELECT 1::BIGINT AS a, 'x' AS b, 1.5::DOUBLE AS c")
+
+        self.assertEqual({"a": "BIGINT", "b": "VARCHAR", "c": "DOUBLE"}, found)
+
+    def test_a_parameterised_type_loses_its_brackets(self):
+        # `DECIMAL(18,3)` is keyed as `DECIMAL`, and what is in the brackets
+        # says nothing about how to chart it.
+        found = self.described("SELECT 1.5::DECIMAL(18,3) AS a")
+
+        self.assertEqual("DECIMAL", found["a"])
+
+    def test_and_they_map_to_something_a_chart_can_use(self):
+        from sqldesk.query_runner import TYPE_FLOAT, TYPE_INTEGER, TYPE_STRING
+        from sqldesk.query_runner.kafka_stream import TYPES
+
+        found = self.described("SELECT 1::BIGINT AS a, 'x' AS b, 1.5::DOUBLE AS c")
+
+        self.assertEqual(TYPE_INTEGER, TYPES[found["a"]])
+        self.assertEqual(TYPE_STRING, TYPES.get(found["b"], TYPE_STRING))
+        self.assertEqual(TYPE_FLOAT, TYPES[found["c"]])
+
+    def test_a_query_that_cannot_be_planned_says_nothing_rather_than_raising(self):
+        # The query itself raises a moment later with a better message.
+        self.assertEqual({}, self.described("SELECT * FROM a_table_that_is_not_there"))
