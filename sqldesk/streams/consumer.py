@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 #: is librdkafka behind a C extension, and most installs have no streams at all
 #: -- the same reason every other data source's SDK is deferred.
 confluent = deferred("confluent_kafka")
+# A submodule of its own: `import confluent_kafka` does not bring `admin` with
+# it, so reaching for `confluent.admin` raises AttributeError at the point of
+# use -- which is how listing a cluster's topics came to be written and never
+# to have run.
+confluent_admin = deferred("confluent_kafka.admin")
 
 #: How long to wait for messages in one `consume` call. Shorter than the flush
 #: so a quiet topic still comes back and lets the loop do its housekeeping.
@@ -164,7 +169,7 @@ def describe_topic(options, topic=None, seconds=5):
 
 
 def _metadata(options, seconds=5):
-    admin = confluent.admin.AdminClient({"bootstrap.servers": (options or {}).get("brokers"), **_security(options)})
+    admin = confluent_admin.AdminClient({"bootstrap.servers": (options or {}).get("brokers"), **_security(options)})
     return admin.list_topics(timeout=seconds)
 
 

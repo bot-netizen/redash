@@ -285,6 +285,12 @@ class DataSource(BelongsToOrgMixin, db.Model):
         return dsg
 
     @property
+    def streams_only(self):
+        """Whether this data source belongs in Streams rather than in Queries."""
+        runner = get_query_runner(self.type, {})
+        return bool(runner is not None and getattr(runner, "streams_only", False))
+
+    @property
     def uses_ssh_tunnel(self):
         return self.options and "ssh_tunnel" in self.options
 

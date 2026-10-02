@@ -8,7 +8,10 @@ tables -- so **enabling a topic is the real access decision**, and that is what
 the streams permission guards.
 """
 
+import unittest
 from unittest import TestCase
+
+from tests import BaseTestCase
 
 from sqldesk.query_runner.kafka_stream import names_in, table_name
 
@@ -188,3 +191,35 @@ class TestAttachingTheWindows(TestCase):
             self.assertEqual(2, connection.execute("SELECT count(*) FROM prod_orders_v2").fetchone()[0])
         finally:
             connection.close()
+
+
+def _kafka_runner_available():
+    from sqldesk.query_runner import get_query_runner
+
+    return get_query_runner("kafka_stream", {}) is not None
+
+
+@unittest.skipUnless(
+    _kafka_runner_available(),
+    "the kafka_stream runner is not registered here -- confluent-kafka is in the "
+    "optional all_ds group, so a cluster does not even appear in the list",
+)
+class TestAClusterIsNotOfferedInTheQueryEditor(BaseTestCase):
+    """
+    A window exists only while somebody is watching.
+
+    So a saved query against one would run against whatever happened to be
+    there, and a dashboard widget over it would be empty most of the time --
+    which reads as a broken dashboard rather than as a feature working the way
+    it was designed. Streams have their own tab; the editor's picker leaves
+    clusters out.
+    """
+
+    def test_the_list_marks_a_cluster_as_streams_only(self):
+        self.factory.create_data_source(name="Cluster", type="kafka_stream", group=self.factory.default_group)
+        self.factory.create_data_source(name="Warehouse", type="pg", group=self.factory.default_group)
+
+        listed = {one["name"]: one for one in self.make_request("get", "/api/data_sources").json}
+
+        self.assertTrue(listed["Cluster"]["streams_only"])
+        self.assertFalse(listed["Warehouse"]["streams_only"])

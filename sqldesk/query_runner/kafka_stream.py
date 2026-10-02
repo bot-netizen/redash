@@ -98,6 +98,13 @@ def names_in(query, identifier):
 class KafkaStream(BaseSQLQueryRunner):
     should_annotate_query = False
 
+    #: Kept out of the ordinary query editor. A window exists only while
+    #: somebody is watching, so a saved query against one would run against
+    #: whatever happened to be there -- and a dashboard widget over it would be
+    #: empty most of the time, which looks like a broken dashboard rather than
+    #: like a feature working as designed.
+    streams_only = True
+
     @classmethod
     def name(cls):
         return "Kafka stream"

@@ -163,6 +163,8 @@ class DataSourceListResource(BaseResource):
             try:
                 d = ds.to_dict()
                 d["view_only"] = all(project(ds.groups, self.current_user.group_ids).values())
+                # The editor leaves these out of its picker; Streams uses them.
+                d["streams_only"] = ds.streams_only
                 response[ds.id] = d
             except AttributeError:
                 logging.exception("Error with DataSource#to_dict (data source id: %d)", ds.id)

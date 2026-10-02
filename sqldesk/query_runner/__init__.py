@@ -194,6 +194,13 @@ class NotSupported(Exception):
 
 
 class BaseQueryRunner:
+    #: Whether this kind of data source belongs in the ordinary query editor.
+    #: A stream does not: its tables exist only while somebody is watching, so
+    #: a dashboard widget over one is an empty widget, and a saved query
+    #: against one would run against whatever happened to be in the window.
+    #: Streams have their own place; see `handlers/streams.py`.
+    streams_only = False
+
     deprecated = False
     should_annotate_query = True
     noop_query = None
