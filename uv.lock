@@ -405,6 +405,19 @@ wheels = [
 ]
 
 [[package]]
+name = "confluent-kafka"
+version = "2.6.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/13/89/928e6886ba33f5847692430d003dc33f81a6e595d25f9935d6185ea073d3/confluent_kafka-2.6.1.tar.gz", hash = "sha256:71fdab0f65ccdb00eff0f14ccde65723ebbd20392723f8c1e87e5d8ab29e50cf", size = 160019, upload-time = "2024-11-18T18:53:02.559Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8c/cf/b5d0124b143a98c7bc0ecd638f12a05db9c1ba173349d0bf22e23ac559a4/confluent_kafka-2.6.1-cp313-cp313-macosx_13_0_arm64.whl", hash = "sha256:2584812d8834932e194929544d09325dd09039223aced7ab09095ffd4e96a1ca", size = 2968528, upload-time = "2024-11-18T18:51:46.158Z" },
+    { url = "https://files.pythonhosted.org/packages/7d/fc/4e3e5c492111d8d4444888f0503a8cebdfca70fbe64e63be8cea41de88d1/confluent_kafka-2.6.1-cp313-cp313-macosx_13_0_x86_64.whl", hash = "sha256:90853bbf466c57e0295076549b9b3b9cb6ab9447965977f3cde7f0790c39b5d6", size = 3441632, upload-time = "2024-11-18T18:51:48.642Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/5b/d4963bf090a8ae0712d83163f43a018297216a2cb4d0c28a422c2a0c254b/confluent_kafka-2.6.1-cp313-cp313-manylinux_2_28_aarch64.whl", hash = "sha256:8c38bf716dbf99bd0e84ba867417e397c4d544d37a530b28df6cadd227a57f98", size = 15281866, upload-time = "2024-11-18T18:51:55.536Z" },
+    { url = "https://files.pythonhosted.org/packages/ab/71/bd85b6b0e30227d722649a180de3459d3360cc01380f370651ff18d4dba1/confluent_kafka-2.6.1-cp313-cp313-manylinux_2_28_x86_64.whl", hash = "sha256:efc94016d3b438f0af2ddd3f5a8fb293616fda296644f341161033b24282b23d", size = 3953827, upload-time = "2024-11-18T18:51:59.301Z" },
+    { url = "https://files.pythonhosted.org/packages/b6/eb/042c083e0d0a5016559dda61fb060e1c9be4fe540c95898c35a9fd540762/confluent_kafka-2.6.1-cp313-cp313-win_amd64.whl", hash = "sha256:150735910da42c44f7fa21ad96e3ae0f52df34066f163d3f544001a64ea776d2", size = 3948805, upload-time = "2024-11-18T18:52:02.158Z" },
+]
+
+[[package]]
 name = "coverage"
 version = "7.2.7"
 source = { registry = "https://pypi.org/simple" }
@@ -2705,6 +2718,7 @@ all-ds = [
     { name = "cassandra-driver" },
     { name = "certifi" },
     { name = "cmem-cmempy" },
+    { name = "confluent-kafka" },
     { name = "databend-py" },
     { name = "databend-sqlalchemy" },
     { name = "duckdb" },
@@ -2851,6 +2865,7 @@ all-ds = [
     { name = "cassandra-driver", specifier = "==3.29.3" },
     { name = "certifi", specifier = ">=2019.9.11" },
     { name = "cmem-cmempy", specifier = "==21.2.3" },
+    { name = "confluent-kafka", specifier = "==2.6.1" },
     { name = "databend-py", specifier = "==0.4.6" },
     { name = "databend-sqlalchemy", specifier = "==0.2.4" },
     { name = "duckdb", specifier = "==1.3.2" },
