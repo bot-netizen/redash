@@ -275,3 +275,56 @@ class TestWhatIsRunning(TopicTestCase):
         rv = self.make_request("get", "/api/streams/running", user=self.factory.create_user())
 
         self.assertEqual(200, rv.status_code)
+
+
+class TestRunningSqlAgainstTheWindows(TopicTestCase):
+    """
+    The stream query endpoint, which is deliberately not the ordinary one.
+
+    The ordinary path enqueues a job because a warehouse query can take four
+    minutes. A stream query reads a local file and returns in milliseconds, and
+    runs every couple of seconds while somebody watches -- a round trip through
+    Redis and a worker per refresh would cost more than the query. Nothing is
+    stored either way: no result row, no query, nothing.
+    """
+
+    def ask(self, sql, source=None):
+        return self.make_request(
+            "post",
+            "/api/data_sources/{}/stream_query".format((source or self.source).id),
+            data={"query": sql},
+        )
+
+    def test_an_install_with_no_kafka_client_says_so_rather_than_failing(self):
+        # What an install looks like after somebody drops the optional
+        # dependency group: the rows are here and nothing can read them. A 503
+        # with a sentence beats a 500 with a traceback.
+        rv = self.ask("select 1")
+
+        self.assertEqual(503, rv.status_code)
+        self.assertIn("not installed", rv.json["message"])
+
+    def test_an_empty_query_is_refused(self):
+        rv = self.make_request(
+            "post", "/api/data_sources/{}/stream_query".format(self.source.id), data={"query": "   "}
+        )
+
+        self.assertEqual(400, rv.status_code)
+
+    def test_a_data_source_that_is_not_a_cluster_is_refused(self):
+        other = self.factory.create_data_source(name="Warehouse", type="pg", group=self.factory.default_group)
+        db.session.commit()
+
+        self.assertEqual(400, self.ask("select 1", source=other).status_code)
+
+    def test_nothing_is_written_down(self):
+        # The window is what a consumer saw while somebody watched; a copy of
+        # it in Postgres would be the one thing this feature is not. True
+        # whether the query ran or was refused, which is what makes it worth
+        # asserting here rather than only where a broker is running.
+        before = models.QueryResult.query.count()
+
+        self.ask("select 1")
+
+        self.assertEqual(before, models.QueryResult.query.count())
+        self.assertEqual(0, models.Query.query.count())

@@ -11,9 +11,8 @@ the streams permission guards.
 import unittest
 from unittest import TestCase
 
-from tests import BaseTestCase
-
 from sqldesk.query_runner.kafka_stream import names_in, table_name
+from tests import BaseTestCase
 
 
 class TestTheIdentifierATopicIsQueriedBy(TestCase):

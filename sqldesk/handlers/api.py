@@ -98,6 +98,7 @@ from sqldesk.handlers.streams import (
     EnabledTopicResource,
     RunningStreamsResource,
     StreamListResource,
+    StreamQueryResource,
     StreamResource,
     StreamRollupResource,
     StreamWatchResource,
@@ -221,6 +222,7 @@ api.add_org_resource(
 api.add_org_resource(
     EnabledTopicResource, "/api/data_sources/<data_source_id>/topics/<topic>", endpoint="enabled_topic"
 )
+api.add_org_resource(StreamQueryResource, "/api/data_sources/<data_source_id>/stream_query", endpoint="stream_query")
 api.add_org_resource(RunningStreamsResource, "/api/streams/running", endpoint="streams_running")
 api.add_org_resource(StreamWatchResource, "/api/streams/<stream_id>/watch", endpoint="stream_watch")
 api.add_org_resource(

@@ -61,6 +61,9 @@ const EXPECTED = [
   ["Admin.Storage", "/admin/storage"],
   ["Admin.Streams", "/admin/streams"],
   ["Mcp.Mine", "/mcp/mine"],
+  ["Streams.Topics", "/streams/topics"],
+  ["Streams.Query", "/streams/query"],
+  ["Streams.Running", "/streams/running"],
 ];
 
 describe("the routes the pages register", () => {

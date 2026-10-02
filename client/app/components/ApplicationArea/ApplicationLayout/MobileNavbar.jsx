@@ -49,6 +49,21 @@ export default function MobileNavbar({ getPopupContainer }) {
                   <Link href="catalog">Catalog</Link>
                 </Menu.Item>
               )}
+              {(currentUser.can("use_streams") || currentUser.can("manage_streams")) && (
+                <Menu.Item key="streams-query">
+                  <Link href="streams/query">Query a stream</Link>
+                </Menu.Item>
+              )}
+              {(currentUser.can("use_streams") || currentUser.can("manage_streams")) && (
+                <Menu.Item key="streams-running">
+                  <Link href="streams/running">Running streams</Link>
+                </Menu.Item>
+              )}
+              {currentUser.can("manage_streams") && (
+                <Menu.Item key="streams-topics">
+                  <Link href="streams/topics">Manage topics</Link>
+                </Menu.Item>
+              )}
               <Menu.Item key="profile">
                 <Link href="users/me">Edit Profile</Link>
               </Menu.Item>

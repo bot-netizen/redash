@@ -67,6 +67,7 @@ function useNavbarActiveState() {
       dataSources: includes(["DataSources.List"], currentRoute.id),
       alerts: includes(["Alerts.List", "Alerts.New", "Alerts.View", "Alerts.Edit"], currentRoute.id),
       catalog: currentRoute.id === "Catalog",
+      streams: includes(["Streams.Topics", "Streams.Query", "Streams.Running"], currentRoute.id),
       admin: includes(
         ["Admin.Overview", "Admin.MCP", "Admin.SystemStatus", "Admin.Jobs", "Admin.OutdatedQueries"],
         currentRoute.id
@@ -141,6 +142,26 @@ export default function DesktopNavbar() {
     </Menu>
   );
 
+  // Streams is a place of its own rather than a kind of query. A topic's
+  // window exists only while somebody is watching it, so a saved query over
+  // one would run against whatever happened to be there -- which is why the
+  // editor does not offer clusters at all and these pages exist instead.
+  const streamsMenu = (
+    <Menu className="desktop-navbar-dropdown-menu">
+      <Menu.Item key="streams-query">
+        <Link href="streams/query">Query a stream</Link>
+      </Menu.Item>
+      <Menu.Item key="streams-running">
+        <Link href="streams/running">Running streams</Link>
+      </Menu.Item>
+      {currentUser.can("manage_streams") && (
+        <Menu.Item key="streams-topics">
+          <Link href="streams/topics">Manage topics</Link>
+        </Menu.Item>
+      )}
+    </Menu>
+  );
+
   const profileMenu = (
     <Menu className="desktop-navbar-dropdown-menu">
       <Menu.Item key="profile">
@@ -205,6 +226,22 @@ export default function DesktopNavbar() {
           <NavLink href="catalog" active={activeState.catalog}>
             Catalog
           </NavLink>
+        )}
+        {/*
+          Shown to anyone who may watch one, and to anyone who may set topics
+          up. Watching somebody else's running stream needs neither, but
+          somebody with no streams permission at all has nothing to do here.
+        */}
+        {(currentUser.can("use_streams") || currentUser.can("manage_streams")) && (
+          <Dropdown overlay={streamsMenu} trigger={["click"]} placement="bottomLeft">
+            <PlainButton
+              className={cx("desktop-navbar-link", { "desktop-navbar-link-active": activeState.streams })}
+              data-test="StreamsMenuButton"
+            >
+              Streams
+              <i className="fa fa-angle-down m-l-5" aria-hidden="true" />
+            </PlainButton>
+          </Dropdown>
         )}
         {currentUser.hasPermission("super_admin") && (
           <Dropdown overlay={adminMenu} trigger={["click"]} placement="bottomLeft">

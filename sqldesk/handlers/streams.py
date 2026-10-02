@@ -470,3 +470,57 @@ class StreamWatchResource(BaseResource):
             abort(404, message="No such stream.")
         watching.left(stream.id, self.current_user.id)
         return {"ok": True}
+
+
+class StreamQueryResource(BaseResource):
+    """
+    Run SQL against a cluster's windows, now, without saving anything.
+
+    Deliberately not the ordinary query path. That one enqueues a job for a
+    worker, because a query against a warehouse can take four minutes and
+    holding a web worker for four minutes is how a server stops answering. A
+    stream query reads a DuckDB file on local disk and returns in
+    milliseconds -- and it runs every couple of seconds while somebody watches,
+    so a round trip through Redis and a worker per refresh would cost more than
+    the query.
+
+    Nothing is stored. No `QueryResult` row, no query, no result: the window is
+    what a consumer has seen while somebody was watching, and writing it down
+    would be making a copy of the one thing whose point is that it is current.
+    """
+
+    #: A page shows a screenful. Anything larger is a question for a warehouse,
+    #: and sending it every two seconds would be unkind to everybody.
+    MAX_ROWS = 2000
+
+    def post(self, data_source_id):
+        source = get_object_or_404(models.DataSource.get_by_id_and_org, data_source_id, self.current_org)
+        require_access(source, self.current_user, view_only)
+        if source.type != "kafka_stream":
+            abort(400, message="That data source is not a Kafka cluster.")
+
+        query = (request.get_json(force=True, silent=True) or {}).get("query")
+        if not query or not query.strip():
+            abort(400, message="No query given.")
+
+        runner = source.query_runner
+        if runner is None:
+            # The cluster's rows are here but librdkafka is not, so nothing can
+            # read it. Said plainly rather than as a 500: this is what an
+            # install looks like after somebody removes the optional dependency
+            # group, and the fix is an install decision rather than a bug.
+            abort(503, message="This install cannot read Kafka streams: the Kafka client is not installed.")
+
+        data, error = runner.run_query(query, self.current_user)
+        if error:
+            abort(400, message=error)
+
+        import json
+
+        parsed = json.loads(data)
+        rows = parsed.get("rows") or []
+        return {
+            "columns": parsed.get("columns") or [],
+            "rows": rows[: self.MAX_ROWS],
+            "truncated": len(rows) > self.MAX_ROWS,
+        }

@@ -17,4 +17,5 @@ import "./queries/queries.routes";
 import "./alert/alerts.routes";
 import "./admin/admin.routes";
 import "./mcp/mcp.routes";
+import "./streams/streams.routes";
 import "./settings.routes";
