@@ -138,6 +138,117 @@ explains almost every question about why something is slow, stale, or missing.</
     unresponsive.</p>
 </div>
 
+<h2 id="everything">All of it, including the parts that are off</h2>
+<p>The three processes above are what always runs. Everything else is an add-on, drawn dashed here and
+absent from a default install &mdash; see <a href="deploying.html#defaults">what is on when you change
+nothing</a>. The shape does not change when you switch one on: it is another consumer of the same Redis, and
+it writes where the others write.</p>
+
+<div class="flow">
+  <svg viewBox="0 0 980 520" role="img" aria-label="A browser and an MCP client reach the server. The server enqueues on Redis and reads and writes Postgres. The scheduler puts due work on Redis. Workers, the MCP worker and the stream worker all take from Redis. Workers run SQL against your warehouse and write results to Postgres, and ask the renderer for pictures. The stream worker consumes Kafka and writes a window to the shared volume, which the server reads back.">
+    <!-- Who asks. -->
+    <rect class="box box-accent" x="120" y="14" width="150" height="50" rx="8"/>
+    <text class="ttl" x="195" y="36" text-anchor="middle">Browser</text>
+    <text class="lbl" x="195" y="53" text-anchor="middle">React single page</text>
+
+    <rect class="box box-optional" x="290" y="14" width="160" height="50" rx="8"/>
+    <text class="ttl" x="370" y="36" text-anchor="middle">MCP client</text>
+    <text class="lbl" x="370" y="53" text-anchor="middle">an agent you bring</text>
+
+    <path class="edge" d="M195 64 V100" marker-end="url(#b)"/>
+    <path class="edge-optional" d="M370 64 V100" marker-end="url(#b)"/>
+    <text class="lbl" x="420" y="86" text-anchor="middle">/mcp &middot; OAuth</text>
+
+    <!-- The one process that answers people. -->
+    <rect class="box box-accent" x="120" y="104" width="330" height="58" rx="8"/>
+    <text class="ttl" x="285" y="128" text-anchor="middle">Server</text>
+    <text class="lbl" x="285" y="146" text-anchor="middle">Flask &middot; gunicorn &middot; runs no queries</text>
+
+    <path class="edge" d="M285 162 V200" marker-end="url(#b)"/>
+    <text class="lbl" x="333" y="186" text-anchor="middle">enqueues</text>
+
+    <!-- Redis as a bus: everything below takes from it. -->
+    <rect class="box box-sunken" x="120" y="204" width="750" height="56" rx="8"/>
+    <text class="ttl" x="495" y="228" text-anchor="middle">Redis</text>
+    <text class="lbl" x="495" y="246" text-anchor="middle">job queues &middot; locks &middot; schema cache &middot; stream slots &middot; who is watching what</text>
+
+    <path class="edge" d="M145 300 V264" marker-end="url(#b)"/>
+    <path class="edge" d="M265 264 V300" marker-end="url(#b)"/>
+    <path class="edge-optional" d="M605 264 V300" marker-end="url(#b)"/>
+    <path class="edge-optional" d="M780 264 V300" marker-end="url(#b)"/>
+
+    <!-- The processes that do the work. -->
+    <rect class="box box-sunken" x="20" y="304" width="150" height="58" rx="8"/>
+    <text class="ttl" x="95" y="328" text-anchor="middle">Scheduler</text>
+    <text class="lbl" x="95" y="346" text-anchor="middle">puts due work on</text>
+
+    <rect class="box box-accent" x="190" y="304" width="150" height="58" rx="8"/>
+    <text class="ttl" x="265" y="328" text-anchor="middle">Workers</text>
+    <text class="lbl" x="265" y="346" text-anchor="middle">every query, every alert</text>
+
+    <rect class="box box-optional" x="360" y="304" width="150" height="58" rx="8"/>
+    <text class="tag" x="435" y="320" text-anchor="middle">add-on</text>
+    <text class="ttl" x="435" y="338" text-anchor="middle">Renderer</text>
+    <text class="lbl" x="435" y="354" text-anchor="middle">a headless browser</text>
+
+    <rect class="box box-optional" x="530" y="304" width="150" height="58" rx="8"/>
+    <text class="tag" x="605" y="320" text-anchor="middle">add-on</text>
+    <text class="ttl" x="605" y="338" text-anchor="middle">MCP worker</text>
+    <text class="lbl" x="605" y="354" text-anchor="middle">a queue of its own</text>
+
+    <rect class="box box-optional" x="700" y="304" width="160" height="58" rx="8"/>
+    <text class="tag" x="780" y="320" text-anchor="middle">add-on</text>
+    <text class="ttl" x="780" y="338" text-anchor="middle">Stream worker</text>
+    <text class="lbl" x="780" y="354" text-anchor="middle">one process per topic</text>
+
+    <path class="edge-optional" d="M340 333 H356" marker-end="url(#b)"/>
+
+    <!-- Where things are kept. -->
+    <path class="edge" d="M160 162 V180 H60 V414" marker-end="url(#b)"/>
+    <text class="lbl" x="60" y="290" text-anchor="middle">reads</text>
+    <text class="lbl" x="60" y="304" text-anchor="middle">/ writes</text>
+
+    <path class="edge" d="M210 362 V392 H120 V414" marker-end="url(#b)"/>
+    <text class="lbl" x="176" y="386" text-anchor="middle">the result</text>
+
+    <path class="edge" d="M300 362 V414" marker-end="url(#b)"/>
+    <text class="lbl" x="346" y="390" text-anchor="middle">your SQL</text>
+
+    <path class="edge-optional" d="M560 362 V392 H400 V414" marker-end="url(#b)"/>
+    <path class="edge-optional" d="M820 362 V414" marker-end="url(#b)"/>
+    <path class="edge-optional" d="M730 362 V392 H610 V414" marker-end="url(#b)"/>
+    <text class="lbl" x="664" y="386" text-anchor="middle">the window</text>
+
+    <rect class="box box-sunken" x="20" y="418" width="200" height="58" rx="8"/>
+    <text class="ttl" x="120" y="442" text-anchor="middle">Postgres</text>
+    <text class="lbl" x="120" y="460" text-anchor="middle">everything but the rows</text>
+
+    <rect class="box" x="240" y="418" width="200" height="58" rx="8"/>
+    <text class="ttl" x="340" y="442" text-anchor="middle">Your warehouse</text>
+    <text class="lbl" x="340" y="460" text-anchor="middle">Postgres, Trino, BigQuery…</text>
+
+    <rect class="box box-optional" x="460" y="418" width="220" height="58" rx="8"/>
+    <text class="ttl" x="570" y="442" text-anchor="middle">Shared volume</text>
+    <text class="lbl" x="570" y="460" text-anchor="middle">DuckDB files: uploads, windows</text>
+
+    <rect class="box box-optional" x="700" y="418" width="160" height="58" rx="8"/>
+    <text class="ttl" x="780" y="442" text-anchor="middle">Kafka</text>
+    <text class="lbl" x="780" y="460" text-anchor="middle">your cluster</text>
+
+    <!-- The server reads the window the stream worker wrote: the one edge
+         that makes the volume shared rather than scratch space. -->
+    <path class="edge-optional" d="M450 133 H930 V447 H684" marker-end="url(#b)"/>
+    <text class="lbl" x="930" y="120" text-anchor="middle">reads it back</text>
+
+    <defs><marker id="b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#d8d3cb"/></marker></defs>
+  </svg>
+  <p class="flow-cap">Dashed is optional. The one edge worth following is the long one on the right: the
+    stream worker writes a topic's window to the shared volume and the <em>server</em> reads it back to
+    answer a stream query &mdash; which is why that volume has to be the same one for both, and why turning
+    streams on turns it on too.</p>
+</div>
+
 <h2>The server</h2>
 <p>Flask behind gunicorn. It serves the single-page application, answers the REST API, and checks
 permissions. It reads and writes its own Postgres and it enqueues jobs — but it <strong>does not run your

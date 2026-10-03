@@ -453,6 +453,25 @@ tr:last-child td {
   fill: var(--sunken);
   stroke: var(--rule);
 }
+/* An add-on: present only if somebody switched it on. Dashed rather than a
+   different colour, because the colours already mean something here. */
+.flow .box-optional {
+  fill: var(--surface);
+  stroke: var(--rule);
+  stroke-dasharray: 5 4;
+}
+.flow .edge-optional {
+  stroke: var(--n-400);
+  fill: none;
+  stroke-dasharray: 5 4;
+}
+.flow .tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  fill: var(--faint);
+}
 .flow .edge {
   stroke: var(--n-400);
   fill: none;
