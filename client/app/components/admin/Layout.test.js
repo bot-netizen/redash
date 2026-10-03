@@ -61,7 +61,7 @@ describe("admin Layout", () => {
   test("and every page's key is one of the tabs", () => {
     const keys = adminTabs().map((tab) => tab.key);
 
-    ["overview", "running_queries", "system_status", "jobs", "outdated_queries", "storage", "streams"].forEach(
+    ["overview", "running_queries", "system_status", "jobs", "outdated_queries", "storage", "streams", "mcp"].forEach(
       (passedByAPage) => {
         expect(keys).toContain(passedByAPage);
         expect(
@@ -77,6 +77,15 @@ describe("admin Layout", () => {
     const wrapper = mount(<Layout activeTab="jobs" />);
 
     expect(wrapper.find(".ant-menu-item-selected").hostNodes().text().trim()).toBe("RQ Status");
+  });
+
+  // It used to render its own page, outside the tab strip, so opening it was a
+  // one-way trip: nothing on screen led back to the other admin pages.
+  test("MCP is a tab like the rest, not a page of its own", () => {
+    const wrapper = mount(<Layout activeTab="mcp" />);
+
+    expect(wrapper.find(".ant-menu-item-selected").hostNodes().text().trim()).toBe("MCP");
+    expect(titles(wrapper)).toContain("Overview");
   });
 
   test("every tab describes itself in more than a title", () => {

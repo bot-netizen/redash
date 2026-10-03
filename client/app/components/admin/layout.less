@@ -5,15 +5,17 @@
     overflow-x: auto;
   }
 
-  /* Reads as a caption to the tab strip above it, not as page content:
-     narrow enough to stay one readable column on a wide screen. */
+  /* A caption to the tab strip above it, and it takes the width it is given.
+     Held to a reading column it wrapped to three or four lines and pushed the
+     page down; across the full width it is one or two, which is the whole
+     point of it being a caption rather than an introduction. */
   .admin-tab-description {
     margin: 0;
-    padding: @sp-4 @sp-5;
-    max-width: 80ch;
+    padding: @sp-3 @sp-5;
     color: var(--color-text-muted);
     font-size: @fs-small;
-    line-height: 1.6;
+    line-height: 1.5;
+    text-wrap: pretty;
     border-bottom: 1px solid var(--color-border);
   }
 }

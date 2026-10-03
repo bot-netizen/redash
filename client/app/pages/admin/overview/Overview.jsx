@@ -5,7 +5,6 @@ import Button from "antd/lib/button";
 import Tooltip from "@/components/Tooltip";
 
 import Layout from "@/components/admin/Layout";
-import Link from "@/components/Link";
 import { axios } from "@/services/axios";
 import notification from "@/services/notification";
 import recordEvent from "@/services/recordEvent";
@@ -140,7 +139,7 @@ export default function Overview({ onError }) {
     );
   }
 
-  const { running, queues, workers, limits, storage, activity } = overview;
+  const { queues, workers, limits, storage, activity } = overview;
   const queued = Object.values(queues).reduce((total, q) => total + q.queued, 0);
 
   return (
@@ -227,18 +226,6 @@ export default function Overview({ onError }) {
             </dl>
           </Panel>
         </div>
-
-        {/* Not the table itself: that is its own page now, because it is read
-            while somebody is waiting and wants refreshing far more often than
-            table sizes do. This is the one line that says whether to go. */}
-        <Panel title="Running now" className="admin-panel-wide">
-          <p className="admin-muted">
-            {running.length === 0
-              ? "Nothing is running."
-              : `${running.length} ${running.length === 1 ? "query is" : "queries are"} in flight, counting the scheduler's own refreshes.`}
-          </p>
-          <Link href="admin/queries/running">See what is running, and stop any of it</Link>
-        </Panel>
       </div>
     </Layout>
   );

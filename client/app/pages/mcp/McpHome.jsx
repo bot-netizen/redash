@@ -11,16 +11,21 @@ import TimeAgo from "@/components/TimeAgo";
 import { axios } from "@/services/axios";
 import notification from "@/services/notification";
 import { currentUser, clientConfig } from "@/services/auth";
+import Layout from "@/components/admin/Layout";
 
 import "./mcp.less";
 
 /*
-  MCP: how to connect, who is connected, and what they have been asking for.
+  Admin -> MCP: who is connected, and what they have been asking for.
 
-  The audit is the reason this page exists. A tool server that answers
-  questions about somebody's warehouse, to a client nobody can see, is a thing
-  an administrator has to be able to look at -- so the log is the page rather
-  than a tab on it.
+  The audit is the whole of it. A tool server that answers questions about
+  somebody's warehouse, to a client nobody can see, is a thing an
+  administrator has to be able to look at.
+
+  How to *connect* is not here. It is the same paragraph for everybody, it is
+  on everyone's own My MCP page already, and an administrator reading an audit
+  is not in the middle of setting a client up. It was on both pages and the
+  copy on this one said nothing the other did not.
 */
 
 const OUTCOME = {
@@ -28,64 +33,6 @@ const OUTCOME = {
   error: { colour: "red", label: "error" },
   refused: { colour: "orange", label: "refused" },
 };
-
-function ConnectPanel({ origin }) {
-  return (
-    <div className="mcp-panel">
-      <h3>
-        Connecting a client <HelpTrigger type="MCP_CONNECT" />
-      </h3>
-      <p className="mcp-muted">
-        One endpoint. Every call runs as the person who authorized it and sees only the data sources that person can
-        read.
-      </p>
-      <pre className="mcp-pre">{`${origin}/mcp`}</pre>
-      {clientConfig.mcpOAuthEnabled && (
-        <React.Fragment>
-          {/*
-            Signing in first, because it is the better answer and most clients
-            do it by themselves: they call the endpoint, get a 401 that names
-            the discovery document, and open a browser. Nothing is pasted, the
-            token expires, and it is listed on the person's own profile.
-          */}
-          <p className="mcp-muted">
-            <strong>Signing in</strong> is the recommended way. Add the endpoint and the client will open a browser; you
-            sign in the way you always do, and it gets a token that expires and can be disconnected from your profile.
-          </p>
-          <pre className="mcp-pre">{`claude mcp add --transport http sqldesk ${origin}/mcp`}</pre>
-        </React.Fragment>
-      )}
-      <p className="mcp-muted">
-        <strong>An API key</strong> &mdash; the one on your profile page &mdash; is still accepted, and is what a script
-        or a headless setup should use.
-      </p>
-      <pre className="mcp-pre">{`claude mcp add --transport http sqldesk ${origin}/mcp \\
-  --header "Authorization: Bearer <your API key>"`}</pre>
-      {/*
-        The endpoint and the command stay on the page: they carry this
-        install's own origin, so they are the one thing the documentation
-        cannot give you. Everything else about connecting -- what the eight
-        tools do, what they cost, what to check when a client will not
-        attach -- is written once, in the guide.
-      */}
-      <p className="mcp-muted">
-        <HelpTrigger type="MCP_TOOLS" showTooltip={false} renderAsLink>
-          What the eight tools do
-        </HelpTrigger>{" "}
-        &middot;{" "}
-        <HelpTrigger type="MCP_CATALOG" showTooltip={false} renderAsLink>
-          Filling the catalog
-        </HelpTrigger>{" "}
-        &middot;{" "}
-        <HelpTrigger type="MCP" showTooltip={false} renderAsLink>
-          The whole guide
-        </HelpTrigger>
-      </p>
-    </div>
-  );
-}
-
-ConnectPanel.propTypes = { origin: PropTypes.string.isRequired };
 
 function ActivePanel({ active, minutes }) {
   if (!active.length) {
@@ -274,68 +221,58 @@ export default function McpHome({ onError }) {
     }
   }, [isAdmin, load]);
 
-  const origin = window.location.origin;
-
   return (
-    <div className="container mcp-page" data-test="McpHome">
-      <div className="mcp-header">
-        <h2>MCP</h2>
-        <p className="mcp-muted">
-          SQLDesk answers questions about your warehouse over the Model Context Protocol, using the catalog it builds
-          from your schema and your saved queries.
-        </p>
+    <Layout activeTab="mcp">
+      <div className="mcp-page" data-test="McpHome">
+        {!clientConfig.mcpEnabled && (
+          <Alert
+            className="m-b-15"
+            type="warning"
+            showIcon
+            message="MCP is off"
+            description="Set SQLDESK_FEATURE_AI=true on the server. Until then the endpoint answers 404."
+          />
+        )}
+
+        {!isAdmin && (
+          <Alert
+            type="info"
+            showIcon
+            message="The audit is for administrators"
+            description="It names every user, every question and every address, so it is not shown here."
+          />
+        )}
+
+        {isAdmin && data && <ActivePanel active={data.active} minutes={data.active_minutes} />}
+
+        {isAdmin && clientConfig.mcpOAuthEnabled && <ConnectionsPanel />}
+
+        {isAdmin && (
+          <React.Fragment>
+            <h3 className="mcp-section-title">
+              Audit <HelpTrigger type="MCP_AUDIT" />{" "}
+              <Button size="small" onClick={load} loading={loading} data-test="McpAuditRefresh">
+                Refresh
+              </Button>
+            </h3>
+            {data && data.events.length === 0 ? (
+              <div className="mcp-empty">Nothing yet. Connect a client and its calls will appear here.</div>
+            ) : (
+              <Table
+                className="mcp-audit-table"
+                dataSource={data ? data.events : []}
+                columns={COLUMNS}
+                rowKey="id"
+                size="small"
+                loading={loading}
+                pagination={{ pageSize: 25, showSizeChanger: false }}
+                data-test="McpAuditTable"
+              />
+            )}
+          </React.Fragment>
+        )}
       </div>
-
-      {!clientConfig.mcpEnabled && (
-        <Alert
-          className="m-b-15"
-          type="warning"
-          showIcon
-          message="MCP is off"
-          description="Set SQLDESK_FEATURE_AI=true on the server. Until then the endpoint answers 404."
-        />
-      )}
-
-      <ConnectPanel origin={origin} />
-
-      {!isAdmin && (
-        <Alert
-          type="info"
-          showIcon
-          message="The audit is for administrators"
-          description="It names every user, every question and every address, so it is not shown here."
-        />
-      )}
-
-      {isAdmin && data && <ActivePanel active={data.active} minutes={data.active_minutes} />}
-
-      {isAdmin && clientConfig.mcpOAuthEnabled && <ConnectionsPanel />}
-
-      {isAdmin && (
-        <React.Fragment>
-          <h3 className="mcp-section-title">
-            Audit <HelpTrigger type="MCP_AUDIT" />{" "}
-            <Button size="small" onClick={load} loading={loading} data-test="McpAuditRefresh">
-              Refresh
-            </Button>
-          </h3>
-          {data && data.events.length === 0 ? (
-            <div className="mcp-empty">Nothing yet. Connect a client and its calls will appear here.</div>
-          ) : (
-            <Table
-              className="mcp-audit-table"
-              dataSource={data ? data.events : []}
-              columns={COLUMNS}
-              rowKey="id"
-              size="small"
-              loading={loading}
-              pagination={{ pageSize: 25, showSizeChanger: false }}
-              data-test="McpAuditTable"
-            />
-          )}
-        </React.Fragment>
-      )}
-    </div>
+    </Layout>
   );
 }
 
