@@ -75,8 +75,32 @@ shown.</p>
   <tr><td>Postgres</td><td>SQLDesk's own database: users, queries, dashboards, results, the catalog. Not your warehouse.</td><td>Core</td></tr>
   <tr><td>Redis</td><td>Queues, locks and a schema cache. Losing it costs in-flight jobs and nothing else.</td><td>Core</td></tr>
   <tr><td><code>mcp-worker</code></td><td>Takes only the queries a model asks for, so a model exploring cannot hold up a dashboard.</td><td>Add-on: <strong>MCP &amp; Catalog</strong></td></tr>
+  <tr><td><code>stream-worker</code></td><td>Consumes Kafka topics into the windows a stream query reads. Workers of its own, because a consumer holds one for minutes rather than seconds.</td><td>Add-on: <strong>Streams</strong></td></tr>
   <tr><td><code>screenshots</code></td><td>A headless browser that draws dashboards and charts for alert emails. Holds no credentials and keeps no state.</td><td>Add-on: <strong>Rendering</strong></td></tr>
+  <tr><td>Shared volume</td><td>Not a process. Uploaded files and stream windows: one process writes, another reads. Created when <strong>Uploads</strong> or <strong>Streams</strong> is on.</td><td>Add-on</td></tr>
 </table>
+
+<h3 id="defaults">What is on when you change nothing</h3>
+<p>Everything that costs something while nobody is using it is off. A default install is five deployments and
+one volume, and the published image is the same size whichever of these you turn on &mdash; the only one with
+an image of its own is the renderer.</p>
+<table>
+  <tr><th>Add-on</th><th>Chart value</th><th>Default</th><th>What it costs when on</th></tr>
+  <tr><td>MCP &amp; Catalog</td><td><code>mcp.enabled</code></td><td class="ok">off</td><td>One worker, ~380 MB. A daily harvest job.</td></tr>
+  <tr><td>Streams</td><td><code>streams.enabled</code></td><td class="ok">off</td><td>A worker deployment, ~280 MB per process, one process per topic that may consume at once. The shared volume.</td></tr>
+  <tr><td>Uploads</td><td><code>uploads.enabled</code></td><td class="ok">off</td><td>The shared volume (5 Gi by default).</td></tr>
+  <tr><td>Rendering</td><td><code>rendering.enabled</code></td><td class="ok">off</td><td>A second image, several hundred MB of Chromium, and memory in spikes.</td></tr>
+  <tr><td>Bundled Postgres</td><td><code>postgres.enabled</code></td><td>on</td><td>Turn it <em>off</em> and point <code>postgres.external</code> at a managed database for anything real.</td></tr>
+  <tr><td>Bundled Redis</td><td><code>redis.enabled</code></td><td>on</td><td>No volume: it holds queues, locks and a cache.</td></tr>
+  <tr><td>Scheduler</td><td><code>scheduler.enabled</code></td><td>on</td><td>One process. Not a number to raise.</td></tr>
+</table>
+<div class="note">
+  <div class="note-h">A permission nobody can use is worse than no permission</div>
+  <p><code>streams.enabled</code> tells the application as well as the cluster. With it off, the Streams
+  permissions are not offered to any group and the Kafka Streams menu is not drawn &mdash; rather than
+  leading somebody to pages that quietly never fill, because nothing is taking from the
+  <code>streams</code> queue.</p>
+</div>
 <p>Mailpit and the demo warehouse in the development compose file are for developing SQLDesk, not for running
 it, and appear in neither of the files below.</p>
 
@@ -92,6 +116,31 @@ COMPOSE_PROFILES=mcp</code></pre>
 <pre><code>helm upgrade --install sqldesk ./charts/sqldesk --set mcp.enabled=true</code></pre>
 <p>Then fill the catalog once, rather than waiting for the daily harvest:
 <code>/app/manage.py ai harvest</code> in the server container.</p>
+
+<h3 id="streams">Streams</h3>
+<p>Kafka topics you can query &mdash; see the <a href="streams.html">Streams guide</a>. One switch turns on
+the consumers, the Streams permissions and the Kafka Streams menu.</p>
+<pre><code>helm upgrade --install sqldesk ./charts/sqldesk --set streams.enabled=true</code></pre>
+<p>Two settings have to agree, and the lower of them wins. <code>streams.worker.workersCount</code> is how
+many processes exist; <code>SQLDESK_STREAM_MAX_CONCURRENT</code> is how many topics may consume at once. A
+slot limit of five served by two processes is a limit of two wearing a five.</p>
+<pre><code>helm upgrade --install sqldesk ./charts/sqldesk \
+  --set streams.enabled=true \
+  --set streams.worker.workersCount=5 \
+  --set extraEnv.SQLDESK_STREAM_MAX_CONCURRENT=5</code></pre>
+<p>A slot is a topic, not a viewer: five people watching <code>orders</code> share one consumer, one window
+and one slot. Turning streams on also creates the shared volume, because the window is a file the stream
+worker writes and the server reads.</p>
+
+<h3 id="uploads">Uploads</h3>
+<p>CSV and Parquet files people upload and query with DuckDB.</p>
+<pre><code>helm upgrade --install sqldesk ./charts/sqldesk --set uploads.enabled=true</code></pre>
+<p>The claim is <code>ReadWriteOnce</code> by default, which mounts on one node &mdash; so with it the chart
+keeps the workers on the server's node, or they wait forever on a Multi-Attach error. If you intend to spread
+pods across nodes, give it a ReadWriteMany class (EFS, Filestore, Azure Files, NFS) and say so:</p>
+<pre><code>--set uploads.accessMode=ReadWriteMany --set uploads.storageClass=efs-sc</code></pre>
+<p>Files expire on a clock people can see and stop &mdash; <code>uploads.lifecycle</code> &mdash; because an
+uploaded file is the only copy there is, unlike a query result the warehouse can be asked for again.</p>
 
 <h3 id="rendering">Rendering</h3>
 <p>Pictures of dashboards and queries in alert emails. The renderer is a browser, which is why it is its own
@@ -318,14 +367,63 @@ ai harvest</code> fills the catalog now rather than at the first scheduled harve
   <li><code>minikube stop</code> and reboots keep the data. <code>minikube delete</code> erases it.</li>
 </ul>
 
+<h2 id="sizing">How much machine you need</h2>
+<p>The figures below are resident memory measured on a running install at idle, not estimates. Add your own
+headroom: a worker's memory grows with the size of the result it is holding, and a 3 MB result is an ordinary
+one.</p>
+<table>
+  <tr><th>Process</th><th>Idle</th><th>What makes it grow</th></tr>
+  <tr><td><code>server</code> pod, 4 web workers</td><td class="num">250 MB</td><td>Serializing results. One request holds one web worker for as long as it takes.</td></tr>
+  <tr><td><code>worker</code> process</td><td class="num">200 MB</td><td>The result it is holding, in full, before it is written.</td></tr>
+  <tr><td><code>stream-worker</code> process</td><td class="num">280 MB</td><td>Flat: it flushes to a file every second rather than accumulating.</td></tr>
+  <tr><td><code>mcp-worker</code> process</td><td class="num">380 MB</td><td>As a worker, plus the catalog it answers from.</td></tr>
+  <tr><td><code>scheduler</code></td><td class="num">190 MB</td><td>Nothing. It only enqueues.</td></tr>
+</table>
+
+<h3 id="sizing-shapes">Three shapes</h3>
+<p><strong>A team, up to about 25 people.</strong> The chart's defaults, with a managed Postgres instead of
+the bundled one. Roughly 2 vCPU and 3 GB for SQLDesk.</p>
+<p><strong>A department, about 100 concurrent.</strong> Two server replicas, two worker replicas of four
+processes each, and a Postgres you did not install with Helm. Roughly 6 vCPU and 12 GB.</p>
+<p><strong>500 concurrent.</strong> Assuming ~300 of them watching live dashboards and ~25 queries executing
+at any moment:</p>
+<table>
+  <tr><th>Tier</th><th>Shape</th><th>Why that number</th></tr>
+  <tr><td>Web</td><td>6 &times; (1 vCPU, 1.5 GB), <code>server.webWorkers: 4</code></td><td>Gunicorn runs <em>sync</em> workers, so the worker count <em>is</em> the concurrency, not the throughput. 24 is the figure to reach.</td></tr>
+  <tr><td>Query workers</td><td>4 &times; (2 vCPU, 2.5 GB), 8 processes each</td><td>~25 executions at once, plus room for a burst.</td></tr>
+  <tr><td>Postgres</td><td>8 vCPU, 32 GB, 500 GB SSD, <strong>behind PgBouncer</strong></td><td><code>query_results</code> is nearly all of the disk. The pooler is not optional &mdash; see below.</td></tr>
+  <tr><td>Redis</td><td>2 vCPU, 4 GB, <code>maxmemory</code> set, <code>noeviction</code></td><td>It holds job state. Evicting a key loses a running query silently.</td></tr>
+  <tr><td>Scheduler</td><td>1 &times; (0.5 vCPU, 512 MB)</td><td>Exactly one, always.</td></tr>
+  <tr><td>Stream workers</td><td>1 process per topic consuming at once</td><td>Only if you use streams.</td></tr>
+  <tr><td>Renderer</td><td>2 &times; (1 vCPU, 2 GB)</td><td>Only if alerts carry pictures. Spiky; keep it apart.</td></tr>
+</table>
+<p>About <strong>22 vCPU and 50 GB</strong> for SQLDesk, plus the database.</p>
+<div class="note warn">
+  <div class="note-h">Set the connection pool before you add replicas</div>
+  <p>SQLAlchemy's defaults are 5 connections plus 10 overflow <em>per process</em>. Four web workers is up to
+  60 connections per server replica, and Postgres ships with <code>max_connections=100</code> &mdash; so the
+  third replica is where you meet <code>FATAL: sorry, too many clients already</code>. Either put PgBouncer
+  in front in transaction mode, or cap the pool:</p>
+  <pre><code>--set extraEnv.SQLALCHEMY_POOL_SIZE=2 --set extraEnv.SQLALCHEMY_MAX_OVERFLOW=3</code></pre>
+</div>
+<div class="note">
+  <div class="note-h">The warehouse is the real constraint</div>
+  <p>500 people against Snowflake or BigQuery costs far more than the 22 vCPU above. SQLDesk's job at that
+  size is not to be the bottleneck and to protect the warehouse &mdash; which is why a slow data source
+  getting <a href="administration.html">its own queue</a> matters more than web-tier capacity.</p>
+</div>
+
 <h2 id="scaling">Scaling</h2>
 <ul>
   <li><strong>Queries queueing</strong> — more workers.</li>
-  <li><strong>Pages slow to load</strong> — more web workers. A different problem with a different fix.</li>
+  <li><strong>Pages slow to load</strong> — more web workers, and the connection pool above has to move
+    with them.</li>
   <li><strong>The scheduler is one process.</strong> Two would double-schedule everything.</li>
   <li>Give a slow data source its own queue so it cannot starve the others &mdash; see
     <a href="administration.html">Administration</a> for how, since there is no screen for it yet.</li>
   <li>A worker being stopped finishes the query it is running, for up to five minutes, before it exits.</li>
+  <li><strong>Uploads pin the workers to one node</strong> unless the volume is ReadWriteMany. If you are
+    spreading pods across nodes, that is the setting to check first.</li>
 </ul>
 
 <h2 id="backups">Backups</h2>
