@@ -70,28 +70,62 @@ adding somebody to a group is how they get access to data.</p>
 <p>Users can be disabled rather than deleted, which keeps their queries and dashboards intact and
 attributed.</p>
 
-<h2>The Admin pages</h2>
+<h2 id="admin-pages">The Admin pages</h2>
+<p><strong>Admin</strong> in the top row, for anyone with <code>super_admin</code>. Each page says what it is
+for in a line or two under its tabs, so you are not guessing which of seven holds the number you want.</p>
 <dl>
   <dt>Overview</dt>
-  <dd>What is running now, who is running it, and what is about to run out — connections, memory,
-    disk. Queries can be cancelled from here.</dd>
-  <dt>MCP</dt>
-  <dd>Who has connected over MCP, what they asked for, and every refused attempt. See
-    <a href="mcp.html">MCP</a>.</dd>
-  <dt>Catalog</dt>
-  <dd>What the MCP tools know about each table: descriptions to write, proposed measures to agree or
-    deny, and the semantic layer to download as YAML. Shown when MCP is on.</dd>
+  <dd>Where the headroom is going: Postgres connections, Redis memory, how many workers are busy, how deep
+    the queues are. Also who has run the most queries in the last hour and how much of that came from cache.
+    The place to start when the instance feels slow and you do not yet know why.</dd>
   <dt>System Status</dt>
-  <dd>Queue depths, worker counts, database size.</dd>
+  <dd>The server's report on itself — version, uptime, when the query manager last made a pass, queue
+    depths, table sizes. The figures to quote when something has to be escalated.</dd>
   <dt>RQ Status</dt>
-  <dd>The job queues themselves, in detail.</dd>
+  <dd>The job queues themselves, worker by worker. A queue growing while workers sit idle means the jobs
+    are going somewhere nobody is listening.</dd>
+  <dt>Storage Status</dt>
+  <dd>What is being held and what happens to it when: cached query results, uploaded files, and how much of
+    its quota each organisation has left. Both clean-ups can be started from here rather than waiting for
+    their slot. See <a href="#uploads">What happens to uploaded files</a>.</dd>
+  <dt>Running Queries</dt>
+  <dd>Everything the workers have in flight, who asked for it, against which data source and for how long.
+    A scheduled refresh shows as the scheduler rather than a person, because nobody is waiting for it. Any
+    of them can be stopped from here, and stopping one is recorded.</dd>
+  <dt>Streaming Queries</dt>
+  <dd>Every Kafka topic being consumed, the rate events are arriving at, and — the column it exists for
+    — why a quiet one is quiet. Paused, broken and genuinely empty look identical on a chart and are
+    three different problems. The row budget and the events-per-second ceiling are set here. Shown when
+    streams are on.</dd>
   <dt>Outdated Queries</dt>
-  <dd>Scheduled queries that have not refreshed when they should have — usually the first sign a worker
-    has stopped or a data source is unreachable.</dd>
-  <dt>Storage</dt>
-  <dd>What is on the disk: every uploaded file per data source, how big, when it was last queried, and
-    when it expires. See <a href="#uploads">What happens to uploaded files</a>.</dd>
+  <dd>Scheduled queries whose next run is already overdue. A handful is ordinary; a long list means the
+    workers are not keeping up with the schedules people have set.</dd>
+  <dt>MCP</dt>
+  <dd>Who has connected over MCP, what they asked for, and every refused attempt — never the question
+    somebody put to their client and never the SQL that came back. Shown when MCP is on. See
+    <a href="mcp.html">MCP</a>.</dd>
 </dl>
+<p><strong>Settings</strong> is its own menu in the top row rather than a gear on the right, and it holds
+different things for different people: an administrator sees data sources, users, groups, alert
+destinations and the organisation's settings; everybody else sees their snippets and their own account.</p>
+
+<h2 id="features">Permissions an administrator hands out</h2>
+<p>Some things are neither for everybody nor only for administrators. The person who knows what a table is
+for is rarely the person who runs the cluster, so these are granted to a <strong>group</strong>, under
+Settings &rarr; Groups, and anyone in that group has them.</p>
+<table>
+  <tr><th>Permission</th><th>What it allows</th><th>Offered when</th></tr>
+  <tr><td><code>manage_catalog</code></td><td>Describe tables and columns, agree or deny proposed measures, export the semantic layer. Puts <strong>Catalog</strong> in the top row.</td><td>MCP is on</td></tr>
+  <tr><td><code>use_streams</code></td><td>Start a stream and watch it. Starting one takes a slot; watching somebody else's running stream needs no permission at all.</td><td>Streams are on</td></tr>
+  <tr><td><code>manage_streams</code></td><td>Choose which of a cluster's topics may be queried, and how much of each is kept. Puts <strong>Manage Topics</strong> in the Kafka Streams menu.</td><td>Streams are on</td></tr>
+  <tr><td><code>manage_live_dashboards</code></td><td>Make a dashboard live, so the server refreshes it for everyone looking.</td><td>Always</td></tr>
+  <tr><td><code>keep_uploads</code></td><td>Stop an uploaded file expiring, so it stays until somebody deletes it.</td><td>Files expire at all</td></tr>
+  <tr><td><code>use_mcp</code></td><td>Connect a client over MCP, and see what yours has been doing under <strong>My MCP</strong>.</td><td>MCP is on</td></tr>
+  <tr><td><code>send_dashboards</code></td><td>Subscribe people to a dashboard on a schedule, and send one to Slack.</td><td>Rendering is on</td></tr>
+</table>
+<p>A permission this install cannot honour is not offered at all, rather than granted and inert. With
+streams switched off in the chart there is no streams permission to give anybody, and with MCP off there is
+no catalog permission — because a permission that does nothing is worse than no permission.</p>
 
 <h2 id="uploads">What happens to uploaded files</h2>
 <p>An uploaded file is <strong>the only copy there is</strong>. A query result can be fetched from the
