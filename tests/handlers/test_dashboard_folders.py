@@ -233,3 +233,36 @@ class TestFilteringTheList(FolderTestCase):
         rv = self.make_request("get", "/api/dashboards")
 
         self.assertEqual(2, rv.json["count"])
+
+
+class TestTheFolderModelDidNotStealAnything(BaseTestCase):
+    """
+    `@gfk_type` registers a class for generic foreign keys -- favourites, API
+    keys, change records all find a dashboard through it. Adding the folder
+    model in front of `Dashboard` took its decorator, because a decorator sits
+    above the class it belongs to and an insertion there is invisible.
+
+    Nothing failed loudly. Favouriting a dashboard just stopped resolving.
+    """
+
+    def test_a_dashboard_is_still_registered_for_generic_keys(self):
+        from sqldesk.models.base import _gfk_types
+
+        self.assertIn("dashboards", _gfk_types)
+        self.assertIs(models.Dashboard, _gfk_types["dashboards"])
+
+    def test_and_a_folder_is_not(self):
+        # It is nobody's generic target: nothing favourites a folder.
+        from sqldesk.models.base import _gfk_types
+
+        self.assertNotIn("dashboard_folders", _gfk_types)
+
+    def test_favouriting_a_dashboard_still_finds_it(self):
+        # The thing that quietly broke.
+        dashboard = self.factory.create_dashboard()
+        db.session.commit()
+
+        rv = self.make_request("post", "/api/dashboards/{}/favorite".format(dashboard.id))
+
+        self.assertEqual(200, rv.status_code)
+        self.assertEqual(1, models.Favorite.query.count())

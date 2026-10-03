@@ -34,6 +34,20 @@ MANAGE_LIVE_PERMISSION = "manage_live_dashboards"
 # Seconds between server-side refreshes a dashboard can be set to.
 LIVE_INTERVALS = (30, 60, 120, 300)
 
+#: And for a dashboard made of streams. Seconds, because a window measured in
+#: minutes redrawn every half-minute is a chart somebody is reading late --
+#: and nothing here touches a warehouse, so the cost of asking often is a
+#: DuckDB aggregate over a few hundred thousand rows, measured at seven
+#: milliseconds. Nothing longer than two minutes: a stream nobody looks at for
+#: two minutes is one that has paused anyway.
+STREAM_LIVE_INTERVALS = (2, 5, 10, 20, 30, 60, 120)
+
+
+def intervals_for(dashboard):
+    """Which refresh intervals this dashboard may be set to."""
+    return STREAM_LIVE_INTERVALS if dashboard.is_streaming else LIVE_INTERVALS
+
+
 # A viewer who has not checked in for this long is no longer watching.
 # Viewers check in every CHECK_IN_SECONDS, so this allows two misses.
 CHECK_IN_SECONDS = 15
@@ -62,7 +76,11 @@ def live_settings(dashboard):
     if not live or not isinstance(live, dict):
         return None
     interval = live.get("interval")
-    if interval not in LIVE_INTERVALS:
+    # Either set is acceptable here. What a dashboard may be *set* to depends
+    # on what is on it; what it already is should keep working even if a widget
+    # changed underneath it, because the alternative is a board that silently
+    # stops refreshing when somebody edits a query.
+    if interval not in LIVE_INTERVALS and interval not in STREAM_LIVE_INTERVALS:
         return None
     return live
 

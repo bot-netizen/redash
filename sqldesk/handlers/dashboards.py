@@ -64,6 +64,25 @@ class DashboardListResource(BaseResource):
 
         results = filter_by_tags(results, models.Dashboard.tags)
 
+        # `?kind=streaming` for the dashboards made of streams, `?kind=saved`
+        # for the rest. Derived from what is on them rather than from a label
+        # somebody has to remember to set -- an EXISTS over the widgets, so it
+        # cannot be stale and costs one subquery rather than a walk.
+        kind = request.args.get("kind")
+        if kind in ("streaming", "saved"):
+            on_a_stream = (
+                models.db.session.query(models.Widget.dashboard_id)
+                .join(models.Visualization, models.Widget.visualization_id == models.Visualization.id)
+                .join(models.Query, models.Visualization.query_id == models.Query.id)
+                .join(models.DataSource, models.Query.data_source_id == models.DataSource.id)
+                .filter(models.DataSource.type.in_(models.streaming_source_types()))
+                .subquery()
+            )
+            if kind == "streaming":
+                results = results.filter(models.Dashboard.id.in_(on_a_stream))
+            else:
+                results = results.filter(~models.Dashboard.id.in_(on_a_stream))
+
         # `?folder=N` for one folder, `?folder=none` for the ones nobody has
         # filed. Absent means all of them, which is what the tab does by
         # default and what it did before folders existed.
@@ -349,11 +368,14 @@ class DashboardLiveResource(BaseResource):
             if interval is None:
                 wanted = None
                 actions.append("live_off")
-            elif interval in live.LIVE_INTERVALS:
+            elif interval in live.intervals_for(dashboard):
                 wanted = {**(wanted or {"paused": False}), "interval": interval}
                 actions.append("live_on" if current is None else "live_interval")
             else:
-                offered = ", ".join(map(str, live.LIVE_INTERVALS))
+                # A streaming dashboard is offered seconds and an ordinary one
+                # half-minutes, because the cost of asking often is a DuckDB
+                # aggregate in one case and a warehouse query in the other.
+                offered = ", ".join(map(str, live.intervals_for(dashboard)))
                 abort(400, message="Interval must be one of {} seconds.".format(offered))
 
         if "paused" in body:

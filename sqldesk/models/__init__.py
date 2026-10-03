@@ -1445,7 +1445,6 @@ def generate_slug(ctx):
     return slug
 
 
-@gfk_type
 @generic_repr("id", "name", "org_id", "locked")
 class DashboardFolder(TimestampMixin, BelongsToOrgMixin, db.Model):
     """
@@ -1507,6 +1506,7 @@ class DashboardFolder(TimestampMixin, BelongsToOrgMixin, db.Model):
         }
 
 
+@gfk_type
 @generic_repr("id", "name", "slug", "user_id", "org_id", "version", "is_archived", "is_draft")
 class Dashboard(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model):
     id = primary_key("Dashboard")
@@ -1546,6 +1546,24 @@ class Dashboard(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model
     def is_locked(self):
         """Whether only an administrator may change this dashboard."""
         return bool(self.folder is not None and self.folder.locked)
+
+    @property
+    def is_streaming(self):
+        """
+        Whether this dashboard is made of streams.
+
+        Derived from what is on it rather than ticked by somebody. A label is
+        something a person has to remember to set, and the one that gets
+        forgotten is the one somebody is looking for at two in the morning;
+        this cannot be wrong.
+
+        A dashboard is one kind or the other, never both -- see
+        `handlers/widgets.py` for why: a dashboard has a single refresh
+        interval, and a stream wants seconds where a warehouse query wants
+        half a minute. Mixing them means either hammering the warehouse or
+        showing a stale stream.
+        """
+        return any(_widget_is_streaming(widget) for widget in self.widgets)
 
     __tablename__ = "dashboards"
     __mapper_args__ = {"version_id_col": version}
@@ -2793,3 +2811,23 @@ def init_db():
     # XXX remove after fixing User.group_ids
     db.session.commit()
     return default_org, admin_group, default_group
+
+
+def streaming_source_types():
+    """
+    The data source types whose tables are windows rather than tables.
+
+    Asked of the registered runners rather than hard-coded, so a second
+    streaming connector needs no second list to be remembered.
+    """
+    from sqldesk.query_runner import query_runners
+
+    return [name for name, runner in query_runners.items() if getattr(runner, "streams_only", False)] or ["__none__"]
+
+
+def _widget_is_streaming(widget):
+    """Whether a widget draws on a stream. A textbox draws on nothing."""
+    visualization = getattr(widget, "visualization", None)
+    query = getattr(visualization, "query_rel", None)
+    source = getattr(query, "data_source", None)
+    return bool(source is not None and source.streams_only)

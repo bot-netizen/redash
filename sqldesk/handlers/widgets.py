@@ -1,4 +1,5 @@
 from flask import request
+from flask_restful import abort
 
 from sqldesk import models
 from sqldesk.handlers.base import BaseResource
@@ -9,6 +10,43 @@ from sqldesk.permissions import (
     view_only,
 )
 from sqldesk.serializers import serialize_widget
+
+
+def _refuse_to_mix(dashboard, visualization):
+    """
+    A dashboard is a streaming one or an ordinary one, never both.
+
+    Not tidiness. A dashboard has a **single refresh interval**: a stream panel
+    wants two seconds and a warehouse panel wants thirty or more. Mix them and
+    the choice is between running every warehouse query behind the board every
+    two seconds -- a dashboard that quietly hammers a warehouse all day -- and
+    showing a stream that is half a minute stale, which is the one thing a
+    stream exists not to be.
+
+    A textbox belongs on either.
+    """
+    from sqldesk.models import _widget_is_streaming
+
+    if visualization is None:
+        return
+
+    source = getattr(visualization.query_rel, "data_source", None)
+    adding = bool(source is not None and source.streams_only)
+    existing = [widget for widget in dashboard.widgets if widget.visualization_id]
+    if not existing:
+        return
+    already = any(_widget_is_streaming(widget) for widget in existing)
+    if already == adding:
+        return
+
+    abort(
+        400,
+        message=(
+            "A dashboard shows streams or saved queries, not both. A dashboard has one refresh "
+            "interval, and a stream needs seconds where a query needs half a minute. Put this on "
+            "a dashboard of its own."
+        ),
+    )
 
 
 class WidgetListResource(BaseResource):
@@ -37,6 +75,8 @@ class WidgetListResource(BaseResource):
             require_access(visualization.query_rel, self.current_user, view_only)
         else:
             visualization = None
+
+        _refuse_to_mix(dashboard, visualization)
 
         widget_properties["visualization"] = visualization
 

@@ -299,6 +299,10 @@ def serialize_dashboard(obj, with_widgets=False, user=None, with_favorite_state=
         # offer; this is for saying *why* it cannot.
         "folder_id": obj.folder_id,
         "folder": obj.folder.to_dict() if obj.folder else None,
+        # Derived from what is on it: a streaming dashboard is one whose
+        # widgets draw on windows. The page needs it to know which refresh
+        # intervals to offer and what to say when nothing is watching.
+        "is_streaming": obj.is_streaming,
     }
 
     return d
