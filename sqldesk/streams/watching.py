@@ -81,6 +81,38 @@ def watchers(stream_id, now=None):
         return 0
 
 
+def being_watched(now=None):
+    """
+    The ids of every stream somebody is checking in on.
+
+    The supervisor needs this because the two signals are not the same. A
+    check-in lives in Redis and lasts 45 seconds; `last_viewed_at` is a
+    database column written at most once a minute. A stream somebody started
+    watching a moment ago has the first and not necessarily the second, and a
+    supervisor that only read the second would not start it -- which is a
+    person pressing Start streaming and nothing happening.
+
+    One SCAN a minute over a handful of keys, rather than a column that would
+    have to be written by every viewer on every check-in.
+    """
+    now = now or time.time()
+    found = set()
+    try:
+        for key in redis_connection.scan_iter(match=_key("*")):
+            name = key.decode("utf-8") if isinstance(key, bytes) else key
+            stream_id = name.rsplit(":", 1)[-1]
+            try:
+                if redis_connection.zcount(name, now - settings.STREAM_WATCH_SECONDS, "+inf"):
+                    found.add(int(stream_id))
+            except (TypeError, ValueError):
+                continue
+    except Exception:
+        # Say nobody. A stream that is not started is a chart somebody can
+        # start; a crash here would stop the supervisor doing anything at all.
+        logger.warning("could not ask who is watching", exc_info=True)
+    return found
+
+
 def state(stream, now=None):
     """Which of the three a stream is in."""
     if watchers(stream.id):

@@ -47,12 +47,22 @@ def active_streams(now=None):
     than one per stream: a hundred streams checked individually is a hundred
     round trips a minute for an answer that is mostly "no".
     """
+    from sqldesk.streams import watching
+
     cutoff = (now or utcnow()) - datetime.timedelta(minutes=settings.STREAM_ACTIVE_MINUTES)
+    # Three ways a stream earns a consumer, and the third is the one that
+    # matters most: somebody is checking in on it *now*. That signal lives in
+    # Redis and lasts 45 seconds, where `last_viewed_at` is a column written at
+    # most once a minute -- so a stream somebody has just started watching has
+    # the check-in and not necessarily the column, and a supervisor reading
+    # only the column would leave them pressing a button that does nothing.
+    watched = watching.being_watched()
     return (
         models.Stream.query.filter(
             models.db.or_(
                 models.Stream.pinned.is_(True),
                 models.Stream.last_viewed_at >= cutoff,
+                models.Stream.id.in_(watched) if watched else models.db.false(),
             )
         )
         .order_by(models.Stream.id)

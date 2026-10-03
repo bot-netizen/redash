@@ -112,3 +112,50 @@ class TestTheThreeStates(WatchingTestCase):
             self.assertEqual(watching.PAUSED, watching.state(stream))
         with mock.patch("sqldesk.settings.STREAM_COLD_MINUTES", 2):
             self.assertEqual(watching.COLD, watching.state(stream))
+
+
+class TestTheSupervisorSeesCurrentWatchers(WatchingTestCase):
+    """
+    The two signals are not the same, and the supervisor needs both.
+
+    A check-in lives in Redis and lasts 45 seconds; `last_viewed_at` is a
+    column written at most once a minute. A stream somebody started watching a
+    moment ago has the first and not necessarily the second -- and a supervisor
+    reading only the column leaves them pressing Start streaming and nothing
+    happening, which is exactly what it did.
+    """
+
+    def test_a_stream_being_watched_now_is_a_candidate(self):
+        from sqldesk.streams import activity
+
+        stream = self.stream(last_viewed_at=utcnow() - datetime.timedelta(hours=5))
+        watching.check_in(stream.id, "ada")
+
+        self.assertIn(stream.id, [one.id for one in activity.active_streams()])
+
+    def test_one_nobody_is_watching_is_not(self):
+        from sqldesk.streams import activity
+
+        self.stream(last_viewed_at=utcnow() - datetime.timedelta(hours=5))
+
+        self.assertEqual([], activity.active_streams())
+
+    def test_being_watched_lists_only_recent_check_ins(self):
+        fresh = self.stream()
+        stale = self.stream()
+        watching.check_in(fresh.id, "ada")
+        watching.check_in(stale.id, "ada", now=time.time() - 300)
+
+        found = watching.being_watched()
+
+        self.assertIn(fresh.id, found)
+        self.assertNotIn(stale.id, found)
+
+    def test_and_the_old_column_still_counts_on_its_own(self):
+        # A stream seen a minute ago with nobody checking in right now is
+        # paused, not cold, and the supervisor still considers it.
+        from sqldesk.streams import activity
+
+        stream = self.stream(last_viewed_at=utcnow() - datetime.timedelta(seconds=30))
+
+        self.assertIn(stream.id, [one.id for one in activity.active_streams()])
