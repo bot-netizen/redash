@@ -84,7 +84,11 @@ class StreamListResource(BaseResource):
                     "last_flush_at": stream.last_flush_at,
                 }
                 for stream in streams
-            ]
+            ],
+            # The slot count, which used to live on a page of its own. An
+            # administrator looking at why a stream will not start needs the
+            # limit beside the list of what is holding it, not a tab away.
+            "slots": _slots(),
         }
 
 
@@ -405,6 +409,22 @@ def _stream_dict(stream, source_name=None):
     }
 
 
+def _slots():
+    """
+    How much room is left, in the one shape both callers want.
+
+    A slot is a *topic*, not a viewer: everybody watching one topic shares one
+    consumer and takes one slot between them, which is why this number can look
+    small next to the number of people using it.
+    """
+    return {
+        "used": len(slots.held()),
+        "limit": settings.STREAM_MAX_CONCURRENT,
+        "per_user": settings.STREAM_MAX_PER_USER,
+        "minutes": settings.STREAM_MAX_MINUTES,
+    }
+
+
 class RunningStreamsResource(BaseResource):
     """
     What is consuming right now, and how much room is left.
@@ -415,7 +435,6 @@ class RunningStreamsResource(BaseResource):
     """
 
     def get(self):
-        taken = slots.held()
         streams = models.Stream.query.filter(models.Stream.org == self.current_org).order_by(models.Stream.topic).all()
         names = dict(
             models.db.session.query(models.DataSource.id, models.DataSource.name).filter(
@@ -425,12 +444,7 @@ class RunningStreamsResource(BaseResource):
         running = [_stream_dict(stream, names.get(stream.data_source_id)) for stream in streams]
         return {
             "streams": [one for one in running if one["state"] != watching.COLD],
-            "slots": {
-                "used": len(taken),
-                "limit": settings.STREAM_MAX_CONCURRENT,
-                "per_user": settings.STREAM_MAX_PER_USER,
-                "minutes": settings.STREAM_MAX_MINUTES,
-            },
+            "slots": _slots(),
         }
 
 

@@ -56,3 +56,40 @@
     align-self: center;
   }
 }
+
+/*
+  A streaming dashboard, told apart from an ordinary one.
+
+  The same teal and the same left-hand band as the stream editor
+  (`pages/queries/queries.less`), because they are two views of the same kind
+  of thing and somebody who learns the signal on one should not have to learn
+  it again on the other.
+
+  `Live` is deliberately not this signal: an ordinary dashboard can be live,
+  and `LiveBadge` says so. This says what the dashboard *is*; the badge says
+  what it is doing.
+*/
+.dashboard-streaming {
+  border-left: 3px solid fade(#0a7c93, 55%);
+  padding-left: 12px;
+}
+
+// While the topics are actually being consumed.
+.dashboard-streaming-running {
+  border-left-color: #52c41a;
+}
+
+.dashboard-streaming-chip {
+  margin-left: 10px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #0a7c93;
+  background: fade(#0a7c93, 10%);
+  vertical-align: middle;
+  // Never the thing that wraps: the title shortens first.
+  white-space: nowrap;
+}

@@ -1,4 +1,5 @@
 import settingsMenu from "@/services/settingsMenu";
+import { currentUser } from "@/services/auth";
 
 /*
   The tabs across the top of the settings screen, and the Settings link in the
@@ -18,7 +19,33 @@ settingsMenu.add("DataSources.List", {
   permission: "admin",
   title: "Data Sources",
   path: "data_sources",
+  // `/data_sources/streaming` is the tab below, and this prefix would claim it
+  // -- `getActiveItem` takes the first entry that matches and this one is
+  // first. The same exception Users makes for `/users/me`.
+  isActive: (path) => path.startsWith("/data_sources") && !path.startsWith("/data_sources/streaming"),
   order: 1,
+});
+
+/*
+  Beside Data Sources, because that is what it configures.
+
+  A Kafka cluster is a data source like any other and is added on the page
+  next to this one; this is where its topics are turned into tables somebody
+  can query, and where each one's row budget and events-per-second ceiling are
+  set. Both pages say which is which, because two tabs with "Data Sources" in
+  their names is otherwise an invitation to add a cluster on the wrong one.
+
+  `isAvailable` rather than `permission`: `manage_streams` is a feature an
+  administrator grants to a group, and `currentUser.can` is what knows both
+  whether this install offers streams at all and whether this person was
+  granted them. The `permission` field only understands `hasPermission`, which
+  would show the tab on an install that ships with streams switched off.
+*/
+settingsMenu.add("Streams.Topics", {
+  title: "Streaming Data Sources",
+  path: "data_sources/streaming",
+  order: 1.5,
+  isAvailable: () => currentUser.can("manage_streams"),
 });
 
 settingsMenu.add("Users.List", {

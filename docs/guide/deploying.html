@@ -97,9 +97,9 @@ an image of its own is the renderer.</p>
 <div class="note">
   <div class="note-h">A permission nobody can use is worse than no permission</div>
   <p><code>streams.enabled</code> tells the application as well as the cluster. With it off, the Streams
-  permissions are not offered to any group and the Kafka Streams menu is not drawn &mdash; rather than
-  leading somebody to pages that quietly never fill, because nothing is taking from the
-  <code>streams</code> queue.</p>
+  permissions are not offered to any group, the streaming halves of the Queries and Dashboards menus are
+  not drawn, and neither is the Settings tab &mdash; rather than leading somebody to pages that quietly
+  never fill, because nothing is taking from the <code>streams</code> queue.</p>
 </div>
 <p>Mailpit and the demo warehouse in the development compose file are for developing SQLDesk, not for running
 it, and appear in neither of the files below.</p>
@@ -119,7 +119,8 @@ COMPOSE_PROFILES=mcp</code></pre>
 
 <h3 id="streams">Streams</h3>
 <p>Kafka topics you can query &mdash; see the <a href="streams.html">Streams guide</a>. One switch turns on
-the consumers, the Streams permissions and the Kafka Streams menu.</p>
+the consumers, the Streams permissions, the streaming halves of the Queries and Dashboards menus, and
+<strong>Settings &rarr; Streaming Data Sources</strong>.</p>
 <pre><code>helm upgrade --install sqldesk ./charts/sqldesk --set streams.enabled=true</code></pre>
 <p>Two settings have to agree, and the lower of them wins. <code>streams.worker.workersCount</code> is how
 many processes exist; <code>SQLDESK_STREAM_MAX_CONCURRENT</code> is how many topics may consume at once. A

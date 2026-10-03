@@ -65,6 +65,7 @@ function rate(events) {
 
 export default function StreamStatus({ dataSource, query, streaming, startedAt, note, error }) {
   const [streams, setStreams] = useState([]);
+  const [slots, setSlots] = useState(null);
   const [now, setNow] = useState(Date.now());
   const dataSourceId = dataSource && dataSource.id;
 
@@ -79,21 +80,41 @@ export default function StreamStatus({ dataSource, query, streaming, startedAt, 
     return () => clearInterval(timer);
   }, [startedAt]);
 
+  /*
+    Asked once either way, and then repeatedly only while something is running.
+
+    The repeated ask is about this query's topics, which only move while it is
+    consuming -- a timer for a stream nobody started is a request per viewer
+    per tab for an answer that will not change. The single ask is about the
+    slots, and that *is* worth knowing before pressing Start: it is the
+    difference between a button that does nothing and a button that does
+    nothing because all five slots are taken by somebody else.
+  */
   useEffect(() => {
-    if (!streaming) {
-      // Not running: nothing to ask about, and whatever was on screen is now
-      // describing a stream this page stopped. Clearing it is what stops the
-      // strip insisting "consuming" at somebody who has just pressed Stop.
-      setStreams([]);
-      return undefined;
-    }
     let live = true;
+    if (!streaming) {
+      // Whatever was on screen describes a stream this page has stopped.
+      // Clearing it is what stops the strip insisting "consuming" at somebody
+      // who has just pressed Stop.
+      setStreams([]);
+    }
     const ask = () =>
       axios
         .get("api/streams/running")
-        .then((data) => live && setStreams((data && data.streams) || []))
+        .then((data) => {
+          if (!live) {
+            return;
+          }
+          setSlots((data && data.slots) || null);
+          setStreams(streaming ? (data && data.streams) || [] : []);
+        })
         .catch(() => {});
     ask();
+    if (!streaming) {
+      return () => {
+        live = false;
+      };
+    }
     const timer = setInterval(ask, EVERY_MS);
     return () => {
       live = false;
@@ -112,9 +133,26 @@ export default function StreamStatus({ dataSource, query, streaming, startedAt, 
   const stream = streaming ? find(mine, (one) => one.state === "running") || mine[0] : null;
 
   if (!stream) {
+    /*
+      Why Start may do nothing.
+
+      A slot is a topic, not a viewer: everybody watching one topic shares one
+      consumer and one slot between them. The count used to be on a page of its
+      own that nobody visited until it bit them -- and then it was two clicks
+      away from the button that would not work. Said here only when it is full,
+      because "3 of 5" is noise beside a button that is going to work.
+    */
+    const full = slots && slots.limit && slots.used >= slots.limit;
     return (
       <span className="stream-status stream-status-idle" data-test="StreamStatus">
         <Tag>not streaming</Tag>
+        {full && (
+          <Tooltip title="A slot is a topic, not a viewer. One frees up a minute after the last person stops watching it, or when a stream reaches its time limit.">
+            <Tag color="orange" data-test="StreamSlotsFull">
+              all {slots.limit} stream slots in use
+            </Tag>
+          </Tooltip>
+        )}
       </span>
     );
   }

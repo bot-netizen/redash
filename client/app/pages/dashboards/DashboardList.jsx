@@ -31,26 +31,33 @@ import DashboardListEmptyState from "./components/DashboardListEmptyState";
 
 import "./dashboard-list.css";
 
-const sidebarMenu = [
-  {
-    key: "all",
-    href: "dashboards",
-    title: "All",
-    icon: () => <Sidebar.MenuIcon icon="zmdi zmdi-view-quilt" />,
-  },
-  {
-    key: "favorites",
-    href: "dashboards/favorites",
-    title: "Favorites",
-    icon: () => <Sidebar.MenuIcon icon="fa fa-star" />,
-  },
-  {
-    key: "my",
-    href: "dashboards/my",
-    title: "Mine",
-    icon: () => <Sidebar.ProfileImage user={currentUser} />,
-  },
+/*
+  The three views, in whichever half of the list you are in.
+
+  Streaming dashboards and ordinary ones are two halves of one set -- a
+  dashboard is in exactly one, because it shows streams or saved queries and
+  never both. The views repeat inside each half, so "my streaming dashboards"
+  is Mine reached from the streaming half and has one home.
+
+  No Archived, here or in the ordinary half: archiving a dashboard hides it
+  everywhere and there has never been a list of what was hidden. A real gap,
+  and a different one -- see plan/0.8-plan.md.
+*/
+const VIEWS = [
+  { key: "all", title: "All", icon: () => <Sidebar.MenuIcon icon="zmdi zmdi-view-quilt" /> },
+  { key: "favorites", title: "Favorites", icon: () => <Sidebar.MenuIcon icon="fa fa-star" /> },
+  { key: "my", title: "Mine", icon: () => <Sidebar.ProfileImage user={currentUser} /> },
 ];
+
+export const STREAMING_BASE = "dashboards/streaming";
+
+export function viewsFor(kind) {
+  const base = kind === "streaming" ? STREAMING_BASE : "dashboards";
+  return VIEWS.map((view) => ({
+    ...view,
+    href: view.key === "all" ? base : `${base}/${view.key}`,
+  }));
+}
 
 // Factory, not a constant: the actions column needs the controller to
 // refresh the list after an archive.
@@ -136,6 +143,7 @@ function DashboardListExtraActions(props) {
 function DashboardList({ controller }) {
   const controllerRef = useRef();
   controllerRef.current = controller;
+  const streaming = controller.params.kind === "streaming";
 
   let usedListColumns = useMemo(() => getListColumns(controllerRef), []);
   if (controller.params.currentPage === "favorites") {
@@ -164,7 +172,9 @@ function DashboardList({ controller }) {
   } = useItemsListExtraActions(controller, usedListColumns, DashboardListExtraActions);
 
   const sourceSubtitle = controller.isLoaded
-    ? `${controller.totalItemsCount} ${controller.totalItemsCount === 1 ? "dashboard" : "dashboards"}`
+    ? `${controller.totalItemsCount} ${streaming ? "streaming " : ""}${
+        controller.totalItemsCount === 1 ? "dashboard" : "dashboards"
+      }`
     : "Loading…";
 
   return (
@@ -179,14 +189,21 @@ function DashboardList({ controller }) {
           />
           <ColumnsControl columns={allListColumns} hidden={hiddenColumns} onToggle={toggleColumn} />
           {currentUser.hasPermission("create_dashboard") && (
-            <Button type="primary" onClick={() => CreateDashboardDialog.showModal()}>
+            <Button type="primary" onClick={() => CreateDashboardDialog.showModal({ kind: controller.params.kind })}>
               <i className="fa fa-plus m-r-5" aria-hidden="true" />
-              New dashboard
+              {streaming ? "New streaming dashboard" : "New dashboard"}
             </Button>
           )}
         </Header>
 
-        <ViewTabs items={sidebarMenu} selected={controller.params.currentPage} ariaLabel="Dashboard views" />
+        {/* A folder matches none of the three, on purpose: it holds both kinds,
+            so it is a place rather than a view, and none of them is the one
+            you are looking at. The row is still here as the way back. */}
+        <ViewTabs
+          items={viewsFor(controller.params.kind)}
+          selected={controller.params.currentPage}
+          ariaLabel="Dashboard views"
+        />
 
         <TagChips
           tagsUrl="api/dashboards/tags"
@@ -244,24 +261,24 @@ const DashboardListPage = itemsList(
   DashboardList,
   () =>
     new ResourceItemsSource({
-      getResource({ params: { currentPage, folderId } }) {
-        if (currentPage === "streaming") {
-          // The same list, filtered. Not a second page: two lists of
-          // dashboards drift, and "where is my dashboard" gets two answers --
-          // which is the problem folders were meant to solve.
-          return (request) => Dashboard.query({ ...request, kind: "streaming" });
-        }
+      getResource({ params: { currentPage, kind, folderId } }) {
         if (currentPage === "folder") {
-          // One folder's dashboards. The same list endpoint with `?folder=`,
-          // so searching, tags, ordering and paging work here exactly as they
-          // do everywhere else rather than being reimplemented for folders.
+          // One folder's dashboards, both kinds. The same list endpoint with
+          // `?folder=`, so searching, tags, ordering and paging work here
+          // exactly as they do everywhere else rather than being
+          // reimplemented for folders. No `kind`: a folder is a place, and
+          // the one list where the two halves meet.
           return (request) => Dashboard.query({ ...request, folder: folderId });
         }
-        return {
+        const resource = {
           all: Dashboard.query.bind(Dashboard),
           my: Dashboard.myDashboards.bind(Dashboard),
           favorites: Dashboard.favorites.bind(Dashboard),
         }[currentPage];
+        // On all three, not just the unfiltered one. `kind` used to ride on
+        // All alone, so Mine and Favorites quietly showed both kinds and
+        // which half you saw depended on the tab you had clicked.
+        return (request) => resource({ ...request, kind });
       },
       getItemProcessor() {
         return (item) => new Dashboard(item);
@@ -275,7 +292,7 @@ routes.register(
   routeWithUserSession({
     path: "/dashboards",
     title: "Dashboards",
-    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="all" />,
+    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="all" kind="saved" />,
   })
 );
 routes.register(
@@ -283,7 +300,9 @@ routes.register(
   routeWithUserSession({
     path: "/dashboards/favorites",
     title: "Favorite Dashboards",
-    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="favorites" orderByField="starred_at" />,
+    render: (pageProps) => (
+      <DashboardListPage {...pageProps} currentPage="favorites" kind="saved" orderByField="starred_at" />
+    ),
   })
 );
 routes.register(
@@ -291,15 +310,36 @@ routes.register(
   routeWithUserSession({
     path: "/dashboards/my",
     title: "My Dashboards",
-    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="my" />,
+    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="my" kind="saved" />,
   })
 );
+
+// The streaming half: the same page and the same views, against the other
+// half of the set.
 routes.register(
   "Dashboards.Streaming",
   routeWithUserSession({
     path: "/dashboards/streaming",
-    title: "Streaming dashboards",
-    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="streaming" />,
+    title: "Streaming Dashboards",
+    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="all" kind="streaming" />,
+  })
+);
+routes.register(
+  "Dashboards.StreamingFavorites",
+  routeWithUserSession({
+    path: "/dashboards/streaming/favorites",
+    title: "Favorite Streaming Dashboards",
+    render: (pageProps) => (
+      <DashboardListPage {...pageProps} currentPage="favorites" kind="streaming" orderByField="starred_at" />
+    ),
+  })
+);
+routes.register(
+  "Dashboards.StreamingMy",
+  routeWithUserSession({
+    path: "/dashboards/streaming/my",
+    title: "My Streaming Dashboards",
+    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="my" kind="streaming" />,
   })
 );
 routes.register(

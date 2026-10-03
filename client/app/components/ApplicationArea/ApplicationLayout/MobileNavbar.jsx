@@ -47,23 +47,22 @@ export default function MobileNavbar({ getPopupContainer }) {
                   <Link href="queries">Queries</Link>
                 </Menu.Item>
               )}
+              {/*
+                The streaming halves of those two lists, flat rather than
+                nested: a submenu inside a dropdown on a phone is a target
+                nobody hits. Both are the second half of a set whose first
+                half is directly above, so they read in place without a
+                heading to group them.
+              */}
               {canUseStreams && (
-                <Menu.ItemGroup key="streams" title="Kafka Streams">
-                  <Menu.Item key="streams-query">
-                    <Link href="streams/query">Streaming Query</Link>
-                  </Menu.Item>
-                  <Menu.Item key="streams-dashboards">
-                    <Link href="dashboards/streaming">Streaming Dashboards</Link>
-                  </Menu.Item>
-                  <Menu.Item key="streams-running">
-                    <Link href="streams/running">Running Streams</Link>
-                  </Menu.Item>
-                  {currentUser.can("manage_streams") && (
-                    <Menu.Item key="streams-topics">
-                      <Link href="streams/topics">Manage Topics</Link>
-                    </Menu.Item>
-                  )}
-                </Menu.ItemGroup>
+                <Menu.Item key="queries-streaming">
+                  <Link href="queries/streaming">Streaming Queries</Link>
+                </Menu.Item>
+              )}
+              {canUseStreams && (
+                <Menu.Item key="dashboards-streaming">
+                  <Link href="dashboards/streaming">Streaming Dashboards</Link>
+                </Menu.Item>
               )}
               {currentUser.can("manage_catalog") && (
                 <Menu.Item key="catalog">

@@ -12,6 +12,7 @@ import Parameters from "@/components/Parameters";
 import DynamicComponent from "@/components/DynamicComponent";
 import PlainButton from "@/components/PlainButton";
 
+import navigateTo from "@/components/ApplicationArea/navigateTo";
 import DataSource from "@/services/data-source";
 import { ExecutionStatus } from "@/services/query-result";
 import { policy } from "@/services/policy";
@@ -236,6 +237,36 @@ function QueryView(props) {
 
 QueryView.propTypes = { query: PropTypes.object.isRequired }; // eslint-disable-line react/forbid-prop-types
 
-const QueryViewPage = wrapQueryPage(QueryView);
+/*
+  A streaming query has no view page.
+
+  This page shows a stored result and offers to re-run it. A streaming query
+  stores nothing -- the window is what a consumer saw while somebody was
+  watching -- so there is nothing here to show, and the Execute path it would
+  reach for would enqueue a warehouse job against a broker.
+
+  Links go straight to the editor now (`Query#getUrl`). This is for the ones
+  already in somebody's history, and it is a wrapper rather than an early
+  return inside `QueryView` so that none of that page's hooks -- including the
+  one that would execute -- ever run for a stream.
+*/
+function QueryViewOrEditor({ query, ...props }) {
+  const streaming = !!query.is_streaming;
+
+  useEffect(() => {
+    if (streaming) {
+      navigateTo(query.getUrl(), true);
+    }
+  }, [streaming, query]);
+
+  if (streaming) {
+    return null;
+  }
+  return <QueryView query={query} {...props} />;
+}
+
+QueryViewOrEditor.propTypes = { query: PropTypes.object.isRequired }; // eslint-disable-line react/forbid-prop-types
+
+const QueryViewPage = wrapQueryPage(QueryViewOrEditor);
 
 export default QueryViewPage;

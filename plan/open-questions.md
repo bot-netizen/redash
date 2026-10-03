@@ -21,11 +21,18 @@ Delete an entry when it is answered, and write the answer where the work is.
 - **A dashboard shows streams or saved queries, never both**, because a
   dashboard has one refresh interval. Streaming ones are offered seconds:
   2, 5, 10, 20, 30, 60, 120 — no hours, no days.
-- **Running Streams stayed in the Kafka Streams menu** as a fourth item,
-  although the list Iqbal gave had three. Removing it would hide the page from
-  anyone who is not an administrator. Flagged, not yet confirmed.
-- **MCP stayed in the Admin menu** for the same reason — it was not on the
-  list, and dropping it makes the page unreachable.
+- **Running Streams is folded into Admin → Streaming Queries**, answered
+  2026-10-03. The page was readable by everybody on purpose, so the slot count
+  moves to the stream editor's status strip rather than disappearing behind
+  Admin. See [0.7-nav.md](0.7-nav.md).
+- **The nav is restructured for 0.7**: no vendor name in the bar, streaming
+  becomes a half of Queries and of Dashboards rather than a section of its
+  own, and `Streaming` is the kind while `Live` stays the refresh state.
+  Recorded in [0.7-nav.md](0.7-nav.md).
+- **"Streaming Data Sources"** is the name of the topics page under Settings,
+  over a recommendation of "Streaming Tables".
+- **MCP stayed in the Admin menu** because it was not on the list Iqbal gave,
+  and dropping it makes the page unreachable.
 - **`main` has not had 0.6 merged into it.** Offered; the answer was to carry
   on, so it waits for 0.7.
 

@@ -50,6 +50,23 @@ function DashboardPageTitle({ dashboardConfiguration }) {
             ignoreBlanks
           />
         </h3>
+        {/*
+          What this dashboard is, beside its name. The badge to the right says
+          what it is *doing* -- live, or paused -- and the two are different
+          questions: an ordinary dashboard can be live too, so "live" has never
+          meant "fed by a stream". A chart standing still is read very
+          differently depending on which of them you are looking at.
+        */}
+        {dashboard.is_streaming && (
+          <Tooltip
+            title="Fed by streaming queries. It refreshes in seconds while somebody is watching, and pauses when nobody is."
+            placement="bottom"
+          >
+            <span className="dashboard-streaming-chip" data-test="StreamingChip">
+              streaming
+            </span>
+          </Tooltip>
+        )}
         <Tooltip title={dashboard.user.name} placement="bottom">
           <img src={dashboard.user.profile_image_url} className="profile-image" alt={dashboard.user.name} />
         </Tooltip>

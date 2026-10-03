@@ -106,7 +106,22 @@ function DashboardComponent(props) {
   }, [pageContainer, editingLayout]);
 
   return (
-    <div className="container" ref={setPageContainer} data-test={`DashboardId${dashboard.id}Container`}>
+    /*
+      The band down the left says what this dashboard is on every screenful,
+      including the ones a chip in the header has scrolled off. It goes green
+      while the topics are actually being consumed, which is the same language
+      the stream editor uses -- the difference between "this is a streaming
+      dashboard" and "this streaming dashboard is running" is the one people
+      actually need at a glance.
+    */
+    <div
+      className={cx("container", {
+        "dashboard-streaming": dashboard.is_streaming,
+        "dashboard-streaming-running": dashboard.is_streaming && live && !live.paused,
+      })}
+      ref={setPageContainer}
+      data-test={`DashboardId${dashboard.id}Container`}
+    >
       <DashboardHeader
         dashboardConfiguration={dashboardConfiguration}
         onParametersEdit={onParametersEdit}

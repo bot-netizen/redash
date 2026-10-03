@@ -24,29 +24,34 @@ def _refuse_to_mix(dashboard, visualization):
     stream exists not to be.
 
     A textbox belongs on either.
-    """
-    from sqldesk.models import _widget_is_streaming
 
+    Measured against the dashboard's declared `kind` rather than against
+    whatever happens to be on it already. The old rule let the first widget
+    decide, which meant the refusal could only ever arrive at the *second* one
+    -- after somebody had built half a board. Now an empty dashboard already
+    knows what it is, and the message can say so.
+    """
     if visualization is None:
         return
 
     source = getattr(visualization.query_rel, "data_source", None)
     adding = bool(source is not None and source.streams_only)
-    existing = [widget for widget in dashboard.widgets if widget.visualization_id]
-    if not existing:
-        return
-    already = any(_widget_is_streaming(widget) for widget in existing)
-    if already == adding:
+    if adding == dashboard.is_streaming:
         return
 
-    abort(
-        400,
-        message=(
-            "A dashboard shows streams or saved queries, not both. A dashboard has one refresh "
-            "interval, and a stream needs seconds where a query needs half a minute. Put this on "
-            "a dashboard of its own."
-        ),
-    )
+    if dashboard.is_streaming:
+        message = (
+            "This is a streaming dashboard, so its panels come from streaming queries. A dashboard "
+            "has one refresh interval, and a stream needs seconds where a saved query needs half a "
+            "minute. Put this on an ordinary dashboard."
+        )
+    else:
+        message = (
+            "This is an ordinary dashboard, so its panels come from saved queries. A dashboard has "
+            "one refresh interval, and a stream needs seconds where a saved query needs half a "
+            "minute. Put this on a streaming dashboard."
+        )
+    abort(400, message=message)
 
 
 class WidgetListResource(BaseResource):

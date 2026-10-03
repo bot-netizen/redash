@@ -78,6 +78,9 @@ const SETTINGS_ROUTES = [
   "QuerySnippets.List",
   "QuerySnippets.NewOrEdit",
   "Settings.Organization",
+  // The topics page: a tab beside Data Sources, because it configures a
+  // connection.
+  "Streams.Topics",
   "Users.Account",
   "Users.Disabled",
   "Users.List",
@@ -91,11 +94,18 @@ function useNavbarActiveState() {
 
   return React.useMemo(
     () => ({
+      // Both halves light the same tab. A streaming dashboard is a dashboard,
+      // so being on one is being under Dashboards; the same for a streaming
+      // query, including in the editor, which has its own path only because a
+      // streaming query has no second page to distinguish.
       dashboards: includes(
         [
           "Dashboards.List",
           "Dashboards.Favorites",
           "Dashboards.My",
+          "Dashboards.Streaming",
+          "Dashboards.StreamingFavorites",
+          "Dashboards.StreamingMy",
           "Dashboards.Folder",
           "Dashboards.Folders",
           "Dashboards.ViewOrEdit",
@@ -109,18 +119,20 @@ function useNavbarActiveState() {
           "Queries.Favorites",
           "Queries.Archived",
           "Queries.My",
+          "Queries.Streaming",
+          "Queries.StreamingFavorites",
+          "Queries.StreamingMy",
+          "Queries.StreamingArchived",
           "Queries.View",
           "Queries.New",
           "Queries.Edit",
+          "Streams.Query",
+          "Streams.QueryEdit",
         ],
         currentRoute.id
       ),
       alerts: includes(["Alerts.List", "Alerts.New", "Alerts.View", "Alerts.Edit"], currentRoute.id),
       catalog: currentRoute.id === "Catalog",
-      streams: includes(
-        ["Streams.Topics", "Streams.Query", "Streams.QueryEdit", "Streams.Running", "Dashboards.Streaming"],
-        currentRoute.id
-      ),
       settings: includes(SETTINGS_ROUTES, currentRoute.id),
       // Every Admin page, from the one list that draws the menu -- so a page
       // added there lights the right tab here without this being touched.
@@ -179,6 +191,18 @@ export default function DesktopNavbar() {
           </Link>
         </Menu.Item>
       )}
+      {/*
+        Where starting a stream lives now. It was the first item of a menu of
+        its own, which made a create action look like a place -- the only
+        entry in this bar that opened an empty editor rather than a list.
+      */}
+      {canCreateQuery && canUseStreams && (
+        <Menu.Item key="new-streaming-query">
+          <Link href="streams/query" data-test="CreateStreamingQueryMenuItem">
+            New Streaming Query
+          </Link>
+        </Menu.Item>
+      )}
       {canCreateDashboard && (
         <Menu.Item key="new-dashboard">
           <PlainButton data-test="CreateDashboardMenuItem" onClick={() => CreateDashboardDialog.showModal()}>
@@ -213,6 +237,21 @@ export default function DesktopNavbar() {
     </Menu>
   );
 
+  // The same two halves, for queries. Only a menu when there is a second half
+  // to offer: an install with streams switched off -- which is the default --
+  // gets the plain link it has always had, rather than a dropdown with one
+  // thing in it.
+  const queriesMenu = (
+    <Menu className="desktop-navbar-dropdown-menu">
+      <Menu.Item key="queries-all">
+        <Link href="queries">Queries</Link>
+      </Menu.Item>
+      <Menu.Item key="queries-streaming">
+        <Link href="queries/streaming">Streaming Queries</Link>
+      </Menu.Item>
+    </Menu>
+  );
+
   /*
     Dashboards opens on all of them, as it always has. The folders are under
     it, each a set with a stated meaning -- which is only useful if people can
@@ -222,14 +261,20 @@ export default function DesktopNavbar() {
   const dashboardsMenu = (
     <Menu className="desktop-navbar-dropdown-menu">
       <Menu.Item key="dashboards-all">
-        <Link href="dashboards">All dashboards</Link>
+        <Link href="dashboards">Dashboards</Link>
       </Menu.Item>
-      <Menu.Item key="dashboards-favorites">
-        <Link href="dashboards/favorites">Favorites</Link>
-      </Menu.Item>
-      <Menu.Item key="dashboards-my">
-        <Link href="dashboards/my">Mine</Link>
-      </Menu.Item>
+      {/*
+        The other half of the same set. A dashboard shows streams or saved
+        queries and never both, so it is in exactly one of these two lists --
+        which is why the menu offers the halves and the page offers All,
+        Favorites and Mine within whichever you picked. Repeating those three
+        here would be the same control twice, and eight entries deep.
+      */}
+      {canUseStreams && (
+        <Menu.Item key="dashboards-streaming">
+          <Link href="dashboards/streaming">Streaming Dashboards</Link>
+        </Menu.Item>
+      )}
       {folders.length > 0 && <Menu.Divider />}
       {folders.map((folder) => (
         <Menu.Item key={`folder-${folder.id}`}>
@@ -240,32 +285,6 @@ export default function DesktopNavbar() {
       <Menu.Item key="dashboards-folders">
         <Link href="dashboards/folders">Browse folders…</Link>
       </Menu.Item>
-    </Menu>
-  );
-
-  // Named for the one thing it connects to. "Streams" invited the question of
-  // what else might be one; every stream in SQLDesk is a Kafka topic, and a
-  // menu that says so stops somebody looking for a Kinesis or a Pulsar that
-  // is not there.
-  const streamsMenu = (
-    <Menu className="desktop-navbar-dropdown-menu">
-      <Menu.Item key="streams-query">
-        <Link href="streams/query">Streaming Query</Link>
-      </Menu.Item>
-      <Menu.Item key="streams-dashboards">
-        <Link href="dashboards/streaming">Streaming Dashboards</Link>
-      </Menu.Item>
-      <Menu.Item key="streams-running">
-        <Link href="streams/running">Running Streams</Link>
-      </Menu.Item>
-      {/* Not everybody, and not only administrators: an administrator hands
-          `manage_streams` to a group, and whoever knows what the topics are
-          for sets them up. */}
-      {currentUser.can("manage_streams") && (
-        <Menu.Item key="streams-topics">
-          <Link href="streams/topics">Manage Topics</Link>
-        </Menu.Item>
-      )}
     </Menu>
   );
 
@@ -325,21 +344,16 @@ export default function DesktopNavbar() {
             Dashboards
           </NavMenuButton>
         )}
-        {currentUser.hasPermission("view_query") && (
-          <NavLink href="queries" active={activeState.queries}>
-            Queries
-          </NavLink>
-        )}
-        {/*
-          Shown to anyone who may watch a stream, and to anyone who may set
-          topics up. Watching somebody else's running stream needs neither, but
-          somebody with no streams permission at all has nothing to do here.
-        */}
-        {canUseStreams && (
-          <NavMenuButton overlay={streamsMenu} active={activeState.streams} data-test="StreamsMenuButton">
-            Kafka Streams
-          </NavMenuButton>
-        )}
+        {currentUser.hasPermission("view_query") &&
+          (canUseStreams ? (
+            <NavMenuButton overlay={queriesMenu} active={activeState.queries} data-test="QueriesMenuButton">
+              Queries
+            </NavMenuButton>
+          ) : (
+            <NavLink href="queries" active={activeState.queries}>
+              Queries
+            </NavLink>
+          ))}
         {/*
           Beside the others rather than under Admin: describing a table is
           the work of whoever knows what it is for, and an administrator

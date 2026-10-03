@@ -26,6 +26,12 @@ const EXPECTED = [
   ["Queries.Favorites", "/queries/favorites"],
   ["Queries.Archived", "/queries/archive"],
   ["Queries.My", "/queries/my"],
+  // The streaming half of the same list. Under /queries because a streaming
+  // query is a query -- see plan/0.7-nav.md.
+  ["Queries.Streaming", "/queries/streaming"],
+  ["Queries.StreamingFavorites", "/queries/streaming/favorites"],
+  ["Queries.StreamingMy", "/queries/streaming/my"],
+  ["Queries.StreamingArchived", "/queries/streaming/archive"],
   ["Queries.New", "/queries/new"],
   ["Queries.Edit", "/queries/:queryId/source"],
   ["Queries.View", "/queries/:queryId"],
@@ -63,12 +69,19 @@ const EXPECTED = [
   ["Admin.Streams", "/admin/streams"],
   ["Mcp.Mine", "/mcp/mine"],
   ["Dashboards.Streaming", "/dashboards/streaming"],
+  ["Dashboards.StreamingFavorites", "/dashboards/streaming/favorites"],
+  ["Dashboards.StreamingMy", "/dashboards/streaming/my"],
   ["Dashboards.Folders", "/dashboards/folders"],
   ["Dashboards.Folder", "/dashboards/folder/:folderId"],
-  ["Streams.Topics", "/streams/topics"],
+  // Which topics may be queried: a tab beside Data Sources, because it
+  // configures a connection.
+  ["Streams.Topics", "/data_sources/streaming"],
   ["Streams.Query", "/streams/query"],
   ["Streams.QueryEdit", "/streams/query/:queryId"],
-  ["Streams.Running", "/streams/running"],
+  // The two paths the old Streams menu had. Both were in somebody's history,
+  // so both still answer -- see streams.routes.jsx.
+  ["Streams.TopicsMoved", "/streams/topics"],
+  ["Streams.RunningMoved", "/streams/running"],
 ];
 
 describe("the routes the pages register", () => {

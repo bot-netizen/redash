@@ -153,10 +153,24 @@ export class Query {
     return this.prepareQueryResultExecution(execute, request);
   }
 
-  getUrl(source, hash) {
-    let url = `queries/${this.id}`;
+  /*
+    Where this query lives.
 
-    if (source) {
+    A streaming query has one page, not two. Nothing it produces is stored --
+    the window is what a consumer saw while somebody was watching -- so there
+    is no saved result for a view page to show, and `source` has nothing to
+    distinguish. Every link to one therefore goes to the editor.
+
+    This used to return `queries/<id>` whatever the query was, which is how a
+    streaming query listed in the ordinary list linked to a page that would
+    try to run it through the warehouse path. `QuerySource` carried code to
+    bounce the browser back out of that mistake; the link simply being right
+    is better than correcting it after the navigation.
+  */
+  getUrl(source, hash) {
+    let url = this.is_streaming ? `streams/query/${this.id}` : `queries/${this.id}`;
+
+    if (source && !this.is_streaming) {
       url += "/source";
     }
 

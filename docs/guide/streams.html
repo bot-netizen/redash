@@ -77,8 +77,9 @@ from a sampled stream is an estimate, and silence about that is the worst outcom
 <h2 id="clusters">Clusters and topics</h2>
 <p>An administrator adds a <strong>cluster</strong> as a data source: brokers, and whatever the cluster
 needs to let us in. Its <strong>topics are its tables</strong>.</p>
-<p>Which topics can be queried is chosen under <strong>Streams &rarr; Manage topics</strong>, by
-somebody with the streams permission. That is the real access decision: the data source permission is
+<p>Which topics can be queried is chosen under <strong>Settings &rarr; Streaming Data Sources</strong>,
+by somebody with the streams permission &mdash; it sits beside Data Sources because it configures a
+connection, and the cluster itself is added on the tab next to it. That is the real access decision: the data source permission is
 per cluster, so whatever is enabled there is what everybody with access to that cluster can query. A
 cluster carrying a topic not everyone should see wants a second data source of its own with a
 restricted list, granted to another group.</p>
@@ -88,9 +89,15 @@ that buys, and whether it will be sampled. None of those can be guessed from a t
 finding out an hour later is the bad way.</p>
 
 <h2 id="querying">Querying one</h2>
-<p><strong>Streams &rarr; Query a stream</strong> is the query editor, with the schema browser listing
-the enabled topics and the same visualizations as anywhere else. Two differences: the button says
+<p><strong>Create &rarr; New Streaming Query</strong> opens the query editor, with the schema browser
+listing the enabled topics and the same visualizations as anywhere else. Two differences: the button says
 <strong>Start streaming</strong> rather than Execute, and <strong>no result is ever stored</strong>.</p>
+<p>A streaming query is a query. It is listed under <strong>Queries &rarr; Streaming Queries</strong>, with
+the same All, Favorites, Mine and Archived views as any other &mdash; and nowhere else: the two halves of
+that list do not overlap, so a query has one place it lives. The same is true of
+<strong>Dashboards &rarr; Streaming Dashboards</strong>; a dashboard built on streams carries a
+<strong>streaming</strong> chip beside its name and a band down the side of the page, which turns green
+while its topics are actually being consumed.</p>
 <p>The query is saved like any other; the rows are not. A window is what a consumer saw while somebody
 was watching, and writing it down would be making a copy of the one thing whose point is that it is
 current.</p>
@@ -131,7 +138,9 @@ rather than five tabs &mdash; and makes a team round one dashboard during an inc
 <p>There are three limits: how many topics may be consumed at once across the install, how many one
 person may start, and how long one runs before somebody says they still want it. Past them you are told
 what is running and who started it, because &ldquo;no slots&rdquo; is only actionable if you can see
-who to ask. <strong>Streams &rarr; Running streams</strong> shows all of it.</p>
+who to ask. The editor says <strong>all N stream slots in use</strong> beside the button that will not
+start, and <strong>Admin &rarr; Streaming Queries</strong> shows every topic, who is watching it, and the
+budgets.</p>
 
 <h2 id="permissions">Who may do what</h2>
 <dl>

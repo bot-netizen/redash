@@ -4,6 +4,7 @@ import Alert from "antd/lib/alert";
 import Button from "antd/lib/button";
 import Input from "antd/lib/input";
 import Switch from "antd/lib/switch";
+import Progress from "antd/lib/progress";
 import Table from "antd/lib/table";
 import Tag from "antd/lib/tag";
 
@@ -140,8 +141,56 @@ Budgets.propTypes = {
   onSaved: PropTypes.func.isRequired,
 };
 
+/*
+  How much room is left, and what is holding it.
+
+  This was a page of its own, readable by everybody. It is here because the
+  question it answers -- why will another stream not start -- is answered by
+  the limit and by the list of what is using it, and those were a tab apart.
+  The number everybody else needs is on the stream editor's status strip,
+  beside the button that will not start.
+*/
+function Slots({ slots, onRefresh }) {
+  if (!slots) {
+    return null;
+  }
+  const full = !!slots.limit && slots.used >= slots.limit;
+  return (
+    <div className="streams-slots" data-test="StreamSlots">
+      <div className="streams-slot-bar">
+        <Progress
+          percent={slots.limit ? Math.round((slots.used / slots.limit) * 100) : 0}
+          status={full ? "exception" : "normal"}
+          showInfo={false}
+        />
+      </div>
+      <div>
+        <strong>
+          {slots.used} of {slots.limit || "\u221e"}
+        </strong>{" "}
+        <span className="streams-muted">
+          slots in use &middot; {slots.per_user || "\u221e"} per person &middot; a stream runs for up to {slots.minutes}{" "}
+          minutes before somebody says they still want it
+        </span>
+      </div>
+      <Button size="small" onClick={onRefresh}>
+        Refresh
+      </Button>
+    </div>
+  );
+}
+
+Slots.propTypes = {
+  // eslint-disable-next-line react/forbid-prop-types
+  slots: PropTypes.object,
+  onRefresh: PropTypes.func.isRequired,
+};
+
+Slots.defaultProps = { slots: null };
+
 export default function Streams() {
   const [streams, setStreams] = useState(null);
+  const [slots, setSlots] = useState(null);
   const [error, setError] = useState(null);
 
   const load = useCallback(() => {
@@ -149,6 +198,7 @@ export default function Streams() {
       .get("api/streams")
       .then((data) => {
         setStreams(data.streams);
+        setSlots(data.slots);
         setError(null);
       })
       .catch(() => setError("Could not read the streams."));
@@ -222,6 +272,8 @@ export default function Streams() {
     <Layout activeTab="streams">
       <div className="p-15 streams-page">
         {error && <Alert type="error" showIcon message={error} className="m-b-15" />}
+
+        <Slots slots={slots} onRefresh={load} />
 
         {streams && streams.length === 0 && (
           <div className="streams-empty">

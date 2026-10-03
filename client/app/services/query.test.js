@@ -52,3 +52,45 @@ describe("Query.getQueryResult", () => {
     expect(savedQuery().getQueryResult().source).toBe("cached");
   });
 });
+
+/*
+  Where a link to a query points.
+
+  A streaming query has one page, not two. Nothing it produces is stored -- the
+  window is what a consumer saw while somebody was watching -- so there is no
+  saved result for a view page to show, and the editor is the only page it has.
+
+  This used to return `queries/<id>` whatever the query was. A streaming query
+  listed among the others therefore linked to a page that would try to run it
+  through the warehouse path, and `QuerySource` carried code to bounce the
+  browser back out of the mistake after the navigation had already happened.
+*/
+describe("Query.getUrl", () => {
+  const streaming = () => new Query({ id: 7, query: "select * from orders", is_streaming: true, options: {} });
+  const saved = () => new Query({ id: 7, query: "select 1", is_streaming: false, options: {} });
+
+  test("an ordinary query has a page to view and a page to edit", () => {
+    expect(saved().getUrl()).toBe("queries/7");
+    expect(saved().getUrl(true)).toBe("queries/7/source");
+  });
+
+  test("a streaming query has only the editor", () => {
+    expect(streaming().getUrl()).toBe("streams/query/7");
+  });
+
+  test("and asking for its source does not invent a second page", () => {
+    // `/streams/query/7/source` is not a route. A list's edit link asks for
+    // the source URL of every row it draws, so getting this wrong would make
+    // the edit action on a streaming row a dead link.
+    expect(streaming().getUrl(true)).toBe("streams/query/7");
+  });
+
+  test("a query that says nothing about its kind is treated as an ordinary one", () => {
+    // Anything serialized before `is_streaming` existed, and `Query.newQuery()`.
+    expect(new Query({ id: 7, query: "select 1", options: {} }).getUrl()).toBe("queries/7");
+  });
+
+  test("the hash and the parameters survive either way", () => {
+    expect(streaming().getUrl(false, "table")).toBe("streams/query/7#table");
+  });
+});

@@ -1534,6 +1534,20 @@ class Dashboard(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model
     # "paused_at": ...}. Null for an ordinary one. See sqldesk/live.py.
     live = Column(MutableDict.as_mutable(JSONB), nullable=True)
 
+    #: `"streaming"` or `"saved"`, chosen when the dashboard is made.
+    #:
+    #: Stored rather than worked out from the widgets, which is how it used to
+    #: be. A dashboard with no widgets yet has no widgets to ask, so a new one
+    #: always looked ordinary and then changed kind the moment its first
+    #: streaming widget arrived -- which, now that the two lists are halves of
+    #: a partition rather than two filters, reads as "my dashboard has
+    #: disappeared".
+    #:
+    #: Declaring it also lets the widget guard say *why* a visualization does
+    #: not belong here instead of refusing after the fact, and takes a
+    #: three-table EXISTS off every dashboard list query.
+    kind = Column(db.String(20), nullable=False, server_default="saved", default="saved", index=True)
+
     #: The folder this is filed under, if any. Unfiled is the normal case and
     #: stays normal: a folder is something somebody chooses, never something
     #: they have to pick before saving.
@@ -1552,22 +1566,18 @@ class Dashboard(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model
         """
         Whether this dashboard is made of streams.
 
-        Derived from what is on it rather than ticked by somebody. A label is
-        something a person has to remember to set, and the one that gets
-        forgotten is the one somebody is looking for at two in the morning;
-        this cannot be wrong.
+        One kind or the other, never both -- see `handlers/widgets.py` for why:
+        a dashboard has a single refresh interval, and a stream wants seconds
+        where a warehouse query wants half a minute. Mixing them means either
+        hammering the warehouse or showing a stale stream.
 
-        A dashboard is one kind or the other, never both -- see
-        `handlers/widgets.py` for why: a dashboard has a single refresh
-        interval, and a stream wants seconds where a warehouse query wants
-        half a minute. Mixing them means either hammering the warehouse or
-        showing a stale stream.
+        Read from `kind`, which is declared when the dashboard is made. It used
+        to be worked out from the widgets, on the reasoning that a derived
+        answer cannot be forgotten -- true, but it also cannot answer for a
+        dashboard that has no widgets yet, and that silence is what moved a
+        new dashboard between two lists under its author.
         """
-        # `loaded_widgets` rather than `widgets`: the latter is a dynamic
-        # relationship, so each widget would lazily fetch its visualization,
-        # its query and that query's data source -- the per-widget cost this
-        # project already paid once to remove.
-        return any(_widget_is_streaming(widget) for widget in self.loaded_widgets())
+        return self.kind == "streaming"
 
     __tablename__ = "dashboards"
     __mapper_args__ = {"version_id_col": version}
@@ -2827,11 +2837,3 @@ def streaming_source_types():
     from sqldesk.query_runner import query_runners
 
     return [name for name, runner in query_runners.items() if getattr(runner, "streams_only", False)] or ["__none__"]
-
-
-def _widget_is_streaming(widget):
-    """Whether a widget draws on a stream. A textbox draws on nothing."""
-    visualization = getattr(widget, "visualization", None)
-    query = getattr(visualization, "query_rel", None)
-    source = getattr(query, "data_source", None)
-    return bool(source is not None and source.streams_only)

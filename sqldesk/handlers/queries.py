@@ -56,6 +56,41 @@ order_map = {
 order_results = partial(_order_results, default_order="-created_at", allowed_orders=order_map)
 
 
+def filter_by_kind(results):
+    """
+    `?kind=streaming` for the queries that read a stream, `?kind=saved` for the
+    rest.
+
+    The two halves do not overlap, which is the point: a streaming query in the
+    ordinary list would be a thing filed in two places, and "where is my query"
+    would have two answers. Absent, the filter does nothing -- search wants
+    both, because somebody searching by name does not know which half a thing
+    is in.
+
+    A query's kind is its data source's type: one foreign key, so there is no
+    column to keep in step and nothing that can go stale. Asked of the
+    registered runners through `streaming_source_types()`, so a second
+    streaming connector needs no second list.
+
+    A query with no data source at all would fall out of both halves, because
+    `NOT IN` against a NULL is NULL rather than true. It is left that way
+    deliberately: every list here is built on `all_queries()`, which joins
+    `DataSourceGroup` to decide what this person may see, so a query without a
+    data source never reaches one of these lists in the first place. A list
+    that does not make that join would have to say what it wants of those rows.
+    """
+    kind = request.args.get("kind")
+    if kind not in ("streaming", "saved"):
+        return results
+
+    reads_a_stream = models.Query.data_source_id.in_(
+        models.db.session.query(models.DataSource.id).filter(
+            models.DataSource.type.in_(models.streaming_source_types())
+        )
+    )
+    return results.filter(reads_a_stream if kind == "streaming" else ~reads_a_stream)
+
+
 @routes.route(org_scoped_rule("/api/queries/format"), methods=["POST"])
 @login_required
 def format_sql_query(org_slug=None):
@@ -162,6 +197,7 @@ class BaseQueryListResource(BaseResource):
         queries = self.get_queries(search_term)
 
         results = filter_by_tags(queries, models.Query.tags)
+        results = filter_by_kind(results)
 
         # order results according to passed order parameter,
         # special-casing search queries where the database
@@ -365,6 +401,7 @@ class MyQueriesResource(BaseResource):
             results = models.Query.by_user(self.current_user)
 
         results = filter_by_tags(results, models.Query.tags)
+        results = filter_by_kind(results)
 
         # order results according to passed order parameter,
         # special-casing search queries where the database
@@ -594,6 +631,7 @@ class QueryFavoriteListResource(BaseResource):
             favorites = models.Query.favorites(self.current_user)
 
         favorites = filter_by_tags(favorites, models.Query.tags)
+        favorites = filter_by_kind(favorites)
 
         # order results according to passed order parameter,
         # special-casing search queries where the database

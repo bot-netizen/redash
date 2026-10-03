@@ -3,7 +3,7 @@ from flask_restful import abort
 from funcy import partial, project
 from sqlalchemy.orm.exc import StaleDataError
 
-from sqldesk import live, models
+from sqldesk import features, live, models
 from sqldesk.handlers.base import (
     BaseResource,
     filter_by_tags,
@@ -35,6 +35,28 @@ order_map = {
 
 order_results = partial(_order_results, default_order="-created_at", allowed_orders=order_map)
 
+KINDS = ("streaming", "saved")
+
+
+def filter_by_kind(results):
+    """
+    `?kind=streaming` for the dashboards made of streams, `?kind=saved` for the
+    rest. Absent means both, which is what a folder shows.
+
+    The two halves do not overlap. That is the point of them: a dashboard in
+    both lists is a dashboard with two homes, and "where is my dashboard" gets
+    two answers -- which is the problem folders were meant to solve, not one to
+    add alongside them.
+
+    One indexed column now. This used to be an EXISTS across widgets,
+    visualizations, queries and data sources, because the kind was worked out
+    from what was on the board; `Dashboard.kind` says why that moved.
+    """
+    kind = request.args.get("kind")
+    if kind not in KINDS:
+        return results
+    return results.filter(models.Dashboard.kind == kind)
+
 
 class DashboardListResource(BaseResource):
     @require_permission("list_dashboards")
@@ -64,24 +86,7 @@ class DashboardListResource(BaseResource):
 
         results = filter_by_tags(results, models.Dashboard.tags)
 
-        # `?kind=streaming` for the dashboards made of streams, `?kind=saved`
-        # for the rest. Derived from what is on them rather than from a label
-        # somebody has to remember to set -- an EXISTS over the widgets, so it
-        # cannot be stale and costs one subquery rather than a walk.
-        kind = request.args.get("kind")
-        if kind in ("streaming", "saved"):
-            on_a_stream = (
-                models.db.session.query(models.Widget.dashboard_id)
-                .join(models.Visualization, models.Widget.visualization_id == models.Visualization.id)
-                .join(models.Query, models.Visualization.query_id == models.Query.id)
-                .join(models.DataSource, models.Query.data_source_id == models.DataSource.id)
-                .filter(models.DataSource.type.in_(models.streaming_source_types()))
-                .subquery()
-            )
-            if kind == "streaming":
-                results = results.filter(models.Dashboard.id.in_(on_a_stream))
-            else:
-                results = results.filter(~models.Dashboard.id.in_(on_a_stream))
+        results = filter_by_kind(results)
 
         # `?folder=N` for one folder, `?folder=none` for the ones nobody has
         # filed. Absent means all of them, which is what the tab does by
@@ -123,15 +128,28 @@ class DashboardListResource(BaseResource):
         Creates a new dashboard.
 
         :<json string name: Dashboard name
+        :<json string kind: ``"saved"`` (the default) or ``"streaming"``
 
         Responds with a :ref:`dashboard <dashboard-response-label>`.
         """
         dashboard_properties = request.get_json(force=True)
+
+        # Declared here and never changed afterwards. What a dashboard is
+        # decides which refresh intervals it may have and which
+        # visualizations may go on it, so it is not a property to flip under
+        # the widgets that were put there on the strength of it.
+        kind = dashboard_properties.get("kind") or "saved"
+        if kind not in KINDS:
+            abort(400, message='`kind` is "saved" or "streaming".')
+        if kind == "streaming" and not features.can(self.current_user, features.USE_STREAMS):
+            abort(403, message="Streaming is not available to you.")
+
         dashboard = models.Dashboard(
             name=dashboard_properties["name"],
             org=self.current_org,
             user=self.current_user,
             is_draft=True,
+            kind=kind,
             layout=[],
         )
         models.db.session.add(dashboard)
@@ -160,6 +178,7 @@ class MyDashboardsResource(BaseResource):
             results = models.Dashboard.by_user(self.current_user)
 
         results = filter_by_tags(results, models.Dashboard.tags)
+        results = filter_by_kind(results)
 
         # order results according to passed order parameter,
         # special-casing search queries where the database
@@ -574,6 +593,7 @@ class DashboardFavoriteListResource(BaseResource):
             favorites = models.Dashboard.favorites(self.current_user)
 
         favorites = filter_by_tags(favorites, models.Dashboard.tags)
+        favorites = filter_by_kind(favorites)
 
         # order results according to passed order parameter,
         # special-casing search queries where the database

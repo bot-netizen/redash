@@ -35,8 +35,11 @@ Built and verified:
 - **Storage lifecycle** — uploads expire on a clock people can see and stop.
 - **The admin section**: Overview, System Status, RQ Status, Storage Status,
   Running Queries, Streaming Queries, Outdated Queries, MCP.
-- **Nav rebuilt**: Dashboards ▾ · Queries · Kafka Streams ▾ · Catalog ·
-  Alerts · Settings ▾ · Admin ▾, every dropdown wearing the same chevron.
+- **Nav rebuilt**: Dashboards ▾ · Queries ▾ · Catalog · Alerts · Settings ▾ ·
+  Admin ▾, every dropdown wearing the same chevron. No broker's name in the
+  bar: streaming is a half of Queries and a half of Dashboards, the two halves
+  never overlap, and `Streaming` is the kind while `Live` stays the refresh
+  state. See [0.7-nav.md](0.7-nav.md).
 - **One spinner**, drawn in CSS rather than typed from an icon font.
 - **Nothing heavy on by default** — streams, MCP, uploads and the renderer are
   each off until asked for.

@@ -60,20 +60,21 @@ describe("MobileNavbar", () => {
     const hrefs = links();
 
     ["dashboards", "queries", "alerts", "catalog"].forEach((href) => expect(hrefs).toContain(href));
-    ["streams/query", "dashboards/streaming", "streams/running", "streams/topics"].forEach((href) =>
-      expect(hrefs).toContain(href)
-    );
+    ["queries/streaming", "dashboards/streaming"].forEach((href) => expect(hrefs).toContain(href));
     ["admin/overview", "admin/storage", "admin/queries/running", "admin/streams"].forEach((href) =>
       expect(hrefs).toContain(href)
     );
-    ["data_sources", "groups", "users/me"].forEach((href) => expect(hrefs).toContain(href));
+    ["data_sources", "data_sources/streaming", "groups", "users/me"].forEach((href) => expect(hrefs).toContain(href));
   });
 
   test("groups the long lists so the shape survives flattening", () => {
     mockPermissions.add("super_admin");
     mockFeatures.add("use_streams");
 
-    expect(headings()).toEqual(["Kafka Streams", "Settings", "Admin"]);
+    // No Streams group any more: the two streaming entries are the second half
+    // of lists whose first half is directly above them, so they read in place.
+    // A heading over two items on a phone is a line of chrome for nothing.
+    expect(headings()).toEqual(["Settings", "Admin"]);
   });
 
   test("shows an ordinary user neither Admin nor the topics they may not manage", () => {
@@ -81,9 +82,25 @@ describe("MobileNavbar", () => {
     mockFeatures.add("use_streams");
     const hrefs = links();
 
-    expect(hrefs).toContain("streams/query");
-    expect(hrefs).not.toContain("streams/topics");
+    expect(hrefs).toContain("queries/streaming");
+    expect(hrefs).not.toContain("data_sources/streaming");
     expect(hrefs).not.toContain("admin/overview");
-    expect(headings()).toEqual(["Kafka Streams", "Settings"]);
+    expect(headings()).toEqual(["Settings"]);
+  });
+
+  // The same rule as the desktop bar: nothing in the navigation is named after
+  // the broker underneath it.
+  test("and names nothing after the broker", () => {
+    ["list_dashboards", "view_query", "super_admin", "admin", "list_users"].forEach((p) => mockPermissions.add(p));
+    ["use_streams", "manage_streams"].forEach((f) => mockFeatures.add(f));
+
+    const overlay = mount(
+      mount(<MobileNavbar />)
+        .find(Dropdown)
+        .first()
+        .prop("overlay")
+    );
+
+    expect(overlay.text()).not.toMatch(/kafka/i);
   });
 });

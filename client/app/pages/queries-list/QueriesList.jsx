@@ -37,32 +37,33 @@ import QueriesListEmptyState from "./QueriesListEmptyState";
 
 import "./queries-list.css";
 
-const sidebarMenu = [
-  {
-    key: "all",
-    href: "queries",
-    title: "All",
-    icon: () => <Sidebar.MenuIcon icon="fa fa-code" />,
-  },
-  {
-    key: "favorites",
-    href: "queries/favorites",
-    title: "Favorites",
-    icon: () => <Sidebar.MenuIcon icon="fa fa-star" />,
-  },
-  {
-    key: "my",
-    href: "queries/my",
-    title: "Mine",
-    icon: () => <Sidebar.ProfileImage user={currentUser} />,
-  },
-  {
-    key: "archive",
-    href: "queries/archive",
-    title: "Archived",
-    icon: () => <Sidebar.MenuIcon icon="fa fa-archive" />,
-  },
+/*
+  The four views, in whichever half of the list you are in.
+
+  Saved queries and streaming ones are two halves of one set: a query is in
+  exactly one of them, never both. So the views repeat inside each half rather
+  than the halves repeating inside each view -- "my streaming queries" is
+  Mine, reached from the streaming half, and there is one place it lives.
+
+  The navbar carries the two halves and this carries the four views, which is
+  why neither needs to carry the other's eight combinations.
+*/
+const VIEWS = [
+  { key: "all", title: "All", icon: () => <Sidebar.MenuIcon icon="fa fa-code" /> },
+  { key: "favorites", title: "Favorites", icon: () => <Sidebar.MenuIcon icon="fa fa-star" /> },
+  { key: "my", title: "Mine", icon: () => <Sidebar.ProfileImage user={currentUser} /> },
+  { key: "archive", title: "Archived", icon: () => <Sidebar.MenuIcon icon="fa fa-archive" /> },
 ];
+
+export const STREAMING_BASE = "queries/streaming";
+
+export function viewsFor(kind) {
+  const base = kind === "streaming" ? STREAMING_BASE : "queries";
+  return VIEWS.map((view) => ({
+    ...view,
+    href: view.key === "all" ? base : `${base}/${view.key}`,
+  }));
+}
 
 /*
   Built as a factory rather than a constant so the Source column can close
@@ -75,7 +76,7 @@ function getActionsColumn(controllerRef) {
     (text, item) => (
       <ListItemActions
         item={item}
-        editUrl={`queries/${item.id}/source`}
+        editUrl={item.getUrl(true)}
         aclUrl={`api/queries/${item.id}/acl`}
         aclContext="query"
         deleteLabel="Archive"
@@ -102,7 +103,7 @@ function getListColumns(dataSourceNames, controllerRef) {
     Columns.custom.sortable(
       (text, item) => (
         <span className="list-page-name">
-          <Link className="table-main-title" href={"queries/" + item.id}>
+          <Link className="table-main-title" href={item.getUrl()}>
             {item.name}
           </Link>
           <QueryTagsControl tags={item.tags} isDraft={item.is_draft} isArchived={item.is_archived} />
@@ -178,6 +179,7 @@ function QueriesListExtraActions(props) {
 function QueriesList({ controller }) {
   const controllerRef = useRef();
   controllerRef.current = controller;
+  const streaming = controller.params.kind === "streaming";
 
   const updateSearch = useCallback(
     (searchTemm) => {
@@ -245,12 +247,19 @@ function QueriesList({ controller }) {
       return "Loading…";
     }
     const total = controller.totalItemsCount;
-    const parts = [`${total} ${total === 1 ? "query" : "queries"}`];
+    const noun = total === 1 ? "query" : "queries";
+    if (streaming) {
+      // Not "across N data sources" here: `useDataSourceNames` counts every
+      // source this person can reach, and quoting that beside a count of
+      // streaming queries would claim a breadth this half does not have.
+      return `${total} streaming ${noun}`;
+    }
+    const parts = [`${total} ${noun}`];
     if (sourceCount > 0) {
       parts.push(`across ${sourceCount} data ${sourceCount === 1 ? "source" : "sources"}`);
     }
     return parts.join(" ");
-  }, [controller.isLoaded, controller.totalItemsCount, sourceCount]);
+  }, [controller.isLoaded, controller.totalItemsCount, sourceCount, streaming]);
 
   return (
     <div className="page-queries-list">
@@ -272,14 +281,18 @@ function QueriesList({ controller }) {
           />
           <ColumnsControl columns={allListColumns} hidden={hiddenColumns} onToggle={toggleColumn} />
           {currentUser.hasPermission("create_query") && (
-            <Link.Button type="primary" href="queries/new">
+            <Link.Button type="primary" href={streaming ? "streams/query" : "queries/new"}>
               <i className="fa fa-plus m-r-5" aria-hidden="true" />
-              New query
+              {streaming ? "New streaming query" : "New query"}
             </Link.Button>
           )}
         </Header>
 
-        <ViewTabs items={sidebarMenu} selected={controller.params.currentPage} ariaLabel="Query views" />
+        <ViewTabs
+          items={viewsFor(controller.params.kind)}
+          selected={controller.params.currentPage}
+          ariaLabel="Query views"
+        />
 
         <TagChips
           tagsUrl="api/queries/tags"
@@ -336,13 +349,18 @@ const QueriesListPage = itemsList(
   QueriesList,
   () =>
     new ResourceItemsSource({
-      getResource({ params: { currentPage } }) {
-        return {
+      getResource({ params: { currentPage, kind } }) {
+        const resource = {
           all: Query.query.bind(Query),
           my: Query.myQueries.bind(Query),
           favorites: Query.favorites.bind(Query),
           archive: Query.archive.bind(Query),
         }[currentPage];
+        // `kind` goes on every one of them, not only the unfiltered list. The
+        // first version of this filtered All and left Mine and Favorites
+        // showing both kinds, so the half somebody was looking at depended on
+        // which tab they had clicked.
+        return (request) => resource({ ...request, kind });
       },
       getItemProcessor() {
         return (item) => new Query(item);
@@ -356,7 +374,7 @@ routes.register(
   routeWithUserSession({
     path: "/queries",
     title: "Queries",
-    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="all" />,
+    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="all" kind="saved" />,
   })
 );
 routes.register(
@@ -364,7 +382,9 @@ routes.register(
   routeWithUserSession({
     path: "/queries/favorites",
     title: "Favorite Queries",
-    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="favorites" orderByField="starred_at" />,
+    render: (pageProps) => (
+      <QueriesListPage {...pageProps} currentPage="favorites" kind="saved" orderByField="starred_at" />
+    ),
   })
 );
 routes.register(
@@ -372,7 +392,7 @@ routes.register(
   routeWithUserSession({
     path: "/queries/archive",
     title: "Archived Queries",
-    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="archive" />,
+    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="archive" kind="saved" />,
   })
 );
 routes.register(
@@ -380,6 +400,50 @@ routes.register(
   routeWithUserSession({
     path: "/queries/my",
     title: "My Queries",
-    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="my" />,
+    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="my" kind="saved" />,
+  })
+);
+
+/*
+  The streaming half. The same page and the same four views, against the other
+  half of the set.
+
+  Under `/queries` rather than somewhere of its own, because a streaming query
+  is a query: it is the same object, written in the same editor, and it earns
+  no second URL space. These sort ahead of `/queries/:queryId` without being
+  told to -- `routes.ts` puts paths with no parameters first.
+*/
+routes.register(
+  "Queries.Streaming",
+  routeWithUserSession({
+    path: "/queries/streaming",
+    title: "Streaming Queries",
+    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="all" kind="streaming" />,
+  })
+);
+routes.register(
+  "Queries.StreamingFavorites",
+  routeWithUserSession({
+    path: "/queries/streaming/favorites",
+    title: "Favorite Streaming Queries",
+    render: (pageProps) => (
+      <QueriesListPage {...pageProps} currentPage="favorites" kind="streaming" orderByField="starred_at" />
+    ),
+  })
+);
+routes.register(
+  "Queries.StreamingMy",
+  routeWithUserSession({
+    path: "/queries/streaming/my",
+    title: "My Streaming Queries",
+    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="my" kind="streaming" />,
+  })
+);
+routes.register(
+  "Queries.StreamingArchived",
+  routeWithUserSession({
+    path: "/queries/streaming/archive",
+    title: "Archived Streaming Queries",
+    render: (pageProps) => <QueriesListPage {...pageProps} currentPage="archive" kind="streaming" />,
   })
 );

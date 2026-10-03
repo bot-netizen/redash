@@ -7,6 +7,8 @@ import Table from "antd/lib/table";
 import Tag from "antd/lib/tag";
 
 import TimeAgo from "@/components/TimeAgo";
+import Link from "@/components/Link";
+import wrapSettingsTab from "@/components/SettingsWrapper";
 import { axios } from "@/services/axios";
 import notification from "@/services/notification";
 import recordEvent from "@/services/recordEvent";
@@ -194,7 +196,7 @@ function Analysis({ found, onEnable, onAgain, saving, analysing, enabled }) {
   );
 }
 
-export default function ManageTopics() {
+function ManageTopics() {
   const [clusters, setClusters] = useState(null);
   const [chosen, setChosen] = useState(null);
   const [topics, setTopics] = useState(null);
@@ -352,12 +354,14 @@ export default function ManageTopics() {
   ];
 
   return (
-    <div className="container streams-page" data-test="ManageTopics">
+    <div className="streams-page" data-test="ManageTopics">
       <div className="streams-header">
-        <h2>Manage topics</h2>
+        <h2>Streaming Data Sources</h2>
         <p className="streams-muted">
-          What a cluster carries, and which of it can be queried. Everybody with access to the cluster can query what is
-          enabled here, so this is the decision that matters.
+          What a cluster carries, and which of it can be queried. A cluster itself is added under{" "}
+          <Link href="data_sources">Data Sources</Link>, like any other connection; this is where its topics become
+          tables. Everybody with access to the cluster can query whatever is enabled here, so this is the decision that
+          matters.
         </p>
       </div>
 
@@ -366,7 +370,7 @@ export default function ManageTopics() {
           type="info"
           showIcon
           message="No Kafka clusters yet."
-          description="An administrator adds one under Data Sources, with the brokers and whatever the cluster needs to let us in. Topics are chosen here afterwards."
+          description="An administrator adds one under Data Sources, with the brokers and whatever the cluster needs to let us in. Its topics are chosen here afterwards."
         />
       )}
 
@@ -420,3 +424,5 @@ export default function ManageTopics() {
     </div>
   );
 }
+
+export default wrapSettingsTab(ManageTopics);

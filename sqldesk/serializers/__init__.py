@@ -4,6 +4,7 @@ classes we have. This will ensure cleaner code and better
 separation of concerns.
 """
 
+from flask import g, has_app_context
 from flask_login import current_user
 from funcy import project
 from rq.job import JobStatus
@@ -18,6 +19,33 @@ from sqldesk.serializers.query_result import (
     serialize_query_result_to_dsv,
     serialize_query_result_to_xlsx,
 )
+
+
+def streaming_data_source_ids():
+    """
+    The data sources whose tables are windows rather than tables, as a set of
+    ids, worked out once per request.
+
+    Asked this way rather than through `query.data_source` because
+    `Query.all_queries()` deliberately does not load that relationship --
+    reading it while serializing would be a SELECT per row, which is the N+1
+    this list already paid to remove. One small SELECT serves a page of
+    twenty-five, and `data_sources` has tens of rows, not thousands.
+
+    Cached on `g`, so it is per request and cannot go stale within one: a data
+    source whose type changed mid-page would otherwise put the same query in
+    both halves of a list that is meant to be a partition.
+    """
+    if not has_app_context():
+        # A serializer reached outside a request or a worker's app context:
+        # answer honestly rather than caching onto nothing.
+        return set()
+    if not hasattr(g, "_sqldesk_streaming_data_source_ids"):
+        rows = models.db.session.query(models.DataSource.id).filter(
+            models.DataSource.type.in_(models.streaming_source_types())
+        )
+        g._sqldesk_streaming_data_source_ids = {row[0] for row in rows}
+    return g._sqldesk_streaming_data_source_ids
 
 
 def public_widget(widget):
@@ -143,6 +171,12 @@ def serialize_query(
         "version": query.version,
         "tags": query.tags or [],
         "is_safe": query.parameterized.is_safe,
+        # Whether this query reads a stream. The client needs it for two
+        # things: which editor a link should point at -- a streaming query has
+        # no stored result and so no view page -- and the badge that tells the
+        # two apart in search results, which is the one list where both kinds
+        # still appear together.
+        "is_streaming": query.data_source_id in streaming_data_source_ids(),
     }
 
     if with_api_key:
@@ -248,18 +282,9 @@ def serialize_dashboard(obj, with_widgets=False, user=None, with_favorite_state=
     layout = obj.layout
 
     widgets = []
-    # Whether this is a streaming dashboard, accumulated while the widgets are
-    # walked rather than asked of the dashboard afterwards. `loaded_widgets`
-    # has already joined the visualization, the query and the data source, so
-    # reading it here costs nothing -- where asking the dashboard would walk
-    # the dynamic relationship again and lazily fetch the lot, one widget at a
-    # time. That is the cost `test_dashboard_load_cost` exists to hold flat,
-    # and the first version of this put it straight back.
-    streaming = False
 
     if with_widgets:
         for w in obj.loaded_widgets():
-            streaming = streaming or models._widget_is_streaming(w)
             if w.visualization_id is None:
                 widgets.append(serialize_widget(w))
             elif user and has_access(w.visualization.query_rel, user, view_only):
@@ -308,13 +333,12 @@ def serialize_dashboard(obj, with_widgets=False, user=None, with_favorite_state=
         # offer; this is for saying *why* it cannot.
         "folder_id": obj.folder_id,
         "folder": obj.folder.to_dict() if obj.folder else None,
-        # Derived from what is on it: a streaming dashboard is one whose
-        # widgets draw on windows. The page needs it to know which refresh
-        # intervals to offer and what to say when nothing is watching -- and
-        # the page is the caller that asks for widgets, so it is never wrong
-        # where it is read. A list of dashboards does not load widgets and does
-        # not need it.
-        "is_streaming": streaming if with_widgets else None,
+        # Declared, not inferred, so it is answerable for a dashboard with no
+        # widgets yet -- which is every dashboard for its first minute, and
+        # exactly when somebody goes looking for it in a list. The page reads
+        # it for which refresh intervals to offer and what to say when nothing
+        # is watching; a list reads it for the badge.
+        "is_streaming": obj.is_streaming,
     }
 
     return d

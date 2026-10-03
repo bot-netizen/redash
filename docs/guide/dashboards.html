@@ -146,7 +146,8 @@ to pick one before saving.</p>
 interval: a dashboard has one, a stream panel wants two seconds, and a warehouse panel wants thirty or
 more. Mixing them would mean either running every warehouse query behind the board every two seconds,
 or showing a stream half a minute stale. Adding a widget across that line is refused, and which kind a
-dashboard is follows from what is on it rather than from a setting.</p>
+dashboard is you choose when you make it &mdash; so an empty one already knows, and it never changes kind
+under the panels somebody put there on the strength of it.</p>
 <p>A streaming dashboard is offered refresh intervals in seconds &mdash; 2, 5, 10, 20, 30, 60 and 120
 &mdash; where an ordinary one is offered half-minutes.</p>
 <p><strong>The panels are still until the dashboard is live.</strong> A stream is consumed only while
@@ -155,7 +156,14 @@ charts. Make it live and the topics start; they stop again about a minute after 
 it, and the windows are kept for ten minutes so coming back resumes in seconds. Anybody who can see
 the dashboard can watch it, and they need no streams permission to do so &mdash; they are not starting
 anything you have not already started.</p>
-<p>Find them under <strong>Streams &rarr; Streaming dashboards</strong>, or in the ordinary list.</p>
+<p>Find them under <strong>Dashboards &rarr; Streaming Dashboards</strong>, with the same All, Favorites
+and Mine views as the ordinary half &mdash; and nowhere else. The two halves do not overlap, so a dashboard
+has one place it lives. A folder is the exception, on purpose: it is a place rather than a type, so it shows
+whatever has been filed in it, of either kind.</p>
+<p>An open streaming dashboard says what it is: a <strong>streaming</strong> chip beside its name, and a band
+down the side of the page that turns green while its topics are being consumed. The <strong>Live</strong>
+badge beside it is a different thing &mdash; it says whether the dashboard is refreshing right now, which an
+ordinary dashboard can be too.</p>
 
 <h2 id="sharing">Sharing</h2>
 <p>A dashboard can be given a public link that needs no login. Anyone with the URL sees it, so it is a
