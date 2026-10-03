@@ -70,6 +70,15 @@ worker:
 # warehouse, so turning it on is a decision somebody should make rather than
 # inherit. With it off, /mcp answers 404 and the Catalog page does not appear.
 streams:
+  # Off, so an install that does not consume Kafka pays nothing for the fact
+  # that it could. On it costs a worker deployment, and the shared volume
+  # below, which is where a topic's window is written.
+  #
+  # Off also tells the application: the Streams permissions stop being
+  # offered, the Kafka Streams menu is not drawn, and the endpoints behind it
+  # refuse. The alternative is a menu that leads to pages which quietly never
+  # fill, because nothing is taking from the `streams` queue.
+  enabled: false
   # Kafka consumers get workers of their own, and they have to.
   #
   # A consumer is not like any other job: it holds its worker for minutes at a
@@ -148,7 +157,11 @@ mcp:
 # writes them and the worker reads them, so both mount the same volume;
 # without one an upload appears to succeed and every query on it then fails.
 uploads:
-  enabled: true
+  # Off, so a plain install carries no volume and the workers are free to
+  # schedule anywhere. Turn it on to let people upload files -- and note that
+  # `streams.enabled` turns the same volume on, because a topic's window is a
+  # file the stream worker writes and the server reads.
+  enabled: false
   size: 5Gi
   storageClass: ""
   # ReadWriteOnce is what every cluster can provide, and it mounts on one

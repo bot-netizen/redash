@@ -151,7 +151,7 @@ spec:
       tolerations: {{- toYaml . | nindent 8 }}
       {{- end }}
 {{- end }}
-{{- if .Values.streams.worker.enabled }}
+{{- if and .Values.streams.enabled .Values.streams.worker.enabled }}
 ---
 # Kafka consumers, on workers of their own.
 #

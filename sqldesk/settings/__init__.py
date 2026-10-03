@@ -551,6 +551,15 @@ MCP_MAX_QUERY_BYTES = int(os.environ.get("SQLDESK_MCP_MAX_QUERY_BYTES", "0"))
 # rolls the rest up. For history, land the topic in a warehouse and point
 # SQLDesk at that. See sqldesk/streams.
 
+#: Whether this install consumes Kafka at all.
+#:
+#: Separate from whether the client library is installed. A deployment that
+#: runs no stream worker can still import librdkafka, and offering the Streams
+#: permissions there buys somebody a menu whose pages never fill, because
+#: nothing is taking from the `streams` queue. Off, the permissions are not
+#: offered, the menu is not drawn and the endpoints refuse.
+STREAMS_ENABLED = parse_boolean(os.environ.get("SQLDESK_STREAMS_ENABLED", "true"))
+
 #: Rows of raw events to keep per stream. The *window* follows from this and
 #: the rate observed, which is the only honest way round: a fixed window is
 #: gigabytes for a busy topic and an empty chart for a quiet one.

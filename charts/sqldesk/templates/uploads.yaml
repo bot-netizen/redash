@@ -1,4 +1,4 @@
-{{- if and .Values.uploads.enabled (not .Values.uploads.existingClaim) }}
+{{- if and (eq (include "sqldesk.sharedVolume" .) "true") (not .Values.uploads.existingClaim) }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

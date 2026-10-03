@@ -60,13 +60,20 @@ def _streams_are_on():
     """
     Whether this install can consume a topic at all.
 
-    The runner needs librdkafka, which is in the optional dependency group with
-    every other data source's SDK. Offering somebody a permission to watch
-    streams on an install that cannot connect to a broker is offering a
-    permission to do nothing.
+    Two things have to be true and they fail differently. The runner needs
+    librdkafka, which is in the optional dependency group with every other data
+    source's SDK -- without it there is nothing to connect to a broker with.
+    And the deployment has to have been asked for streams: the image carries
+    the library whether or not anybody runs a stream worker, so an install that
+    runs none would otherwise offer a permission whose pages never fill.
+
+    Both are the same answer to somebody holding the permission -- nothing
+    happens -- so neither is worth offering.
     """
     from sqldesk.query_runner import get_query_runner
 
+    if not settings.STREAMS_ENABLED:
+        return False
     return get_query_runner("kafka_stream", {}) is not None
 
 

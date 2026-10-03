@@ -201,6 +201,11 @@ reached only one of them is the kind of difference nobody finds quickly.
 - name: SQLDESK_UPLOAD_QUOTA_MB
   value: {{ dig "lifecycle" "quotaMb" 5120 .Values.uploads | quote }}
 {{- end }}
+{{/* So the application agrees with the deployment: with no stream worker
+     running, the Streams permissions are not offered and the menu behind them
+     is not drawn, rather than leading to pages nothing ever fills. */}}
+- name: SQLDESK_STREAMS_ENABLED
+  value: {{ .Values.streams.enabled | quote }}
 {{- range $key, $value := .Values.extraEnv }}
 - name: {{ $key }}
   value: {{ $value | quote }}
@@ -210,8 +215,22 @@ reached only one of them is the kind of difference nobody finds quickly.
 {{/*
 The uploads volume, for every pod that reads or writes an uploaded file.
 */}}
+{{/*
+Whether the volume the server and the workers share is needed at all.
+
+Two features write to it and both need the *same* one, because one process
+writes and another reads: an uploaded file is written by the server and read by
+a worker running a query on it, and a topic's window is written by the stream
+worker and read by the server answering a stream query. Either feature on means
+the volume exists; both off means no claim, no mount, and workers free to
+schedule wherever there is room.
+*/}}
+{{- define "sqldesk.sharedVolume" -}}
+{{- or .Values.uploads.enabled .Values.streams.enabled -}}
+{{- end -}}
+
 {{- define "sqldesk.uploadsVolume" -}}
-{{- if .Values.uploads.enabled }}
+{{- if eq (include "sqldesk.sharedVolume" .) "true" }}
 - name: uploads
   persistentVolumeClaim:
     claimName: {{ .Values.uploads.existingClaim | default (printf "%s-uploads" (include "sqldesk.fullname" .)) }}
@@ -219,7 +238,7 @@ The uploads volume, for every pod that reads or writes an uploaded file.
 {{- end -}}
 
 {{- define "sqldesk.uploadsMount" -}}
-{{- if .Values.uploads.enabled }}
+{{- if eq (include "sqldesk.sharedVolume" .) "true" }}
 - name: uploads
   mountPath: /app/uploads
 {{- end }}
@@ -230,7 +249,7 @@ A ReadWriteOnce volume mounts on one node. Workers that need it go where the
 server is, or they wait forever on a Multi-Attach error.
 */}}
 {{- define "sqldesk.uploadsAffinity" -}}
-{{- if and .Values.uploads.enabled (eq .Values.uploads.accessMode "ReadWriteOnce") (not .Values.affinity) }}
+{{- if and (eq (include "sqldesk.sharedVolume" .) "true") (eq .Values.uploads.accessMode "ReadWriteOnce") (not .Values.affinity) }}
 affinity:
   podAffinity:
     requiredDuringSchedulingIgnoredDuringExecution:

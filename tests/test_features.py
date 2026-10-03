@@ -138,6 +138,19 @@ class TestTheStreamPermissions(BaseTestCase):
         with mock.patch("sqldesk.query_runner.get_query_runner", lambda *a, **k: None):
             self.assertFalse(features._streams_are_on())
 
+    def test_nor_on_a_deployment_that_runs_no_stream_worker(self):
+        # Separate from whether the library is installed, and the reason it has
+        # to be: the image carries librdkafka whether or not anybody deploys a
+        # stream worker, so a library check alone would offer the permission on
+        # every install -- and the pages behind it would never fill, because
+        # nothing is taking from the `streams` queue.
+        with mock.patch("sqldesk.query_runner.get_query_runner", lambda *a, **k: object()):
+            with mock.patch.object(settings, "STREAMS_ENABLED", False):
+                self.assertFalse(features._streams_are_on())
+
+            with mock.patch.object(settings, "STREAMS_ENABLED", True):
+                self.assertTrue(features._streams_are_on())
+
     def test_a_user_without_them_has_neither(self):
         user = self.factory.create_user()
 
