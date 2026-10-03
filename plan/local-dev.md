@@ -25,11 +25,24 @@ helm upgrade sqldesk charts/sqldesk --reset-then-reuse-values \
 chart's* defaults, so new values arrive nil.
 
 **Never `kubectl set image` on a Helm-managed deployment.** Server-side apply
-records who owns each field, so `kubectl-set` takes `image` from Helm and the
-next `helm upgrade` fails with *"conflict with \"kubectl-set\""* on every
-deployment at once. If it has already happened, `kubectl set image` to the tag
-Helm is about to apply -- identical values co-own rather than conflict -- and
-then run the upgrade.
+records who owns each field, so `kubectl-set` takes `image` from Helm and
+*every* later `helm upgrade` fails with *"conflict with \"kubectl-set\""* on
+every deployment at once. Setting the image to the tag Helm is about to apply
+clears one upgrade -- identical values co-own rather than conflict -- and the
+conflict returns on the next tag. The actual fix is to evict the manager:
+
+    for d in sqldesk-server sqldesk-worker sqldesk-scheduler \
+             sqldesk-stream-worker sqldesk-mcp-worker; do
+      idx=$(kubectl get deploy $d --show-managed-fields -o json | python3 -c "
+    import json,sys
+    mf = json.load(sys.stdin)['metadata'].get('managedFields', [])
+    print(next((i for i,e in enumerate(mf) if e.get('manager') == 'kubectl-set'), -1))")
+      [ "$idx" -ge 0 ] && kubectl patch deploy $d --type=json \
+        -p "[{\"op\":\"remove\",\"path\":\"/metadata/managedFields/$idx\"}]"
+    done
+
+`--show-managed-fields` is not optional: `kubectl get -o json` strips them, so
+without it the loop reports no such manager and silently does nothing.
 
 `streams.enabled` and `uploads.enabled` must be set explicitly — both default
 to **off** since 2026-10-03, and the local install needs them for testing.
