@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import cx from "classnames";
 
+import Alert from "antd/lib/alert";
 import Button from "antd/lib/button";
 import DynamicComponent from "@/components/DynamicComponent";
 import DashboardGrid from "@/components/dashboards/DashboardGrid";
@@ -69,6 +70,7 @@ function DashboardComponent(props) {
     editingLayout,
     setGridDisabled,
     live,
+    canManageLive,
   } = dashboardConfiguration;
 
   // Layout changes live only in the browser until they are saved, so leaving
@@ -143,6 +145,26 @@ function DashboardComponent(props) {
         <div className="m-b-10 p-15 bg-white tiled" data-test="DashboardFilters">
           <Filters filters={filters} onChange={setFilters} />
         </div>
+      )}
+      {/*
+        A streaming dashboard that is not live is showing nothing, and an
+        empty chart reads as a broken dashboard rather than as one waiting to
+        be started. Said once at the top instead of on every panel: the answer
+        is the same for all of them, and repeating it eight times is noise.
+      */}
+      {dashboard.is_streaming && !live && (
+        <Alert
+          className="m-b-10"
+          type="info"
+          showIcon
+          data-test="StreamsResting"
+          message="These panels are still."
+          description={
+            canManageLive
+              ? "A stream is consumed only while somebody is watching it. Make this dashboard live, from the \u22ee menu, and the topics start — they stop again a minute after the last person closes it."
+              : "A stream is consumed only while somebody is watching it. Somebody who may make this dashboard live has to start it; the topics stop again a minute after the last person closes it."
+          }
+        />
       )}
       <div id="dashboard-container">
         <DashboardGrid

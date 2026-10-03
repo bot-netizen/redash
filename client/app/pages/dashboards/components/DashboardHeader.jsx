@@ -16,7 +16,7 @@ import FavoritesControl from "@/components/FavoritesControl";
 import EditInPlace from "@/components/EditInPlace";
 import ShareDashboardButton from "./ShareDashboardButton";
 import DashboardFilters from "./DashboardFilters";
-import LiveBadge, { LIVE_INTERVAL_LABELS } from "./LiveBadge";
+import LiveBadge, { LIVE_INTERVAL_LABELS, intervalsFor } from "./LiveBadge";
 import PlainButton from "@/components/PlainButton";
 import { DashboardTagsControl } from "@/components/tags-control/TagsControl";
 import getTags from "@/services/getTags";
@@ -259,7 +259,7 @@ function DashboardMoreOptionsButton({ dashboardConfiguration }) {
           )}
           {canManageLive && (
             <Menu.SubMenu key="live" title={<span data-test="LiveMenu">{live ? "Live" : "Make live"}</span>}>
-              {Object.keys(LIVE_INTERVAL_LABELS).map((interval) => (
+              {intervalsFor(dashboard).map((interval) => (
                 <Menu.Item key={`live-${interval}`}>
                   <PlainButton
                     onClick={() => changeLive({ interval: Number(interval) })}

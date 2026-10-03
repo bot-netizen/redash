@@ -70,7 +70,10 @@ function useNavbarActiveState() {
       dataSources: includes(["DataSources.List"], currentRoute.id),
       alerts: includes(["Alerts.List", "Alerts.New", "Alerts.View", "Alerts.Edit"], currentRoute.id),
       catalog: currentRoute.id === "Catalog",
-      streams: includes(["Streams.Topics", "Streams.Query", "Streams.Running"], currentRoute.id),
+      streams: includes(
+        ["Streams.Topics", "Streams.Query", "Streams.QueryEdit", "Streams.Running", "Dashboards.Streaming"],
+        currentRoute.id
+      ),
       admin: includes(
         ["Admin.Overview", "Admin.MCP", "Admin.SystemStatus", "Admin.Jobs", "Admin.OutdatedQueries"],
         currentRoute.id
@@ -213,6 +216,9 @@ export default function DesktopNavbar() {
     <Menu className="desktop-navbar-dropdown-menu">
       <Menu.Item key="streams-query">
         <Link href="streams/query">Query a stream</Link>
+      </Menu.Item>
+      <Menu.Item key="streams-dashboards">
+        <Link href="dashboards/streaming">Streaming dashboards</Link>
       </Menu.Item>
       <Menu.Item key="streams-running">
         <Link href="streams/running">Running streams</Link>

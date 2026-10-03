@@ -266,3 +266,61 @@ class TestTheFolderModelDidNotStealAnything(BaseTestCase):
 
         self.assertEqual(200, rv.status_code)
         self.assertEqual(1, models.Favorite.query.count())
+
+
+class TestADashboardIsOneKindOrTheOther(BaseTestCase):
+    """
+    A dashboard has one refresh interval, and that is the whole argument.
+
+    A stream panel wants two seconds; a warehouse panel wants thirty or more.
+    Mixing them means either running every warehouse query behind the board
+    every two seconds, or showing a stream half a minute stale -- the one thing
+    a stream exists not to be.
+    """
+
+    def cluster(self):
+        return self.factory.create_data_source(name="Cluster", type="kafka_stream", group=self.factory.default_group)
+
+    def widget_on(self, dashboard, source):
+        query = self.factory.create_query(data_source=source)
+        visualization = self.factory.create_visualization(query_rel=query)
+        db.session.commit()
+        return self.make_request(
+            "post",
+            "/api/widgets",
+            data={
+                "dashboard_id": dashboard.id,
+                "visualization_id": visualization.id,
+                "options": {"position": {"col": 0, "row": 0, "sizeX": 3, "sizeY": 3}},
+                "width": 1,
+                "text": "",
+            },
+        )
+
+    def test_a_dashboard_with_no_widgets_is_not_streaming(self):
+        self.assertFalse(self.factory.create_dashboard().is_streaming)
+
+    def test_the_first_widget_decides_what_it_is(self):
+        dashboard = self.factory.create_dashboard()
+
+        self.assertEqual(200, self.widget_on(dashboard, self.factory.data_source).status_code)
+        self.assertFalse(models.Dashboard.query.get(dashboard.id).is_streaming)
+
+    def test_a_textbox_belongs_on_either(self):
+        # It draws on nothing, so it decides nothing.
+        dashboard = self.factory.create_dashboard()
+        self.widget_on(dashboard, self.factory.data_source)
+
+        rv = self.make_request(
+            "post",
+            "/api/widgets",
+            data={
+                "dashboard_id": dashboard.id,
+                "options": {"position": {"col": 0, "row": 4, "sizeX": 3, "sizeY": 1}},
+                "width": 1,
+                "text": "A note",
+                "visualization_id": None,
+            },
+        )
+
+        self.assertEqual(200, rv.status_code)

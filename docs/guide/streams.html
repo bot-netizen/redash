@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Streams — SQLDesk docs</title>
+<meta name="description" content="Kafka streams in SQLDesk: a window of the last few minutes, not a pipeline.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cg fill='none' stroke='%230a7c93' stroke-width='4'%3E%3Ccircle cx='60' cy='60' r='55.5'/%3E%3C/g%3E%3Cg fill='%230a7c93'%3E%3Crect x='34' y='70' width='12' height='15' rx='1.5'/%3E%3Crect x='48' y='56' width='12' height='29' rx='1.5'/%3E%3Crect x='62' y='63' width='12' height='22' rx='1.5'/%3E%3Crect x='76' y='50' width='12' height='35' rx='1.5'/%3E%3Crect x='30' y='84' width='62' height='5.5' rx='2.75'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="../assets/site.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <a class="brand" href="../index.html">
+      <svg viewBox="0 0 120 120" aria-hidden="true">
+        <g fill="none" stroke="currentColor" stroke-width="4"><circle cx="60" cy="60" r="55.5"/></g>
+        <g fill="currentColor">
+          <rect x="34" y="70" width="12" height="15" rx="1.5"/><rect x="48" y="56" width="12" height="29" rx="1.5"/>
+          <rect x="62" y="63" width="12" height="22" rx="1.5"/><rect x="76" y="50" width="12" height="35" rx="1.5"/>
+          <rect x="30" y="84" width="62" height="5.5" rx="2.75"/>
+        </g>
+      </svg>
+      SQLDesk
+    </a>
+    <nav>
+      <a href="../index.html">Overview</a>
+      <a href="../why.html">Why SQLDesk</a>
+      <a href="../performance.html" class="hide-sm">Performance</a>
+      <a href="../roadmap.html">Roadmap</a>
+      <a href="../blog/index.html">Blog</a>
+      <a href="../guide/overview.html" aria-current="page">Docs</a>
+      <a href="https://github.com/bot-netizen/sqldesk">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap doc-layout">
+  <nav class="doc-nav" aria-label="Documentation">
+      <h4>Start here</h4>
+      <a href="overview.html">Overview</a>
+      <a href="concepts.html">Concepts</a>
+      <a href="architecture.html">Architecture</a>
+      <h4>Using SQLDesk</h4>
+      <a href="connectors.html">Data sources</a>
+      <a href="queries.html">Queries and parameters</a>
+      <a href="visualizations.html">Visualizations</a>
+      <a href="dashboards.html">Dashboards and textboxes</a>
+      <a href="streams.html" aria-current="page">Streams</a>
+      <a href="alerts.html">Alerts</a>
+      <h4>AI</h4>
+      <a href="mcp.html">MCP</a>
+      <h4>Running it</h4>
+      <a href="administration.html">Administration</a>
+      <a href="deploying.html">Deploying</a>
+      <h4>Reference</h4>
+      <a href="releases.html">Releases</a>
+  </nav>
+  <main class="doc-body">
+<h1>Streams</h1>
+<p class="lede">A Kafka topic, queried with ordinary SQL. SQLDesk keeps a <strong>window</strong> of the
+last few minutes and nothing older &mdash; and consumes only while somebody is watching.</p>
+
+<h2 id="not-a-pipeline">What this is, and what it is not</h2>
+<p>It is <strong>not a pipeline</strong>. SQLDesk does not land your topic anywhere, does not replay
+history, and does not promise to have seen every message. If you want the last six months, land the
+topic in your warehouse and point SQLDesk at that. What this is for is the question you have during an
+incident, about the last ten minutes.</p>
+<p>What it keeps is a window, held in <a href="architecture.html#duckdb">DuckDB</a>, sized from the row
+budget and the rate actually observed: a slow topic gets an hour, a fast one gets four minutes. Above a
+ceiling the stream is <strong>sampled</strong>, and everything drawn from it says so &mdash; a count
+from a sampled stream is an estimate, and silence about that is the worst outcome.</p>
+
+<h2 id="clusters">Clusters and topics</h2>
+<p>An administrator adds a <strong>cluster</strong> as a data source: brokers, and whatever the cluster
+needs to let us in. Its <strong>topics are its tables</strong>.</p>
+<p>Which topics can be queried is chosen under <strong>Streams &rarr; Manage topics</strong>, by
+somebody with the streams permission. That is the real access decision: the data source permission is
+per cluster, so whatever is enabled there is what everybody with access to that cluster can query. A
+cluster carrying a topic not everyone should see wants a second data source of its own with a
+restricted list, granted to another group.</p>
+<p><strong>Analyse</strong> a topic before enabling it. It reads the last few hundred messages and says
+what the columns are, <em>how many could not be parsed</em>, how fast they arrive, how much history
+that buys, and whether it will be sampled. None of those can be guessed from a topic&rsquo;s name, and
+finding out an hour later is the bad way.</p>
+
+<h2 id="querying">Querying one</h2>
+<p><strong>Streams &rarr; Query a stream</strong> is the query editor, with the schema browser listing
+the enabled topics and the same visualizations as anywhere else. Two differences: the button says
+<strong>Start streaming</strong> rather than Execute, and <strong>no result is ever stored</strong>.</p>
+<p>The query is saved like any other; the rows are not. A window is what a consumer saw while somebody
+was watching, and writing it down would be making a copy of the one thing whose point is that it is
+current.</p>
+<p>Streams cannot be scheduled and cannot be alerted on, for the same reason: at three in the morning
+nobody is watching, so there is nothing to refresh and nothing for an alert to check.</p>
+
+<h2 id="lifecycle">Running, paused, cold</h2>
+<p>A stream is <strong>running</strong> while somebody has checked in within the last 45 seconds;
+<strong>paused</strong> when nobody has, keeping its window so coming back resumes in seconds rather
+than from an empty chart; and <strong>cold</strong> after ten minutes, when the window is dropped and
+starting again is a deliberate act.</p>
+<p>Resuming seeks to the <em>end</em> of the topic, as starting does. Replaying the gap would stamp old
+events with an arrival time of now, which would be a chart that lies &mdash; so a pause leaves a hole,
+and the chart says it was paused.</p>
+
+<h2 id="slots">Slots</h2>
+<p>A <strong>slot is a topic, not a viewer</strong>. Five people watching <code>orders</code> share one
+consumer and one window and take one slot between them, which is what makes a limit mean five topics
+rather than five tabs &mdash; and makes a team round one dashboard during an incident nearly free.</p>
+<p>There are three limits: how many topics may be consumed at once across the install, how many one
+person may start, and how long one runs before somebody says they still want it. Past them you are told
+what is running and who started it, because &ldquo;no slots&rdquo; is only actionable if you can see
+who to ask. <strong>Streams &rarr; Running streams</strong> shows all of it.</p>
+
+<h2 id="permissions">Who may do what</h2>
+<dl>
+  <dt>Administrators</dt>
+  <dd>Add the cluster, and pin a topic so it consumes with nobody watching.</dd>
+  <dt><code>manage_streams</code></dt>
+  <dd>Choose which topics can be queried, and how much of each is kept.</dd>
+  <dt><code>use_streams</code></dt>
+  <dd>Start a stream, which takes a slot.</dd>
+  <dt>Anybody with access to the cluster</dt>
+  <dd>Query what is enabled, and watch a stream somebody else started &mdash; no slot is taken and
+    nothing new becomes visible.</dd>
+</dl>
+
+<h2 id="dashboards">On a dashboard</h2>
+<p>A dashboard shows <a href="dashboards.html#streaming">streams or saved queries, never both</a>, and a
+streaming one is still until it is made live.</p>
+
+<div class="doc-next"><a class="btn btn-ghost" href="dashboards.html">&larr; Dashboards</a><a class="btn btn-primary" href="alerts.html">Alerts &rarr;</a></div>
+  </main>
+</div>
+
+<footer>
+  <div class="wrap">
+    <p><a href="../index.html">&larr; Back to overview</a> &nbsp;&middot;&nbsp;
+       <a href="releases.html">Releases</a> &nbsp;&middot;&nbsp;
+       <a href="https://github.com/bot-netizen/sqldesk">Source</a> &nbsp;&middot;&nbsp;
+       <a href="https://github.com/bot-netizen/sqldesk/blob/main/LICENSE">Apache 2.0</a></p>
+  </div>
+</footer>
+
+</body>
+</html>

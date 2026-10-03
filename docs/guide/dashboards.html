@@ -49,6 +49,7 @@
       <a href="queries.html">Queries and parameters</a>
       <a href="visualizations.html">Visualizations</a>
       <a href="dashboards.html" aria-current="page">Dashboards and textboxes</a>
+      <a href="streams.html">Streams</a>
       <a href="alerts.html">Alerts</a>
       <h4>AI</h4>
       <a href="mcp.html">MCP</a>
@@ -124,6 +125,37 @@ at a chosen width:</p>
 <p><code>style</code> and <code>class</code> survive. <code>&lt;script&gt;</code> does not, and neither does
 an <code>onerror</code> or any other event handler — every string is sanitised before it reaches the page,
 whoever wrote it.</p>
+
+<h2 id="folders">Folders</h2>
+<p>A folder gives a set of dashboards a <strong>stated meaning</strong> &mdash; &ldquo;business
+KPIs&rdquo;, &ldquo;operational metrics for the line&rdquo; &mdash; written when the folder is made and
+shown wherever it appears, so &ldquo;does this belong here&rdquo; has an answer rather than an
+argument. The Dashboards menu lists the folders somebody chose to put there; <strong>Browse
+folders</strong> has the rest.</p>
+<p>A <strong>locked</strong> folder is one only administrators change. A dashboard in it cannot be
+edited, renamed, archived or have a widget added by anybody else &mdash; including whoever made it
+&mdash; and moving one in or out is an administrator&rsquo;s act too. Everybody can still read them,
+favourite them and put them on a screen: the lock is on changing, never on seeing. A set anybody can
+edit is a set of dashboards with a label on it; one only administrators curate is a statement about
+what has been through review.</p>
+<p>Filing a dashboard is optional and stays optional. Most never go in a folder, and nothing asks you
+to pick one before saving.</p>
+
+<h2 id="streaming">Streaming dashboards</h2>
+<p>A dashboard shows <strong>streams or saved queries, never both</strong>. The reason is the refresh
+interval: a dashboard has one, a stream panel wants two seconds, and a warehouse panel wants thirty or
+more. Mixing them would mean either running every warehouse query behind the board every two seconds,
+or showing a stream half a minute stale. Adding a widget across that line is refused, and which kind a
+dashboard is follows from what is on it rather than from a setting.</p>
+<p>A streaming dashboard is offered refresh intervals in seconds &mdash; 2, 5, 10, 20, 30, 60 and 120
+&mdash; where an ordinary one is offered half-minutes.</p>
+<p><strong>The panels are still until the dashboard is live.</strong> A stream is consumed only while
+somebody is watching it, so a streaming dashboard that is not live says so rather than drawing empty
+charts. Make it live and the topics start; they stop again about a minute after the last person closes
+it, and the windows are kept for ten minutes so coming back resumes in seconds. Anybody who can see
+the dashboard can watch it, and they need no streams permission to do so &mdash; they are not starting
+anything you have not already started.</p>
+<p>Find them under <strong>Streams &rarr; Streaming dashboards</strong>, or in the ordinary list.</p>
 
 <h2 id="sharing">Sharing</h2>
 <p>A dashboard can be given a public link that needs no login. Anyone with the URL sees it, so it is a

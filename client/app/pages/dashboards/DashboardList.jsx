@@ -245,6 +245,12 @@ const DashboardListPage = itemsList(
   () =>
     new ResourceItemsSource({
       getResource({ params: { currentPage, folderId } }) {
+        if (currentPage === "streaming") {
+          // The same list, filtered. Not a second page: two lists of
+          // dashboards drift, and "where is my dashboard" gets two answers --
+          // which is the problem folders were meant to solve.
+          return (request) => Dashboard.query({ ...request, kind: "streaming" });
+        }
         if (currentPage === "folder") {
           // One folder's dashboards. The same list endpoint with `?folder=`,
           // so searching, tags, ordering and paging work here exactly as they
@@ -286,6 +292,14 @@ routes.register(
     path: "/dashboards/my",
     title: "My Dashboards",
     render: (pageProps) => <DashboardListPage {...pageProps} currentPage="my" />,
+  })
+);
+routes.register(
+  "Dashboards.Streaming",
+  routeWithUserSession({
+    path: "/dashboards/streaming",
+    title: "Streaming dashboards",
+    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="streaming" />,
   })
 );
 routes.register(
