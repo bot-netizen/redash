@@ -12,7 +12,7 @@ import { useCurrentRoute } from "@/components/ApplicationArea/Router";
 import { Auth, currentUser } from "@/services/auth";
 import { axios } from "@/services/axios";
 import settingsMenu from "@/services/settingsMenu";
-import { adminTabs, firstLine } from "@/pages/admin/adminTabs";
+import { adminTabs } from "@/pages/admin/adminTabs";
 import logoUrl from "@/assets/images/sqldesk_icon.svg";
 
 import PlusOutlinedIcon from "@ant-design/icons/PlusOutlined";
@@ -64,22 +64,6 @@ NavMenuButton.propTypes = {
 };
 
 NavMenuButton.defaultProps = { active: false, children: null };
-
-/** A menu entry with the line that says what it is. */
-function MenuEntry({ href, title, hint }) {
-  return (
-    <Link href={href} className="desktop-navbar-menu-entry">
-      <span className="desktop-navbar-menu-title">{title}</span>
-      <span className="desktop-navbar-menu-hint">{hint}</span>
-    </Link>
-  );
-}
-
-MenuEntry.propTypes = {
-  href: PropTypes.string.isRequired,
-  title: PropTypes.string.isRequired,
-  hint: PropTypes.string.isRequired,
-};
 
 const SETTINGS_ROUTES = [
   "AlertDestinations.Edit",
@@ -215,11 +199,15 @@ export default function DesktopNavbar() {
   // Everything an admin does, from the same list that draws the tab strip on
   // the pages themselves -- Storage and Streams were pages with routes and no
   // way to reach either, because two hand-written menus had drifted apart.
+  //
+  // Titles only. Each tab describes itself in two or three lines, and eight of
+  // those make a menu taller than the window; the description belongs on the
+  // page, which is where somebody reads it anyway.
   const adminMenu = (
-    <Menu className="desktop-navbar-dropdown-menu desktop-navbar-described-menu">
+    <Menu className="desktop-navbar-dropdown-menu">
       {adminTabs().map((tab) => (
         <Menu.Item key={`admin-${tab.key}`}>
-          <MenuEntry href={tab.path} title={tab.title} hint={firstLine(tab.description)} />
+          <Link href={tab.path}>{tab.title}</Link>
         </Menu.Item>
       ))}
     </Menu>

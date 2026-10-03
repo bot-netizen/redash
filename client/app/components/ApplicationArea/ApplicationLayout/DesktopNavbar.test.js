@@ -167,7 +167,7 @@ describe("DesktopNavbar", () => {
     ]);
   });
 
-  test("the Admin menu reaches every admin page, descriptions and all", async () => {
+  test("the Admin menu reaches every admin page", async () => {
     mockPermissions.add("super_admin");
     const wrapper = await render();
     const adminMenu = menu(wrapper, "AdminMenuButton");
@@ -186,7 +186,16 @@ describe("DesktopNavbar", () => {
     // to reach either, because this menu was written out by hand.
     expect(adminMenu.text()).toContain("Storage Status");
     expect(adminMenu.text()).toContain("Streaming Queries");
-    expect(adminMenu.find(".desktop-navbar-menu-hint").hostNodes().length).toBe(8);
+  });
+
+  // Eight entries describing themselves in three lines each is a menu taller
+  // than the window. The descriptions belong on the pages.
+  test("and does not repeat what each page says about itself", async () => {
+    mockPermissions.add("super_admin");
+    const adminMenu = menu(await render(), "AdminMenuButton");
+
+    expect(adminMenu.text()).not.toContain("Where the headroom is going");
+    adminMenu.find("a").forEach((link) => expect(link.text().split(" ").length).toBeLessThanOrEqual(3));
   });
 
   test("the Settings menu shows only the tabs this person may open", async () => {

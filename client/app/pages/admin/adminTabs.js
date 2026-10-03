@@ -96,10 +96,4 @@ export function adminTab(key) {
   return TABS.find((tab) => tab.key === key) || null;
 }
 
-/** The first line of a description, for somewhere there is no room for three. */
-export function firstLine(description) {
-  const [first] = description.split(". ");
-  return first ? `${first}.` : description;
-}
-
 export default TABS;
