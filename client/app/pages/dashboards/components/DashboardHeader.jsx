@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import cx from "classnames";
 import PropTypes from "prop-types";
 import { map, includes } from "lodash";
@@ -6,6 +6,7 @@ import Button from "antd/lib/button";
 import Checkbox from "antd/lib/checkbox";
 import Dropdown from "antd/lib/dropdown";
 import Menu from "antd/lib/menu";
+import { axios } from "@/services/axios";
 import EllipsisOutlinedIcon from "@ant-design/icons/EllipsisOutlined";
 import PauseCircleOutlinedIcon from "@ant-design/icons/PauseCircleOutlined";
 import PlayCircleOutlinedIcon from "@ant-design/icons/PlayCircleOutlined";
@@ -19,7 +20,7 @@ import LiveBadge, { LIVE_INTERVAL_LABELS } from "./LiveBadge";
 import PlainButton from "@/components/PlainButton";
 import { DashboardTagsControl } from "@/components/tags-control/TagsControl";
 import getTags from "@/services/getTags";
-import { clientConfig } from "@/services/auth";
+import { clientConfig, currentUser } from "@/services/auth";
 import { policy } from "@/services/policy";
 import recordEvent from "@/services/recordEvent";
 import { durationHumanize } from "@/lib/utils";
@@ -143,6 +144,18 @@ LiveControl.propTypes = {
   dashboardConfiguration: PropTypes.object.isRequired, // eslint-disable-line react/forbid-prop-types
 };
 
+/**
+ * Whether this person may move this dashboard between folders.
+ *
+ * A locked folder is an administrator's to put things into and take them out
+ * of -- otherwise anybody could take a dashboard out of the folder protecting
+ * it, change it, and put it back. The server refuses it either way; this is so
+ * the menu does not offer a button that answers 403.
+ */
+export function mayMoveFolders({ admin, inLocked, canEdit }) {
+  return !!(admin || (!inLocked && canEdit));
+}
+
 function DashboardMoreOptionsButton({ dashboardConfiguration }) {
   const {
     dashboard,
@@ -157,7 +170,30 @@ function DashboardMoreOptionsButton({ dashboardConfiguration }) {
     live,
     canManageLive,
     changeLive,
+    moveToFolder,
   } = dashboardConfiguration;
+
+  const [folders, setFolders] = useState([]);
+  useEffect(() => {
+    let live_ = true;
+    axios
+      .get("api/dashboard_folders")
+      .then((found) => live_ && setFolders(found || []))
+      .catch(() => {});
+    return () => {
+      live_ = false;
+    };
+  }, []);
+
+  // A locked folder is an administrator's to put things into and take them out
+  // of. Offering the move to anybody else would be offering a button that
+  // answers 403 -- the server refuses it either way.
+  const admin = currentUser.isAdmin;
+  const mayMove = mayMoveFolders({
+    admin,
+    inLocked: !!(dashboard.folder && dashboard.folder.locked),
+    canEdit: dashboard.canEdit(),
+  });
 
   const archive = () => {
     Modal.confirm({
@@ -189,6 +225,32 @@ function DashboardMoreOptionsButton({ dashboardConfiguration }) {
                 <span className="sr-only">(opens in a new tab)</span>
               </PlainButton>
             </Menu.Item>
+          )}
+          {mayMove && (
+            <Menu.SubMenu
+              key="folder"
+              title={
+                <span data-test="FolderMenu">
+                  {dashboard.folder ? `Folder: ${dashboard.folder.name}` : "File in a folder"}
+                </span>
+              }
+            >
+              {folders.map((folder) => (
+                <Menu.Item key={`folder-${folder.id}`} disabled={folder.locked && !admin}>
+                  <PlainButton onClick={() => moveToFolder(folder.id)}>
+                    {dashboard.folder_id === folder.id && <i className="fa fa-check m-r-5" aria-hidden="true" />}
+                    {folder.name}
+                    {folder.locked && <span className="m-l-5 text-muted">administrators only</span>}
+                  </PlainButton>
+                </Menu.Item>
+              ))}
+              {dashboard.folder_id && <Menu.Divider />}
+              {dashboard.folder_id && (
+                <Menu.Item key="folder-none">
+                  <PlainButton onClick={() => moveToFolder(null)}>Take it out</PlainButton>
+                </Menu.Item>
+              )}
+            </Menu.SubMenu>
           )}
           {clientConfig.showPermissionsControl && isDashboardOwnerOrAdmin && (
             <Menu.Item>

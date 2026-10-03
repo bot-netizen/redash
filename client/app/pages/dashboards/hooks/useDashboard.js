@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { isEmpty, includes, compact, map, has, pick, keys, extend, every, get } from "lodash";
+import { axios } from "@/services/axios";
 import notification from "@/services/notification";
 import location from "@/services/location";
 import url from "@/services/url";
@@ -85,6 +86,34 @@ function useDashboard(dashboardData, { publicToken = null } = {}) {
       author: dashboard.user,
     });
   }, [dashboard]);
+
+  /*
+    Filing this dashboard, or taking it out of a folder.
+
+    Its own call rather than `updateDashboard`, which saves the dashboard --
+    and a dashboard in a locked folder cannot be saved by the person most
+    likely to be moving it out. The move is a separate permission and a
+    separate endpoint, so it gets a separate function, and the result is
+    folded into local state rather than re-fetched.
+  */
+  const moveToFolder = useCallback(
+    (folderId) =>
+      axios
+        .post(`api/dashboards/${dashboard.id}/folder`, { folder_id: folderId })
+        .then((moved) => {
+          setDashboard((currentDashboard) =>
+            extend({}, currentDashboard, { folder_id: moved.folder_id, folder: moved.folder })
+          );
+          notification.success(moved.folder ? `Filed under ${moved.folder.name}.` : "Taken out of its folder.");
+        })
+        .catch((error) => {
+          notification.error(
+            "Could not move it",
+            get(error, "response.data.message") || "You may not move this dashboard."
+          );
+        }),
+    [dashboard.id]
+  );
 
   const updateDashboard = useCallback(
     (data, includeVersion = true) => {
@@ -318,6 +347,7 @@ function useDashboard(dashboardData, { publicToken = null } = {}) {
     removeWidget,
     canEditDashboard,
     isDashboardOwnerOrAdmin,
+    moveToFolder,
     refreshRate,
     setRefreshRate,
     disableRefreshRate,
