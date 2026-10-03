@@ -133,7 +133,17 @@ def _describe(messages, topic, options):
         "malformed": malformed,
         "columns": [{"name": name, "type": kind} for name, kind in sorted(columns.items())],
         "events_per_second": round(rate, 2),
-        "window_seconds": window_for(rate, budget) if rate else 0,
+        # `window_for(row_budget, events_per_second)`, in that order. These were
+        # the other way round, so the preview divided the *rate* by the budget
+        # and clamped -- which is the floor for anything short of five million
+        # events a second. Every topic was previewed as "5 minutes of history"
+        # whatever its rate, and the figure looked precomputed because in
+        # effect it was. The consumer always had it right, so the window a
+        # stream actually kept was never wrong; only the number somebody read
+        # before deciding.
+        "window_seconds": window_for(budget, rate) if rate else 0,
+        "row_budget": budget,
+        "ceiling": ceiling,
         "sampled": bool(ceiling and rate > ceiling),
         "sample_rate": max(1, math.ceil(rate / ceiling)) if ceiling and rate > ceiling else 1,
     }

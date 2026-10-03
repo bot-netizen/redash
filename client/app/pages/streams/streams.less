@@ -86,15 +86,92 @@
     background: @component-background;
   }
 
+  .streams-figures {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 8px 24px;
+  }
+
   .streams-figure {
     display: inline-block;
-    margin-right: 24px;
 
     strong {
       display: block;
       font-size: 18px;
       line-height: 24px;
     }
+  }
+
+  /* Pushed to the right of the figures it qualifies: it is about all of them
+     rather than one, and it carries the control that takes them again. */
+  .streams-measured {
+    margin-left: auto;
+    align-self: center;
+    font-size: 12px;
+    color: fade(#000, 45%);
+  }
+
+  /* The schema, as a block that can be shut. A topic with forty fields is
+     ordinary, and a wrapped row of tags was unreadable past about eight. */
+  .streams-schema-head {
+    all: unset;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+
+    &:focus-visible {
+      outline: 2px solid @primary-color;
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
+  }
+
+  .streams-schema-block {
+    margin-top: 6px;
+    padding: 8px 10px;
+    border: 1px solid @border-color-split;
+    border-radius: 3px;
+    background: fade(#000, 2%);
+    /* Scrolls rather than growing without limit: the button that enables the
+       topic must stay reachable however many columns there are. */
+    max-height: 280px;
+    overflow-y: auto;
+  }
+
+  .streams-schema-row {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-family: @code-family, monospace;
+    font-size: 12px;
+    line-height: 20px;
+  }
+
+  .streams-schema-name {
+    flex: 0 0 auto;
+    min-width: 180px;
+  }
+
+  .streams-schema-type {
+    color: fade(#000, 45%);
+  }
+
+  /* Added by SQLDesk to every window, so it is shown as part of the schema and
+     marked as not coming from the topic. */
+  .streams-schema-given {
+    border-top: 1px dashed @border-color-split;
+    margin-top: 4px;
+    padding-top: 4px;
+    opacity: 0.75;
+  }
+
+  /* Room between the schema and the decision it informs. They were touching,
+     which read as one block and made the button easy to press by accident. */
+  .streams-enable {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid @border-color-split;
   }
 
   .streams-rate {

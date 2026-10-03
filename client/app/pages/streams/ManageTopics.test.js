@@ -54,6 +54,8 @@ const analysis = {
   columns: [{ name: "id", type: "integer" }],
   events_per_second: 12.5,
   window_seconds: 600,
+  row_budget: 5000000,
+  ceiling: 5000,
   sampled: false,
   sample_rate: 1,
 };
@@ -121,6 +123,59 @@ describe("the Manage topics page", () => {
     await settle(wrapper);
 
     expect(wrapper.text()).toContain("1 event in 8 would be kept");
+  });
+
+  test("the schema lists every column, one per line, and the one SQLDesk adds", async () => {
+    // A row of tags wrapped into an unreadable block past about eight fields,
+    // and a topic with forty is ordinary.
+    const wrapper = await render([{ name: "orders", partitions: 1, enabled: false, columns: 0 }]);
+    const many = Array.from({ length: 24 }, (unused, index) => ({ name: `field_${index}`, type: "string" }));
+    jest.spyOn(axios, "post").mockResolvedValue({ ...analysis, columns: many });
+
+    wrapper.find('[data-test="AnalyseTopic"]').first().simulate("click");
+    await settle(wrapper);
+
+    const schema = wrapper.find('[data-test="TopicSchema"]').first();
+    expect(schema.find(".streams-schema-row").length).toBe(25);
+    expect(schema.text()).toContain("field_23");
+    expect(schema.text()).toContain("_received_at");
+  });
+
+  test("a reading says when it was taken and offers to take another", async () => {
+    // Without the time on it the figure reads as something precomputed, and
+    // nobody thinks to take it again after the topic has changed.
+    const wrapper = await render([{ name: "orders", partitions: 1, enabled: false, columns: 0 }]);
+    const post = jest.spyOn(axios, "post").mockResolvedValue(analysis);
+
+    wrapper.find('[data-test="AnalyseTopic"]').first().simulate("click");
+    await settle(wrapper);
+    expect(wrapper.text()).toContain("measured");
+
+    wrapper.find('[data-test="AnalyseAgain"]').first().simulate("click");
+    await settle(wrapper);
+
+    expect(post).toHaveBeenCalledTimes(2);
+  });
+
+  test("an already-enabled topic is not offered the button that enables it", async () => {
+    const wrapper = await render([{ name: "orders", partitions: 1, enabled: true, columns: 4 }]);
+    jest.spyOn(axios, "post").mockResolvedValue(analysis);
+
+    wrapper.find('[data-test="AnalyseTopic"]').first().simulate("click");
+    await settle(wrapper);
+
+    expect(wrapper.find('[data-test="EnableTopic"]').length).toBe(0);
+  });
+
+  test("sampling is explained whether or not it is happening", async () => {
+    const wrapper = await render([{ name: "orders", partitions: 1, enabled: false, columns: 0 }]);
+    jest.spyOn(axios, "post").mockResolvedValue(analysis);
+
+    wrapper.find('[data-test="AnalyseTopic"]').first().simulate("click");
+    await settle(wrapper);
+
+    expect(wrapper.text()).toContain("Everything is kept");
+    expect(wrapper.text()).toContain("5,000");
   });
 
   test("a cluster that will not answer says so instead of showing nothing", async () => {

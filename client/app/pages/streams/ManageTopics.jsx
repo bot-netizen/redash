@@ -6,6 +6,7 @@ import Select from "antd/lib/select";
 import Table from "antd/lib/table";
 import Tag from "antd/lib/tag";
 
+import TimeAgo from "@/components/TimeAgo";
 import { axios } from "@/services/axios";
 import notification from "@/services/notification";
 import recordEvent from "@/services/recordEvent";
@@ -47,15 +48,114 @@ function Figure({ label, children }) {
   );
 }
 
-function Analysis({ found, onEnable, saving }) {
+/*
+  One in how many events would be kept, and why.
+
+  Sampling is not a percentage and not random: the ceiling divides the rate,
+  rounded up, and the decision per event is a hash of the message key's raw
+  bytes. That matters to whoever is reading the number -- the same keys stay in
+  across every flush, so a per-key count can be scaled back up honestly, which
+  a random sample could not promise.
+*/
+function Sampling({ found }) {
+  if (!found.ceiling) {
+    return (
+      <p className="streams-muted">
+        No events-a-second ceiling is set on this install, so every event is kept however fast the topic runs. That is
+        the setting to use if a window ever costs more disk than it is worth.
+      </p>
+    );
+  }
+  if (!found.sampled) {
+    return (
+      <p className="streams-muted">
+        <strong>Everything is kept.</strong> {found.events_per_second} events a second is under the ceiling of{" "}
+        {(found.ceiling || 0).toLocaleString()}, so nothing is dropped. Past the ceiling SQLDesk keeps one event in
+        however many times over it the topic runs.
+      </p>
+    );
+  }
+  return (
+    <p className="streams-muted">
+      <strong>1 event in {found.sample_rate} would be kept.</strong> {found.events_per_second} events a second against a
+      ceiling of {(found.ceiling || 0).toLocaleString()}, and the ceiling divides the rate. Which events is decided by a
+      hash of the message key, not at random, so the same keys stay in from one second to the next and a count per key
+      can be scaled back up. Counts across all keys are estimates, and every chart drawn from this stream says so.
+    </p>
+  );
+}
+
+/*
+  The schema, however many columns there are.
+
+  A row of tags wrapped into an unreadable block the moment a topic had more
+  than a handful, and a topic with forty fields is ordinary. One per line,
+  monospaced so the types line up, in a box that scrolls rather than pushing
+  the button that enables the topic off the bottom of the screen.
+*/
+function Schema({ columns }) {
+  const [open, setOpen] = useState(true);
+
+  if (columns.length === 0) {
+    return (
+      <div className="streams-schema-block">
+        <p className="streams-muted m-b-0">
+          Nothing could be read from this topic. It may be empty, or it may not be JSON.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="streams-schema">
+      <button type="button" className="streams-schema-head" onClick={() => setOpen((on) => !on)}>
+        <i className={`fa fa-caret-${open ? "down" : "right"} m-r-5`} aria-hidden="true" />
+        <strong>Columns</strong>
+        <span className="streams-muted m-l-5">
+          {columns.length} field{columns.length === 1 ? "" : "s"}
+        </span>
+      </button>
+      {open && (
+        <div className="streams-schema-block" data-test="TopicSchema">
+          {columns.map((column) => (
+            <div className="streams-schema-row" key={column.name}>
+              <span className="streams-schema-name">{column.name}</span>
+              <span className="streams-schema-type">{column.type}</span>
+            </div>
+          ))}
+          <div className="streams-schema-row streams-schema-given">
+            <span className="streams-schema-name">_received_at</span>
+            <span className="streams-schema-type">datetime</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Analysis({ found, onEnable, onAgain, saving, analysing, enabled }) {
   return (
     <div className="streams-analysis" data-test="TopicAnalysis">
-      <Figure label="messages read">{found.read}</Figure>
-      <Figure label="could not be parsed">{found.malformed}</Figure>
-      <Figure label="events a second">
-        <span className="streams-rate">{found.events_per_second}</span>
-      </Figure>
-      <Figure label="of history that buys">{seconds(found.window_seconds)}</Figure>
+      <div className="streams-figures">
+        <Figure label="messages read">{found.read}</Figure>
+        <Figure label="could not be parsed">{found.malformed}</Figure>
+        <Figure label="events a second">
+          <span className="streams-rate">{found.events_per_second}</span>
+        </Figure>
+        <Figure label="of history that buys">{seconds(found.window_seconds)}</Figure>
+        {/*
+          A reading of the last few hundred messages at a moment, not a figure
+          the server keeps. Without the time on it, it reads as something
+          precomputed and nobody thinks to take it again after the topic has
+          changed.
+        */}
+        <span className="streams-measured">
+          measured <TimeAgo date={found.measured_at} />
+          <Button size="small" className="m-l-10" loading={analysing} onClick={onAgain} data-test="AnalyseAgain">
+            Analyse again
+          </Button>
+        </span>
+      </div>
 
       {found.malformed > 0 && (
         <Alert
@@ -67,36 +167,29 @@ function Analysis({ found, onEnable, saving }) {
         />
       )}
 
-      {found.sampled && (
-        <Alert
-          className="m-t-10"
-          type="warning"
-          showIcon
-          message={`Faster than the ceiling, so 1 event in ${found.sample_rate} would be kept.`}
-          description="Counts from a sampled stream are estimates, and every chart drawn from one says so. Raise the events-a-second ceiling if you need all of them."
-        />
-      )}
-
-      <div className="m-t-10">
-        <strong>Columns</strong>
-        {found.columns.length === 0 ? (
-          <p className="streams-muted">
-            Nothing could be read from this topic. It may be empty, or it may not be JSON.
-          </p>
-        ) : (
-          <p className="streams-muted">
-            {found.columns.map((column) => (
-              <Tag key={column.name}>
-                {column.name} <span className="streams-muted">{column.type}</span>
-              </Tag>
-            ))}
-          </p>
-        )}
+      <div className="m-t-15">
+        <strong>How much would be kept</strong>
+        <p className="streams-muted m-b-5">
+          A window is a row budget divided by the rate: {(found.row_budget || 0).toLocaleString()} rows at{" "}
+          {found.events_per_second} a second is {seconds(found.window_seconds)}, held between five minutes and half an
+          hour. Both numbers are per topic and are set under Admin &rarr; Streaming Queries.
+        </p>
+        <Sampling found={found} />
       </div>
 
-      <Button type="primary" onClick={onEnable} loading={saving} data-test="EnableTopic">
-        Enable this topic
-      </Button>
+      <div className="m-t-15">
+        <Schema columns={found.columns} />
+      </div>
+
+      {/* Already on: offering to enable it again would do nothing, and the
+          control that matters is Turn off, which is in the row above. */}
+      {!enabled && (
+        <div className="streams-enable">
+          <Button type="primary" onClick={onEnable} loading={saving} data-test="EnableTopic">
+            Enable this topic
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -150,7 +243,7 @@ export default function ManageTopics() {
       setAnalysing(topic);
       axios
         .post(`api/data_sources/${chosen}/topics/${encodeURIComponent(topic)}/analyse`)
-        .then((found) => setAnalysis((all) => ({ ...all, [topic]: found })))
+        .then((found) => setAnalysis((all) => ({ ...all, [topic]: { ...found, measured_at: new Date() } })))
         .catch((error) => notification.error("Could not read that topic", (error && error.message) || ""))
         .finally(() => setAnalysing(null));
     },
@@ -310,7 +403,14 @@ export default function ManageTopics() {
               expandedRowKeys: Object.keys(analysis),
               expandedRowRender: (row) =>
                 analysis[row.name] ? (
-                  <Analysis found={analysis[row.name]} saving={saving === row.name} onEnable={() => enable(row.name)} />
+                  <Analysis
+                    found={analysis[row.name]}
+                    enabled={row.enabled}
+                    saving={saving === row.name}
+                    analysing={analysing === row.name}
+                    onEnable={() => enable(row.name)}
+                    onAgain={() => analyse(row.name)}
+                  />
                 ) : null,
               rowExpandable: (row) => !!analysis[row.name],
             }}

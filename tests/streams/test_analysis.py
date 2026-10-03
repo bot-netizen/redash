@@ -11,7 +11,7 @@ them off a broker is `test_broker.py`, which needs one running.
 
 from unittest import TestCase, mock
 
-from sqldesk.streams import analysis
+from sqldesk.streams import analysis, window
 
 
 def message(payload, when=0):
@@ -92,8 +92,52 @@ class TestWhatThatBuys(TestCase):
         with mock.patch("sqldesk.settings.STREAM_ROW_BUDGET", 100000):
             found = analysis._describe(self.messages(10), "orders", {})
 
-        self.assertGreater(found["window_seconds"], 0)
+        # 100,000 rows at 10/s is nearly three hours, so the preview is the
+        # half-hour ceiling. `> 0` was the old assertion and it is why the
+        # arguments could be swapped for weeks: every answer is greater than
+        # zero, including the wrong one.
+        self.assertEqual(window.MAX_WINDOW, found["window_seconds"])
         self.assertFalse(found["sampled"])
+
+    def test_and_a_busier_one_a_shorter_window_in_proportion(self):
+        # The case that catches a swap: 100,000 rows at 200/s is 500 seconds,
+        # which is inside the clamp at both ends. With the arguments the other
+        # way round it is 200/100000 -- clamped to the floor, and the floor is
+        # what every topic reported.
+        with mock.patch("sqldesk.settings.STREAM_ROW_BUDGET", 100000):
+            found = analysis._describe(self.messages(200), "orders", {})
+
+        self.assertEqual(500, found["window_seconds"])
+
+    def test_the_preview_is_the_window_the_consumer_would_keep(self):
+        """
+        The number somebody decides on has to be the number they get.
+
+        These are computed in two places -- the preview here, the real one in
+        the consumer -- and only one of them was right. Asserting they agree
+        is the only thing that keeps them agreeing.
+        """
+        with mock.patch("sqldesk.settings.STREAM_ROW_BUDGET", 250000):
+            found = analysis._describe(self.messages(300), "orders", {})
+
+        self.assertEqual(window.window_for(250000, found["events_per_second"]), found["window_seconds"])
+
+    def test_it_says_which_limits_it_measured_against(self):
+        # A window is a budget divided by a rate. Reporting the result without
+        # the budget leaves somebody unable to tell a slow topic from a
+        # generous setting.
+        with mock.patch("sqldesk.settings.STREAM_ROW_BUDGET", 100000):
+            with mock.patch("sqldesk.settings.STREAM_EVENTS_PER_SECOND", 4000):
+                found = analysis._describe(self.messages(10), "orders", {})
+
+        self.assertEqual(100000, found["row_budget"])
+        self.assertEqual(4000, found["ceiling"])
+
+    def test_and_a_per_stream_setting_wins_over_the_installs(self):
+        found = analysis._describe(self.messages(10), "orders", {"row_budget": 7, "events_per_second": 9})
+
+        self.assertEqual(7, found["row_budget"])
+        self.assertEqual(9, found["ceiling"])
 
     def test_a_topic_over_the_ceiling_is_marked_as_sampled(self):
         # Said before anybody enables it, because a count from a sampled stream
