@@ -112,7 +112,7 @@ PAGES = [
     ("mcp.html", "MCP", "AI"),
     ("administration.html", "Administration", "Running it"),
     ("deploying.html", "Deploying", "Running it"),
-    ("releases.html", "Releases", "Reference"),
+    ("../roadmap.html", "Releases &amp; roadmap", "Reference"),
 ]
 
 
@@ -200,7 +200,7 @@ def render(filename, description, body):
 <footer>
   <div class="wrap">
     <p><a href="../index.html">&larr; Back to overview</a> &nbsp;&middot;&nbsp;
-       <a href="releases.html">Releases</a> &nbsp;&middot;&nbsp;
+       <a href="../roadmap.html">Releases</a> &nbsp;&middot;&nbsp;
        <a href="https://github.com/bot-netizen/sqldesk">Source</a> &nbsp;&middot;&nbsp;
        <a href="https://github.com/bot-netizen/sqldesk/blob/main/LICENSE">Apache 2.0</a></p>
   </div>

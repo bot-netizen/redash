@@ -57,7 +57,7 @@
       <a href="administration.html">Administration</a>
       <a href="deploying.html" aria-current="page">Deploying</a>
       <h4>Reference</h4>
-      <a href="releases.html">Releases</a>
+      <a href="../roadmap.html">Releases &amp; roadmap</a>
   </nav>
   <main class="doc-body">
 <h1>Deploying</h1>
@@ -260,7 +260,7 @@ chart treats an empty value as "generate one", and no saved credential would dec
 git clone https://github.com/bot-netizen/sqldesk.git</code></pre>
 <p>Give Docker Desktop at least 8&nbsp;GB of memory first; with less, pods get restarted under load. The clone
 is the latest release, because <code>main</code> only moves at a release. For another one, add
-<code>--branch</code> and its tag from <a href="releases.html">Releases</a>.</p>
+<code>--branch</code> and its tag from <a href="../roadmap.html">Releases</a>.</p>
 
 <h3>3. Write a values file</h3>
 <pre><code># sqldesk-values.yaml -- private, it holds the secrets
@@ -337,14 +337,14 @@ plain container with no persistence.</p>
 made with: data source and alert destination credentials are encrypted with it. To change the key, re-encrypt
 first rather than after:</p>
 <pre><code>manage database reencrypt &lt;old key&gt; &lt;new key&gt;</code></pre>
-<div class="doc-next"><a class="btn btn-ghost" href="administration.html">&larr; Administration</a><a class="btn btn-primary" href="releases.html">Releases &rarr;</a></div>
+<div class="doc-next"><a class="btn btn-ghost" href="administration.html">&larr; Administration</a><a class="btn btn-primary" href="../roadmap.html">Releases &amp; roadmap &rarr;</a></div>
   </main>
 </div>
 
 <footer>
   <div class="wrap">
     <p><a href="../index.html">&larr; Back to overview</a> &nbsp;&middot;&nbsp;
-       <a href="releases.html">Releases</a> &nbsp;&middot;&nbsp;
+       <a href="../roadmap.html">Releases</a> &nbsp;&middot;&nbsp;
        <a href="https://github.com/bot-netizen/sqldesk">Source</a> &nbsp;&middot;&nbsp;
        <a href="https://github.com/bot-netizen/sqldesk/blob/main/LICENSE">Apache 2.0</a></p>
   </div>

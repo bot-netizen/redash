@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Visualization roadmap — SQLDesk</title>
-<meta name="description" content="What SQLDesk draws today, what is being built for live dashboards, and what comes after. Updated as work lands.">
+<title>Releases and roadmap — SQLDesk</title>
+<meta name="description" content="What each SQLDesk release did, and what the next one is for. One page: the history at the top, 0.8 at the bottom.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'%3E%3Cg fill='none' stroke='%230a7c93' stroke-width='4'%3E%3Ccircle cx='60' cy='60' r='55.5'/%3E%3C/g%3E%3Cg fill='%230a7c93'%3E%3Crect x='34' y='70' width='12' height='15' rx='1.5'/%3E%3Crect x='48' y='56' width='12' height='29' rx='1.5'/%3E%3Crect x='62' y='63' width='12' height='22' rx='1.5'/%3E%3Crect x='76' y='50' width='12' height='35' rx='1.5'/%3E%3Crect x='30' y='84' width='62' height='5.5' rx='2.75'/%3E%3C/g%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -146,144 +146,248 @@ footer a{color:var(--muted)}
 </header>
 
 <div class="wrap head">
-  <span class="eyebrow">Roadmap &middot; updated 26 September 2026</span>
-  <h1>Charts that keep up with the data.</h1>
+  <span class="eyebrow">Releases &amp; roadmap &middot; updated 3 October 2026</span>
+  <h1>One release, one idea.</h1>
   <p class="lede">
-    What SQLDesk draws today, what is being built for dashboards that refresh every few seconds, and what comes
-    after. This page changes as work lands; each item says where it stands.
+    SQLDesk is a fork of Redash rebuilt a layer at a time. Each release has a single theme, and the
+    theme is the point &mdash; a release that does a little of everything is a release nobody can
+    describe. This is the whole history and the one thing coming next.
   </p>
   <div class="legend" aria-label="Status key">
-    <span><span class="st st-shipped">Shipped</span> in a release</span>
-    <span><span class="st st-testing">In testing</span> in a release candidate</span>
+    <span><span class="st st-shipped">Shipped</span> released</span>
+    <span><span class="st st-testing">In testing</span> release candidate</span>
     <span><span class="st st-progress">In progress</span> being built</span>
     <span><span class="st st-planned">Planned</span> decided, not started</span>
-    <span><span class="st st-demand">On demand</span> built when someone needs it</span>
   </div>
 </div>
 
 <section>
   <div class="wrap">
-    <div class="phase-head"><h2>0.4: live dashboards and KPI tiles</h2><span class="st st-shipped">Shipped &middot; 0.4.0</span></div>
-    <p class="sub">Superset, Metabase and Grafana all have a gauge, a progress bar, a number with a trend, table
-    formatting and goal lines. We had none of those five. They are also exactly what people put on a dashboard
-    that refreshes every 30 seconds, so they arrive together with a way to run such a dashboard without every
-    viewer re-running its queries.</p>
-    <p class="sub">All of it shipped in <a href="https://github.com/bot-netizen/sqldesk/releases/tag/v0.4.0">0.4.0</a>,
-    published as <code>ghcr.io/bot-netizen/sqldesk:0.4.0</code>.</p>
+    <h2>Where it has got to</h2>
+    <p class="sub">Newest first. Each one is a sentence because each one was a single decision.</p>
     <div class="items">
-      <div class="item lead"><div class="item-h"><h3>Live dashboards</h3><span class="st st-shipped">Shipped</span></div><p>Mark a dashboard live and choose how often it updates: every 30 seconds, 1, 2 or 5 minutes. The server runs its queries once for everyone, and only while somebody has it open in a visible tab. Viewers just watch: no refresh button and no parameter changes, so nobody can multiply the load. People with permission can pause and resume it for everyone.</p><p class="meta">Turning a dashboard live needs its own permission, which admins can grant to a group. Viewing needs only normal dashboard access.</p></div><div class="item"><div class="item-h"><h3>Calmer regular dashboards</h3><span class="st st-shipped">Shipped</span></div><p>Auto-refresh starts at 10 minutes, and it reuses a result that is already fresh enough instead of re-running every query from every open tab. The Refresh button skips anything that ran in the last minute.</p></div><div class="item"><div class="item-h"><h3>Units, formats and thresholds</h3><span class="st st-shipped">Shipped</span></div><p>One place to set a value's unit, format, decimals, compact form (1.2k), min and max, and threshold colours, read by every visualization. Numbers are formatted by the browser's own Intl rather than an unmaintained library.</p></div><div class="item"><div class="item-h"><h3>Gauge</h3><span class="st st-shipped">Shipped</span></div><p>A needle, an arc that fills, or a half-arc, with bands from your thresholds. The needle eases to each new value.</p><p class="meta">Also in Superset, Metabase, Grafana</p></div><div class="item"><div class="item-h"><h3>Stat</h3><span class="st st-shipped">Shipped</span></div><p>The Counter grows a sparkline, a change against the previous row, several rows back or a target, and threshold colours. Existing counters look exactly as they did.</p><p class="meta">Also in Superset, Metabase, Grafana</p></div><div class="item"><div class="item-h"><h3>Progress and bullet bars</h3><span class="st st-shipped">Shipped</span></div><p>One bar per row against a target, with qualitative bands behind it.</p><p class="meta">Also in Superset, Metabase, Grafana</p></div><div class="item"><div class="item-h"><h3>Status grid</h3><span class="st st-shipped">Shipped</span></div><p>A tile per row, coloured by thresholds or by a status column, outlined briefly when its state changes.</p><p class="meta">Also in Grafana</p></div><div class="item"><div class="item-h"><h3>Table formatting</h3><span class="st st-shipped">Shipped</span></div><p>Colour cells by rules or a scale, data bars in numeric columns, sparklines from array columns, and &#9650;&#9660; marks on cells that changed since the last refresh.</p><p class="meta">Also in Superset, Metabase, Grafana</p></div><div class="item"><div class="item-h"><h3>Reference lines and bands</h3><span class="st st-shipped">Shipped</span></div><p>Goal lines and shaded bands on any chart: a fixed value, a line at an x position, or a series' average, min or max.</p><p class="meta">Also in Superset, Metabase, Grafana</p></div><div class="item"><div class="item-h"><h3>Rolling window and zoom</h3><span class="st st-shipped">Shipped</span></div><p>Show only the last N points or minutes so a live line slides instead of rescaling, and zoom into long series.</p><p class="meta">Also in Superset, Metabase, Grafana</p></div>
+      <div class="item">
+        <div class="item-h"><h3>0.8 &mdash; Notebooks</h3><span class="st st-planned">Next</span></div>
+        <p>A place to do work a single SELECT cannot: steps that build on each other, in SQL and in
+           Python, saved and re-run.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>0.7 &mdash; Streams</h3><span class="st st-progress">In progress</span></div>
+        <p>Kafka topics you can query and chart like anything else, dashboard folders with a stated
+           meaning, and an admin section that answers what is happening now.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>0.6 &mdash; MCP</h3><span class="st st-testing">Release candidate</span></div>
+        <p>A tool server over your warehouse, a catalog built from your own query history, and an
+           audit of everything it was asked.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>0.5 &mdash; Interface</h3><span class="st st-shipped">Shipped</span></div>
+        <p>Less chrome, more chart. Filters left their band, textboxes became somewhere to write,
+           and one result stopped being fetched once per widget.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>0.4 &mdash; Live</h3><span class="st st-shipped">Shipped</span></div>
+        <p>Dashboards you watch rather than read. The server refreshes them, once for everyone
+           looking, and only while somebody is looking.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Fork point</h3><span class="st st-shipped">&mdash;</span></div>
+        <p>Redash 25, with 35+ data sources, the query editor, alerts and the permission model
+           already in it. None of that was rewritten; it was built on.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>0.7 &mdash; Streams</h2>
+    <p class="sub">October 2026. Data that arrives while you are looking at it, and somewhere to put the
+      dashboards that matter.</p>
+
+    <div class="items">
+      <div class="item lead">
+        <div class="item-h"><h3>Kafka topics as a data source</h3><span class="st st-shipped">Built</span></div>
+        <p>An administrator adds a <strong>cluster</strong>; whoever manages topics chooses which of them
+          may be queried. A topic becomes a table you can join to another topic, chart, parameterise and
+          put on a dashboard &mdash; the same editor as every other query, with Execute replaced by
+          <em>Start streaming</em>. Nothing is stored: the window exists while somebody is watching it,
+          and a stream nobody is watching stops costing anything within minutes.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Dashboard folders</h3><span class="st st-shipped">Built</span></div>
+        <p>A folder carries a stated meaning, not just a name. A locked one is an administrator's to
+          change and read-only for everybody else, including the dashboard's own author &mdash; which is
+          what makes &ldquo;business KPIs&rdquo; a claim rather than a label.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Scheduled subscriptions</h3><span class="st st-shipped">Built</span></div>
+        <p>A dashboard arrives by email on a schedule, as a picture in the body and a one-page PDF
+          attached, with one-click unsubscribe.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>OAuth 2.1 for MCP</h3><span class="st st-shipped">Built</span></div>
+        <p>A client opens a browser, the person signs in the way they always do, and it gets a token
+          that expires and can be revoked &mdash; instead of an API key living in a config file outside
+          your identity provider.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Feature permissions</h3><span class="st st-shipped">Built</span></div>
+        <p>Streams, the catalog, live dashboards and keeping uploads are each granted to a
+          <em>group</em>. Not everybody, and not only administrators &mdash; the person who knows what a
+          table is for is rarely the person who runs the cluster.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Storage with a lifecycle</h3><span class="st st-shipped">Built</span></div>
+        <p>Uploaded files expire on a clock people can see and stop, their owner is warned a day
+          before, and nothing is deleted that nobody was warned about. Admin &rarr; Storage says what is
+          being held and what happens to it when.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>An admin section worth opening</h3><span class="st st-shipped">Built</span></div>
+        <p>Headroom, what is running and who asked for it, the queues, storage, streams, overdue
+          schedules &mdash; seven pages, each saying what it is for. Any running query can be stopped
+          from here, and stopping one is recorded.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Half the initial load</h3><span class="st st-shipped">Built</span></div>
+        <p>931 &rarr; 525 KB gzipped before anything draws, held there by a budget CI enforces. Server
+          memory 273 &rarr; 175 MB, by importing a data source's SDK when it is used rather than at
+          startup.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Nothing heavy on by default</h3><span class="st st-shipped">Built</span></div>
+        <p>Streams, MCP, uploads and the alert-screenshot renderer are each off until asked for. A
+          default install is five deployments and one volume, and the published image does not grow for
+          a feature you never switch on.</p>
+      </div>
+    </div>
+
+    <p style="margin-top:22px"><a href="guide/streams.html">Streams guide &rarr;</a> &nbsp;&middot;&nbsp;
+       <a href="guide/dashboards.html">Dashboards and folders &rarr;</a> &nbsp;&middot;&nbsp;
+       <a href="guide/deploying.html">What to switch on &rarr;</a></p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>0.6 &mdash; MCP</h2>
+    <p class="sub">A tool server over your warehouse, and an audit of what it was asked.</p>
+    <ul class="compact">
+      <li>An MCP server at <code>/mcp</code>, with every request recorded under Admin &rarr; MCP
+        <span class="st st-shipped">Built</span>
+        <span class="d">Never the question somebody put to their client, and never the SQL that came
+          back &mdash; only the calls.</span></li>
+      <li>A catalog harvested from each data source and from the joins your saved queries actually use
+        <span class="st st-shipped">Built</span></li>
+      <li>Query checking: seven rules over a parsed statement, through <code>check_sql</code>
+        <span class="st st-shipped">Built</span></li>
+      <li>Running SQL, planned by the engine first and capped, on a worker rather than in the web process
+        <span class="st st-shipped">Built</span></li>
+      <li>A semantic layer: measures proposed from saved queries, agreed under Admin &rarr; Catalog,
+        exported as cube-shaped YAML for git
+        <span class="st st-shipped">Built</span></li>
+      <li>A Helm chart
+        <span class="st st-shipped">Built</span></li>
+      <li>An assistant inside SQLDesk
+        <span class="st st-planned">Not planned</span>
+        <span class="d">Nothing in SQLDesk calls a model. MCP serves tools to a client you bring,
+          which is a different and smaller promise.</span></li>
+    </ul>
+    <p style="margin-top:20px"><a href="guide/mcp.html">MCP guide &rarr;</a></p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>0.5 &mdash; Interface, and 0.4 &mdash; Live</h2>
+    <p class="sub">The two releases that made a dashboard worth leaving on a screen.</p>
+    <ul class="compact">
+      <li>Live dashboards: refreshed by the server every 30s to 5 minutes, once for everyone looking
+        <span class="st st-shipped">0.4</span>
+        <span class="d">And only while somebody is looking &mdash; a tab in the background says it is
+          leaving and the refreshing stops.</span></li>
+      <li>The visualizations that go on a wall: gauge, stat with sparkline and target, progress and
+        bullet bars, status grid, coloured table cells, reference lines and bands
+        <span class="st st-shipped">0.4</span></li>
+      <li>One fetch for one result, however many widgets show it
+        <span class="st st-shipped">0.5</span>
+        <span class="d">A query behind five widgets was fetched, serialized and parsed five times.</span></li>
+      <li>Textboxes became somewhere to write: tables, fenced code, task lists, HTML through DOMPurify
+        <span class="st st-shipped">0.5</span></li>
+      <li>Eight more chart types, with a matrix test that puts every visualization through every option
+        <span class="st st-shipped">0.5</span></li>
+      <li>Alerts can carry a picture, rendered by a headless browser in its own optional container
+        <span class="st st-shipped">0.5</span></li>
+      <li>A twenty-four column grid, with a migration that brings existing dashboards across
+        <span class="st st-shipped">0.5</span></li>
+    </ul>
+    <p style="margin-top:20px"><a href="performance.html">The measurements &rarr;</a></p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Next: 0.8 &mdash; Notebooks</h2>
+    <p class="sub">
+      Everything in SQLDesk today ends in one SELECT. A notebook is for the work that does not: pull
+      this, join it to that, reshape it, look, then write the result somewhere. People do it in Jupyter
+      today and the warehouse never hears about it &mdash; so the lineage, the permissions and the
+      scheduling all stop at the edge of somebody's laptop.
+    </p>
+    <p class="sub">
+      Shape still being decided, which is the honest state of it. What is settled is the rest of 0.8,
+      and all of it points the same way: <strong>you should know what a thing costs before it runs.</strong>
+    </p>
+    <div class="items">
+      <div class="item lead">
+        <div class="item-h"><h3>Notebooks &mdash; steps that build on each other</h3><span class="st st-planned">Planned</span></div>
+        <p>Cells in SQL and in Python, each one reading the last one's result, saved and re-runnable, with
+          the output of any cell available as a visualization or a dashboard widget. The parts SQLDesk
+          already has &mdash; data source permissions, parameters, the scheduler, the result store &mdash;
+          are most of what a notebook needs; what it adds is the chain.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>A cost model, before the query runs</h3><span class="st st-planned">Planned</span></div>
+        <p>Bytes scanned and an estimate of the work, from the engine's own planner, shown as a number
+          a person can refuse. MCP already refuses past a ceiling; this makes the ceiling something you
+          can see rather than something you discover by hitting it.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>MCP asks before it spends</h3><span class="st st-planned">Planned</span></div>
+        <p>An agent that is exploring should not quietly run a 4 TB scan because it seemed like a
+          reasonable next step. Past a threshold the tool comes back with the estimate and waits for a
+          person to say yes.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>An audit an administrator can read</h3><span class="st st-planned">Planned</span></div>
+        <p>Every execution is already recorded; nothing reads it as &ldquo;what has this person been
+          doing&rdquo;. With it: who has been expensive this month, not just this hour.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Per-data-source throttles and a kill switch</h3><span class="st st-planned">Planned</span></div>
+        <p>One person can queue fifty queries against the warehouse everybody shares. And when a
+          warehouse is in trouble you want to stop sending it work without deleting the data source.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Prometheus metrics</h3><span class="st st-planned">Planned</span></div>
+        <p>StatsD is what SQLDesk emits today, which is the wrong shape for most clusters now. Queue
+          depth, worker saturation and connection-pool use are the three that matter.</p>
+      </div>
+      <div class="item">
+        <div class="item-h"><h3>Cube: proven meaning moves out</h3><span class="st st-planned">Planned</span></div>
+        <p>Designed in 0.7 and deliberately deferred. A measure that has been agreed and used belongs in
+          a semantic layer other tools can read, not only in SQLDesk's.</p>
+      </div>
     </div>
     <div class="note">
-      <div class="note-h">Why live dashboards work this way</div>
-      <p>Until now, auto-refresh re-ran every widget's query from every open browser tab. Ten people watching a
-      twelve-widget dashboard every 30 seconds meant up to 240 query runs a minute against your database. A live
-      dashboard runs those twelve queries once per interval, whoever is watching, and stops when nobody is.</p>
+      <div class="note-h">The rule 0.8 is built to</div>
+      <p>Nothing costs anything until somebody uses it. Streams, MCP, uploads and the renderer are
+        already off until asked for; the next step is that a <em>query</em> says what it will cost before
+        it runs, rather than after the invoice arrives.</p>
     </div>
   </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <div class="phase-head"><h2>More ways to read a result</h2><span class="st st-shipped">0.5</span></div>
-    <p class="sub">Chart types the other tools have and people ask for. Each one loads only when a chart of its
-    type is opened, so a dashboard without a treemap never downloads one.</p>
-    <ul class="compact"><li><strong>Waterfall</strong><span class="st st-shipped">0.5</span><span class="d">Running totals with rises and falls coloured.</span></li><li><strong>Histogram</strong><span class="st st-shipped">0.5</span><span class="d">Bins one numeric column, with an adjustable bin count.</span></li><li><strong>Treemap</strong><span class="st st-shipped">0.5</span><span class="d">Hierarchy by size, with drill-down.</span></li><li><strong>Calendar heatmap</strong><span class="st st-shipped">0.5</span><span class="d">One cell per day across a quarter or a year.</span></li><li><strong>Radar</strong><span class="st st-shipped">0.5</span><span class="d">Several measures per item on shared spokes.</span></li><li><strong>Funnel, drawn</strong><span class="st st-shipped">0.5</span><span class="d">A real funnel shape, beside the table look, which stays the default.</span></li><li><strong>State timeline and Gantt</strong><span class="st st-shipped">0.5</span><span class="d">Bars of state along time: job runs, service status, bookings. Unfinished runs are drawn up to now.</span></li><li><strong>Nightingale rose</strong><span class="st st-shipped">0.5</span><span class="d">A pie whose radius carries the value.</span></li><li><strong>Gauge reading tile</strong><span class="st st-shipped">0.5</span><span class="d">What a new gauge opens on: the number large and coloured by its threshold, the trail it took to get there, and a bullet bar carrying the range, the bands and the target.</span></li><li><strong>A description on a visualization</strong><span class="st st-shipped">0.5</span><span class="d">Say what a chart is of, beside its name on the dashboard and on the query page.</span></li></ul>
-  </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <div class="phase-head"><h2>Specialist charts</h2><span class="st st-demand">On demand</span></div>
-    <p class="sub">Useful for particular jobs rather than everyday dashboards. Every visualization now loads only
-    when a chart of its type is opened, so nobody pays for what they do not use. Tell us on GitHub which you need.</p>
-    <ul class="compact"><li><strong>Network graph</strong><span class="st st-demand">On demand</span><span class="d">Force or circular layout from an edge list.</span></li><li><strong>Chord</strong><span class="st st-demand">On demand</span><span class="d">Flows between groups.</span></li><li><strong>Tree</strong><span class="st st-demand">On demand</span><span class="d">Collapsible hierarchies.</span></li><li><strong>Parallel coordinates</strong><span class="st st-demand">On demand</span><span class="d">Many measures per row, one axis each.</span></li><li><strong>Candlestick</strong><span class="st st-demand">On demand</span><span class="d">Open, high, low and close per period.</span></li><li><strong>Beeswarm</strong><span class="st st-demand">On demand</span><span class="d">Box plot points spread without overlapping.</span></li><li><strong>Theme river, pictorial bar, matrix</strong><span class="st st-demand">On demand</span><span class="d">Streams over time, icon bars, correlation grids.</span></li></ul>
-  </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <h2>Around the charts</h2>
-    <ul class="compact">
-      <li><strong>Wall display mode</strong><span class="st st-shipped">0.5</span><span class="d">Dark theme, no chrome and large type for a screen on the wall, cycling through dashboards on its own. <code>/wall/dashboards/&lt;token&gt;</code>, on a public token, because a screen on a wall has nobody to sign it back in.</span></li><li><strong>Alert emails carry the chart</strong><span class="st st-shipped">0.5</span><span class="d">Attach up to five dashboards or queries to an alert and they arrive as images. The browser that draws them is a separate optional container, so the published image does not grow.</span></li><li><strong>Admin section</strong><span class="st st-shipped">0.5</span><span class="d">What is running and who is running it, how close Postgres, Redis and the workers are to their limits, and the actions to do something about it &mdash; kill a query, clean up stored results, prune events.</span></li><li><strong>Push instead of poll</strong><span class="st st-planned">Planned</span><span class="d">Live dashboards receive new results the moment they land, over server-sent events, instead of asking every few seconds.</span></li><li><strong>Leaflet 1.9 for maps</strong><span class="st st-planned">Planned</span><span class="d">The marker and region maps run on Leaflet 1.3.4, from 2018.</span></li><li><strong>Modern editors</strong><span class="st st-planned">Planned</span><span class="d">The visualization editors move to the current Ant Design along with the rest of the interface.</span></li>
-    </ul>
-  </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <h2>Why Apache ECharts</h2>
-    <p>Every chart type on this page is built into ECharts, under one API, one theme and one animation model. Its
-    charts are plain JSON configuration, which is how SQLDesk already stores a visualization's settings. It
-    animates from old values to new ones when data refreshes, and it can draw a chart on the server without a
-    browser, which scheduled snapshots will need.</p>
-    <div class="why">
-      <div><span class="k">Licence</span>Apache 2.0, and an Apache Software Foundation project, so no single company can re-license it.</div>
-      <div><span class="k">In good company</span>Superset and Metabase draw their charts with ECharts too.</div>
-      <div><span class="k">Cost</span>Only the chart types in use are bundled, and a visualization is fetched only when something draws it. 0.5 took production JavaScript on first load from 4.3 MB to 2.9 MB while adding eight chart types.</div>
-    </div>
-    <p class="sub">Not everything is a chart. Tables, stat tiles and status grids are plain HTML, tiled maps stay on
-    Leaflet, and pivot tables stay on react-pivottable.</p>
-  </div>
-</section>
-
-<section>
-  <div class="wrap">
-    <h2>Already shipped</h2>
-    <ul class="compact">
-      <li><strong>Charts on Apache ECharts</strong><span class="st st-shipped">0.1</span><span class="d">Every chart type redrawn on ECharts 6, animating between values when data refreshes.</span></li><li><strong>Plotly and d3 v3 removed</strong><span class="st st-shipped">0.1</span><span class="d">Production JavaScript fell from 9.6 MB to 4.2 MB.</span></li><li><strong>Counting counters</strong><span class="st st-shipped">0.1</span><span class="d">A counter counts up to its new value instead of jumping.</span></li><li><strong>One table density</strong><span class="st st-shipped">0.3.2</span><span class="d">The same row height, padding and type size in the query editor, dashboards and alerts.</span></li>
-    </ul>
-  </div>
-</section>
-
-<section class="wrap">
-  <p class="eyebrow">0.6</p>
-  <h2>MCP, and what is not built yet</h2>
-  <p class="sub">0.6 is a tool server over your warehouse. Some of what was planned around it exists,
-    some does not, and the difference is worth stating rather than implying.</p>
-
-  <div class="cards">
-    <div class="card">
-      <h3><span class="chip chip-done">Built</span></h3>
-      <p><strong>MCP server</strong> at <code>/mcp</code> — JSON-RPC over HTTP, authenticated with a
-        SQLDesk API key. Eight tools: <code>find_queries</code>, <code>find_dashboards</code>,
-        <code>find_context</code>, <code>expand_table</code>, <code>list_data_sources</code>,
-        <code>check_sql</code>, <code>explain_query</code>, <code>run_query</code>.</p>
-    </div>
-    <div class="card">
-      <h3><span class="chip chip-done">Built</span></h3>
-      <p><strong>The audit.</strong> Every request, including refused ones, under Admin → MCP: who,
-        when, which tool, the outcome, how long, and from where.</p>
-    </div>
-    <div class="card">
-      <h3><span class="chip chip-done">Built</span></h3>
-      <p><strong>The catalog.</strong> Harvested from each data source, and from the joins and columns
-        your saved queries actually use — so ranking reflects what people query, not what exists.</p>
-    </div>
-    <div class="card">
-      <h3><span class="chip chip-done">Built</span></h3>
-      <p><strong>Running SQL through MCP</strong>, with the engine's own plan first and the editor's
-        1000-row ceiling after. It runs on a worker, so it is attributable and cancellable like any
-        other query.</p>
-    </div>
-    <div class="card">
-      <h3><span class="chip chip-done">Built</span></h3>
-      <p><strong>Finding work that already exists</strong> &mdash; saved queries and dashboards by
-        description, because the answer is often a page somebody already built.</p>
-    </div>
-    <div class="card">
-      <h3><span class="chip chip-done">Built</span></h3>
-      <p><strong>A semantic layer, started.</strong> Measures proposed from saved queries, agreed or
-        denied under Admin &rarr; Catalog, and exported as cube-shaped YAML to keep in git.</p>
-    </div>
-    <div class="card">
-      <h3><span class="chip chip-next">Not started</span></h3>
-      <p><strong>An assistant inside SQLDesk.</strong> Nothing in 0.6 calls a model: MCP serves tools
-        to a client you bring. A later version's problem.</p>
-    </div>
-  </div>
-
-  <p style="margin-top:26px">How the built parts work, in detail:
-    <a href="guide/mcp.html">the MCP guide</a>.</p>
 </section>
 
 <footer>
