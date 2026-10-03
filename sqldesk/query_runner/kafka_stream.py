@@ -55,6 +55,25 @@ TYPES = {
 }
 
 
+def _empty_view(connection, name, stream):
+    """
+    A topic with no window, as an empty table with its known columns.
+
+    From the schema recorded on the stream the last time it consumed. With no
+    columns recorded it has never seen an event at all, and there is nothing to
+    build -- that one stays absent, and naming it gets the explanation rather
+    than a table of nothing.
+    """
+    columns = [column.get("name") for column in (stream.columns or []) if column.get("name")]
+    if not columns:
+        return
+    selected = ", ".join('NULL AS "{}"'.format(column.replace('"', '""')) for column in columns)
+    try:
+        connection.execute('CREATE VIEW "{}" AS SELECT {} WHERE false'.format(name.replace('"', '""'), selected))
+    except Exception:
+        logger.warning("could not offer %s as an empty table", stream.topic, exc_info=True)
+
+
 def _described(connection, query):
     """
     `{column: DuckDB type}` for a query, or nothing if it cannot be planned.
@@ -236,10 +255,18 @@ class KafkaStream(BaseSQLQueryRunner):
         connection = duckdb.connect(":memory:")
         attached = []
         for stream in streams:
+            name = table_name(stream.topic)
             path = stream.store_path()
             if not os.path.exists(path):
+                # Consuming, but nothing flushed yet -- or paused with its
+                # window already dropped. Either way the topic is a table a
+                # query may legitimately name, so it becomes an empty one with
+                # the right columns rather than a missing one. A join across
+                # two topics where one is quiet should give a quiet answer, not
+                # fail outright; and a query naming only quiet topics gets the
+                # note the handler attaches, which says so in words.
+                _empty_view(connection, name, stream)
                 continue
-            name = table_name(stream.topic)
             quoted = path.replace("'", "''")
             last = None
             for attempt in range(Store.READ_ATTEMPTS):
@@ -264,6 +291,7 @@ class KafkaStream(BaseSQLQueryRunner):
             ).fetchone()
             if not present or not present[0]:
                 connection.execute('DETACH "{}__window"'.format(name))
+                _empty_view(connection, name, stream)
                 continue
             connection.execute('CREATE VIEW "{}" AS SELECT * FROM "{}__window".events'.format(name, name))
             attached.append(stream)

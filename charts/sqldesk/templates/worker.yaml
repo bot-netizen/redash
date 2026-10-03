@@ -151,6 +151,71 @@ spec:
       tolerations: {{- toYaml . | nindent 8 }}
       {{- end }}
 {{- end }}
+{{- if .Values.streams.worker.enabled }}
+---
+# Kafka consumers, on workers of their own.
+#
+# A consumer holds its worker for minutes rather than seconds, because it runs
+# until nobody is watching. Sharing the ordinary worker means one stream takes
+# a worker away from the dashboards somebody is loading, and two streams cannot
+# consume at once because the second waits behind the first. `workersCount`
+# here is the real limit on how many topics consume simultaneously, whatever
+# the slot setting says.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "sqldesk.fullname" . }}-stream-worker
+  labels:
+    {{- include "sqldesk.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.streams.worker.replicas }}
+  selector:
+    matchLabels:
+      {{- include "sqldesk.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: stream-worker
+  template:
+    metadata:
+      annotations:
+        checksum/secret: {{ include "sqldesk.secretChecksum" . }}
+      labels:
+        {{- include "sqldesk.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: stream-worker
+    spec:
+      {{- include "sqldesk.podSecurity" . | nindent 6 }}
+      containers:
+        - name: worker
+          image: {{ include "sqldesk.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["worker"]
+          env:
+            {{- include "sqldesk.env" . | nindent 12 }}
+            - name: QUEUES
+              value: "streams"
+            - name: WORKERS_COUNT
+              value: {{ .Values.streams.worker.workersCount | quote }}
+          livenessProbe:
+            exec:
+              command: ["/app/bin/docker-entrypoint", "workers_healthcheck"]
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          volumeMounts:
+            {{- include "sqldesk.uploadsMount" . | nindent 12 }}
+          resources:
+            {{- toYaml .Values.streams.worker.resources | nindent 12 }}
+      volumes:
+        {{- include "sqldesk.uploadsVolume" . | nindent 8 }}
+      # A consumer that is told to stop finishes its flush rather than losing
+      # the events it has already polled.
+      terminationGracePeriodSeconds: 120
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}
 {{- if .Values.scheduler.enabled }}
 ---
 apiVersion: apps/v1

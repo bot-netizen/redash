@@ -80,6 +80,7 @@ class FakeStream:
     def __init__(self, topic, path):
         self.topic = topic
         self._path = path
+        self.columns = []
 
     def store_path(self):
         return self._path
@@ -163,7 +164,7 @@ class TestAttachingTheWindows(TestCase):
         finally:
             connection.close()
 
-    def test_a_window_with_no_events_yet_is_left_out(self):
+    def test_a_window_with_no_events_yet_is_not_counted_as_attached(self):
         streams = [self.window("orders"), self.empty_window("payments")]
 
         connection, attached = self.runner._attached(streams, "SELECT * FROM payments")
@@ -178,6 +179,37 @@ class TestAttachingTheWindows(TestCase):
         connection, attached = self.runner._attached(streams, "SELECT * FROM payments")
         try:
             self.assertEqual(["orders"], [stream.topic for stream in attached])
+        finally:
+            connection.close()
+
+    def test_but_a_quiet_topic_is_still_a_table_a_query_may_name(self):
+        """
+        A join across two topics where one is quiet should give a quiet answer,
+        not fail outright. The quiet one becomes an empty table with the
+        columns it had when it last consumed.
+        """
+        quiet = self.missing("payments")
+        quiet.columns = [{"name": "payment_id"}, {"name": "amount"}]
+        streams = [self.window("orders", rows=3), quiet]
+
+        connection, _ = self.runner._attached(streams, "SELECT * FROM orders, payments")
+        try:
+            self.assertEqual(0, connection.execute("SELECT count(*) FROM payments").fetchone()[0])
+            self.assertEqual(3, connection.execute("SELECT count(*) FROM orders").fetchone()[0])
+        finally:
+            connection.close()
+
+    def test_one_that_has_never_consumed_anything_has_no_columns_to_offer(self):
+        # Nothing to build a table from, so it stays absent and naming it gets
+        # the explanation rather than a table of nothing.
+        quiet = self.missing("payments")
+        quiet.columns = []
+        streams = [self.window("orders"), quiet]
+
+        connection, _ = self.runner._attached(streams, "SELECT * FROM payments")
+        try:
+            with self.assertRaises(Exception):
+                connection.execute("SELECT count(*) FROM payments").fetchone()
         finally:
             connection.close()
 

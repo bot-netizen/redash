@@ -58,7 +58,7 @@ worker:
   # queue and its own workers, so it cannot starve the rest. MCP's queue is
   # added at the end when MCP is on without a worker of its own, so it is
   # never left with nobody to take it.
-  queues: "queries,scheduled_queries,schemas,streams,periodic,emails,default"
+  queues: "queries,scheduled_queries,schemas,periodic,emails,default"
   workersCount: 2
   resources:
     requests: { cpu: 200m, memory: 512Mi }
@@ -69,6 +69,28 @@ worker:
 # Off by default: it is an endpoint that answers questions about your
 # warehouse, so turning it on is a decision somebody should make rather than
 # inherit. With it off, /mcp answers 404 and the Catalog page does not appear.
+streams:
+  # Kafka consumers get workers of their own, and they have to.
+  #
+  # A consumer is not like any other job: it holds its worker for minutes at a
+  # time rather than seconds, because it runs until nobody is watching. On the
+  # ordinary worker that means one stream takes a worker away from the
+  # dashboards somebody is loading -- and two streams cannot consume at once,
+  # because the second sits in the queue behind the first.
+  #
+  # So `workersCount` is the real limit on how many topics can be consumed
+  # simultaneously, whatever the slot setting says. Keep it at or above
+  # SQLDESK_STREAM_MAX_CONCURRENT, or the slots will not all be usable.
+  worker:
+    enabled: true
+    replicas: 1
+    # One process per topic that may be consumed at once.
+    workersCount: 5
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
 mcp:
   enabled: false
   # A queue of MCP's own, served by the worker below. Left empty, a query a
