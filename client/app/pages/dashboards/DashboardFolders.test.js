@@ -103,3 +103,38 @@ describe("the dashboard folders page", () => {
     expect(wrapper.text()).toContain("An administrator makes them");
   });
 });
+
+describe("which folders reach the Dashboards menu", () => {
+  afterEach(() => {
+    jest.restoreAllMocks();
+    currentUser.isAdmin = false;
+  });
+
+  test("one chosen for the menu says so", async () => {
+    // An install ends up with more folders than fit in a dropdown, so the page
+    // has to show which few were picked.
+    const wrapper = await render([{ ...KPIS, in_menu: true }]);
+
+    expect(wrapper.text()).toContain("in the menu");
+  });
+
+  test("and one that was not does not", async () => {
+    const wrapper = await render([{ ...KPIS, in_menu: false }]);
+
+    expect(wrapper.text()).not.toContain("in the menu");
+  });
+
+  test("the dialog offers the choice", async () => {
+    const wrapper = await render([KPIS], true);
+
+    wrapper.find('[data-test="NewFolder"]').first().simulate("click");
+    await settle(wrapper);
+
+    // Through the tree rather than `wrapper.text()`: antd renders a Modal into
+    // a portal, which enzyme walks but does not fold into the page's text.
+    expect(wrapper.find('[data-test="FolderInMenu"]').length).toBeGreaterThan(0);
+    expect(
+      wrapper.findWhere((node) => node.type() === "strong" && /Show it in the Dashboards menu/.test(node.text())).length
+    ).toBeGreaterThan(0);
+  });
+});

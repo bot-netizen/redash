@@ -1,0 +1,54 @@
+
+/*
+  The streaming editor, told apart from the ordinary one.
+
+  Somebody has to know which page they are on without reading anything, and
+  know when a stream is actually running -- the difference between "this ran
+  once" and "this is running and holding a slot" is the whole of what makes
+  this page different.
+*/
+.query-stream-page {
+  .query-page-header-title::after {
+    content: "streaming";
+    margin-left: 10px;
+    padding: 1px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #0a7c93;
+    background: fade(#0a7c93, 10%);
+    vertical-align: middle;
+  }
+
+  // A band down the left of the whole page: present on every screenful,
+  // including the one the results fill, where a badge in the header is
+  // scrolled out of sight.
+  border-left: 3px solid fade(#0a7c93, 55%);
+
+  .stream-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+
+    .ant-tag {
+      margin: 0;
+    }
+  }
+
+  .stream-status-figure {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+  }
+
+  .stream-status-note {
+    color: rgba(0, 0, 0, 0.45);
+  }
+}
+
+// While it is actually consuming, the band is solid and alive.
+.query-stream-running {
+  border-left-color: #52c41a;
+}

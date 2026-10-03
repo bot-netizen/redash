@@ -493,6 +493,32 @@ class StreamQueryResource(BaseResource):
     #: and sending it every two seconds would be unkind to everybody.
     MAX_ROWS = 2000
 
+    def _watch(self, source, query):
+        """
+        Check in on the topics this query names, taking a slot where needed.
+
+        Returns a refusal, or None. A topic already running costs nothing --
+        the slot is the topic, not the viewer -- so somebody joining a stream
+        their colleague started never needs a slot or the permission to take
+        one.
+        """
+        from sqldesk.query_runner.kafka_stream import names_in, table_name
+
+        named = [stream for stream in source.streams if names_in(query, table_name(stream.topic))]
+        for stream in named:
+            if watching.state(stream) != watching.RUNNING:
+                if not features.can(self.current_user, features.USE_STREAMS):
+                    return "Your account may read streams somebody else has started, but not start one."
+                refused = slots.acquire(stream.id, owner=self.current_user.id)
+                if refused:
+                    return refused
+                stream.started_by = self.current_user
+            watching.check_in(stream.id, self.current_user.id)
+            activity.note_viewed(stream)
+        if named:
+            models.db.session.commit()
+        return None
+
     def post(self, data_source_id):
         source = get_object_or_404(models.DataSource.get_by_id_and_org, data_source_id, self.current_org)
         require_access(source, self.current_user, view_only)
@@ -502,6 +528,16 @@ class StreamQueryResource(BaseResource):
         query = (request.get_json(force=True, silent=True) or {}).get("query")
         if not query or not query.strip():
             abort(400, message="No query given.")
+
+        # Running a stream query *is* watching it. Without this the editor
+        # could ask a question of a topic nobody had started, get "nothing has
+        # arrived yet" for ever, and have no way to start it -- which is how
+        # this read before the check-in moved here from the page that used to
+        # own it. Checking in here also means every way of reading a stream
+        # keeps it alive, rather than only the one page that remembered to.
+        refused = self._watch(source, query)
+        if refused:
+            abort(429, message=refused)
 
         runner = source.query_runner
         if runner is None:

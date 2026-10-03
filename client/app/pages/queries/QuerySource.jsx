@@ -30,6 +30,7 @@ import useAutocompleteFlags from "./hooks/useAutocompleteFlags";
 import useAutoLimitFlags from "./hooks/useAutoLimitFlags";
 import useQueryExecute from "./hooks/useQueryExecute";
 import runStreamQuery from "@/services/stream-query";
+import StreamStatus from "./components/StreamStatus";
 import useQueryResultData from "@/lib/useQueryResultData";
 import useQueryDataSources from "./hooks/useQueryDataSources";
 import useQueryFlags from "./hooks/useQueryFlags";
@@ -225,14 +226,21 @@ function QuerySource(props) {
       setStreaming(false);
     }
   }, [isStream, streaming]);
+
+  // Through a ref, because `doExecuteQuery` is rebuilt on every render -- an
+  // effect depending on it tears down and re-arms constantly, and the first
+  // version of this fired a burst of requests a second instead of one every
+  // two. The timer depends only on whether streaming is on.
+  const executeRef = useRef(doExecuteQuery);
+  executeRef.current = doExecuteQuery;
   useEffect(() => {
     if (!streaming) {
       return undefined;
     }
-    doExecuteQuery(true);
-    const timer = setInterval(() => doExecuteQuery(true), STREAM_REFRESH_MS);
+    executeRef.current(true);
+    const timer = setInterval(() => executeRef.current(true), STREAM_REFRESH_MS);
     return () => clearInterval(timer);
-  }, [streaming, doExecuteQuery]);
+  }, [streaming]);
 
   const [isQuerySaving, setIsQuerySaving] = useState(false);
 
@@ -290,7 +298,14 @@ function QuerySource(props) {
 
   return (
     <div
-      className={cx("query-page-wrapper", { "query-fixed-layout": !isMobile })}
+      className={cx("query-page-wrapper", {
+        "query-fixed-layout": !isMobile,
+        // A band down the page and a different header, because the difference
+        // between "this ran once" and "this is running" is the thing somebody
+        // has to know without reading anything.
+        "query-stream-page": isStream,
+        "query-stream-running": streaming,
+      })}
       style={{ "--query-editor-height": `${editorHeight}px` }}
     >
       <QuerySourceAlerts query={query} dataSourcesAvailable={!dataSourcesLoaded || dataSources.length > 0} />
@@ -302,7 +317,13 @@ function QuerySource(props) {
           selectedVisualization={selectedVisualization}
           headerExtra={
             <DynamicComponent name="QuerySource.HeaderExtra" query={query}>
-              {!queryFlags.isNew && (
+              {/*
+                No schedule for a stream. A window exists only while somebody
+                is watching it, so there is nothing for three in the morning to
+                refresh -- offering the control would be offering a setting
+                that silently does nothing.
+              */}
+              {!queryFlags.isNew && !isStream && (
                 <ScheduleControl
                   schedule={query.schedule}
                   isNew={query.isNew()}
@@ -311,6 +332,7 @@ function QuerySource(props) {
                   disabled={!queryFlags.canEdit || !queryFlags.canSchedule}
                 />
               )}
+              {isStream && <StreamStatus dataSource={dataSource} query={query} streaming={streaming} />}
             </DynamicComponent>
           }
           onChange={setQuery}

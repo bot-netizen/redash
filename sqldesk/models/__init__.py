@@ -1480,6 +1480,12 @@ class DashboardFolder(TimestampMixin, BelongsToOrgMixin, db.Model):
     #: dashboards that are.
     locked = Column(db.Boolean, nullable=False, default=False)
 
+    #: Whether it appears in the Dashboards menu. Most installs end up with
+    #: more folders than fit in a dropdown, and a menu of thirty is a menu
+    #: nobody reads -- so the few that people use daily are chosen, and the
+    #: rest live on the folders page.
+    in_menu = Column(db.Boolean, nullable=False, default=False)
+
     created_by_id = Column(key_type("User"), db.ForeignKey("users.id"), nullable=True)
     created_by = db.relationship(User)
 
@@ -1495,6 +1501,7 @@ class DashboardFolder(TimestampMixin, BelongsToOrgMixin, db.Model):
             "name": self.name,
             "meaning": self.meaning,
             "locked": self.locked,
+            "in_menu": self.in_menu,
             "created_by": self.created_by.name if self.created_by else None,
             "dashboards": counts if counts is not None else None,
         }

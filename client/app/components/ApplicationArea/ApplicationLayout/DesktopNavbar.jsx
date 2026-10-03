@@ -81,7 +81,11 @@ function useNavbarActiveState() {
 }
 
 /*
-  The folders, for the Dashboards menu.
+  The folders chosen for the Dashboards menu.
+
+  Only the ones somebody picked. An install ends up with more folders than fit
+  in a dropdown and a menu of thirty is a menu nobody reads, so the few people
+  use daily are here and the rest are a click away under Browse folders.
 
   Fetched once when the navbar mounts rather than on every open: the list is
   short, it changes rarely, and a dropdown that waits for a request before it
@@ -94,7 +98,7 @@ function useDashboardFolders() {
   React.useEffect(() => {
     let live = true;
     axios
-      .get("api/dashboard_folders")
+      .get("api/dashboard_folders?in_menu=true")
       .then((found) => live && setFolders(found || []))
       .catch(() => {});
     return () => {

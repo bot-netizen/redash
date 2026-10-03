@@ -48,16 +48,19 @@ class DashboardFolderListResource(BaseResource):
         """
         Every folder, with what it means and how much is in it.
 
+        `?in_menu=true` asks only for the ones chosen for the Dashboards menu,
+        which is what the navbar fetches: an install with thirty folders has a
+        dropdown nobody reads, and the folders page is where the rest live.
+
         Readable by anybody: the point of a folder is that people can find what
         is in it, and a locked one is about who may *change* it rather than who
         may see it.
         """
         counts = _counts(self.current_org, self.current_user)
-        folders = (
-            models.DashboardFolder.query.filter(models.DashboardFolder.org == self.current_org)
-            .order_by(models.DashboardFolder.name)
-            .all()
-        )
+        query = models.DashboardFolder.query.filter(models.DashboardFolder.org == self.current_org)
+        if (request.args.get("in_menu") or "").lower() in ("1", "true", "yes"):
+            query = query.filter(models.DashboardFolder.in_menu.is_(True))
+        folders = query.order_by(models.DashboardFolder.name).all()
         return [folder.to_dict(counts=counts.get(folder.id, 0)) for folder in folders]
 
     @require_admin
@@ -78,6 +81,7 @@ class DashboardFolderListResource(BaseResource):
             name=name,
             meaning=(body.get("meaning") or "").strip() or None,
             locked=bool(body.get("locked")),
+            in_menu=bool(body.get("in_menu")),
             created_by=self.current_user,
         )
         models.db.session.add(folder)
@@ -106,6 +110,8 @@ class DashboardFolderResource(BaseResource):
             folder.meaning = (body["meaning"] or "").strip() or None
         if "locked" in body:
             folder.locked = bool(body["locked"])
+        if "in_menu" in body:
+            folder.in_menu = bool(body["in_menu"])
         models.db.session.commit()
         self.record_event({"action": "edit", "object_id": folder.id, "object_type": "dashboard_folder"})
         return folder.to_dict(counts=_counts(self.current_org, self.current_user).get(folder.id, 0))

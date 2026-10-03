@@ -32,19 +32,21 @@ function FolderDialog({ open, folder, onClose, onSaved }) {
   const [name, setName] = useState("");
   const [meaning, setMeaning] = useState("");
   const [locked, setLocked] = useState(false);
+  const [inMenu, setInMenu] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setName((folder && folder.name) || "");
     setMeaning((folder && folder.meaning) || "");
     setLocked(!!(folder && folder.locked));
+    setInMenu(!!(folder && folder.in_menu));
   }, [folder, open]);
 
   const save = useCallback(() => {
     setSaving(true);
     const url = folder ? `api/dashboard_folders/${folder.id}` : "api/dashboard_folders";
     axios
-      .post(url, { name, meaning, locked })
+      .post(url, { name, meaning, locked, in_menu: inMenu })
       .then(() => {
         notification.success(folder ? "Folder updated." : `${name} created.`);
         onSaved();
@@ -52,11 +54,11 @@ function FolderDialog({ open, folder, onClose, onSaved }) {
       })
       .catch((error) => notification.error("Could not save that", (error && error.message) || ""))
       .finally(() => setSaving(false));
-  }, [folder, name, meaning, locked, onClose, onSaved]);
+  }, [folder, name, meaning, locked, inMenu, onClose, onSaved]);
 
   return (
     <Modal
-      open={open}
+      visible={open}
       title={folder ? "Edit folder" : "New folder"}
       okText="Save"
       confirmLoading={saving}
@@ -80,6 +82,14 @@ function FolderDialog({ open, folder, onClose, onSaved }) {
       <p className="folders-muted">
         Written once and shown wherever the folder is, so &ldquo;does this belong here&rdquo; has an answer.
       </p>
+
+      <div className="m-t-15">
+        <Switch checked={inMenu} onChange={setInMenu} data-test="FolderInMenu" />{" "}
+        <strong className="m-l-5">Show it in the Dashboards menu</strong>
+        <p className="folders-muted">
+          For the few people open every day. The rest live here, and a menu of thirty folders is one nobody reads.
+        </p>
+      </div>
 
       <div className="m-t-15">
         <Switch checked={locked} onChange={setLocked} data-test="LockFolder" />{" "}
@@ -160,6 +170,11 @@ function DashboardFolders() {
                     <Tag color="blue" className="m-l-10">
                       administrators only
                     </Tag>
+                  </Tooltip>
+                )}
+                {folder.in_menu && (
+                  <Tooltip title="Shown in the Dashboards menu, so people reach it without coming here first.">
+                    <Tag className="m-l-5">in the menu</Tag>
                   </Tooltip>
                 )}
               </h3>
