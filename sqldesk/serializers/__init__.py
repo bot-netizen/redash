@@ -294,6 +294,11 @@ def serialize_dashboard(obj, with_widgets=False, user=None, with_favorite_state=
         "created_at": obj.created_at,
         "version": obj.version,
         "live": live.describe(obj),
+        # Which folder it is filed under, and whether that folder is one only
+        # administrators may change. The page reads `can_edit` for what it may
+        # offer; this is for saying *why* it cannot.
+        "folder_id": obj.folder_id,
+        "folder": obj.folder.to_dict() if obj.folder else None,
     }
 
     return d

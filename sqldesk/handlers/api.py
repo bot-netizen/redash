@@ -11,6 +11,11 @@ from sqldesk.handlers.alerts import (
     AlertSubscriptionResource,
 )
 from sqldesk.handlers.base import org_scoped_rule
+from sqldesk.handlers.dashboard_folders import (
+    DashboardFolderAssignmentResource,
+    DashboardFolderListResource,
+    DashboardFolderResource,
+)
 from sqldesk.handlers.dashboards import (
     DashboardFavoriteListResource,
     DashboardForkResource,
@@ -288,6 +293,13 @@ api.add_org_resource(MyDashboardsResource, "/api/dashboards/my", endpoint="my_da
 
 api.add_org_resource(QueryTagsResource, "/api/queries/tags", endpoint="query_tags")
 api.add_org_resource(DashboardTagsResource, "/api/dashboards/tags", endpoint="dashboard_tags")
+api.add_org_resource(DashboardFolderListResource, "/api/dashboard_folders", endpoint="dashboard_folders")
+api.add_org_resource(DashboardFolderResource, "/api/dashboard_folders/<folder_id>", endpoint="dashboard_folder")
+api.add_org_resource(
+    DashboardFolderAssignmentResource,
+    "/api/dashboards/<dashboard_id>/folder",
+    endpoint="dashboard_folder_assignment",
+)
 
 api.add_org_resource(QuerySearchResource, "/api/queries/search", endpoint="queries_search")
 api.add_org_resource(QueryRecentResource, "/api/queries/recent", endpoint="recent_queries")

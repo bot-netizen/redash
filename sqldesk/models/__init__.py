@@ -1446,6 +1446,60 @@ def generate_slug(ctx):
 
 
 @gfk_type
+@generic_repr("id", "name", "org_id", "locked")
+class DashboardFolder(TimestampMixin, BelongsToOrgMixin, db.Model):
+    """
+    A set of dashboards with a stated meaning.
+
+    Dashboards accumulate, and the ones that matter get lost among the ones
+    somebody made on a Tuesday. A folder says what belongs in it -- "business
+    KPIs", "operational metrics for the line" -- so that "is this a KPI" has an
+    answer rather than an argument.
+
+    **Locked is the point.** A locked folder is one only administrators can
+    change: a dashboard inside it cannot be edited, renamed, archived or have a
+    widget added by anybody else, including the person who made it. A set
+    called "business KPIs" that anybody can edit is a set of dashboards with a
+    label on it; one only administrators curate is a statement about what has
+    been through review.
+
+    Everybody can read them, favourite them and put them on a screen. The lock
+    is on changing, not on seeing.
+    """
+
+    id = primary_key("DashboardFolder")
+    org_id = Column(key_type("Organization"), db.ForeignKey("organizations.id"), nullable=False)
+    org = db.relationship(Organization)
+    name = Column(db.String(100), nullable=False)
+
+    #: What belongs in it, written when it is made. The field that turns a
+    #: folder from a label into a definition.
+    meaning = Column(db.Text, nullable=True)
+
+    #: Whether only administrators may change what is in it, and the
+    #: dashboards that are.
+    locked = Column(db.Boolean, nullable=False, default=False)
+
+    created_by_id = Column(key_type("User"), db.ForeignKey("users.id"), nullable=True)
+    created_by = db.relationship(User)
+
+    __tablename__ = "dashboard_folders"
+    __table_args__ = (db.Index("dashboard_folders_org_name", "org_id", "name", unique=True),)
+
+    def __str__(self):
+        return self.name
+
+    def to_dict(self, counts=None):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "meaning": self.meaning,
+            "locked": self.locked,
+            "created_by": self.created_by.name if self.created_by else None,
+            "dashboards": counts if counts is not None else None,
+        }
+
+
 @generic_repr("id", "name", "slug", "user_id", "org_id", "version", "is_archived", "is_draft")
 class Dashboard(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model):
     id = primary_key("Dashboard")
@@ -1472,6 +1526,19 @@ class Dashboard(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model
     # A live dashboard: {"interval": seconds, "paused": bool, "paused_by": ...,
     # "paused_at": ...}. Null for an ordinary one. See sqldesk/live.py.
     live = Column(MutableDict.as_mutable(JSONB), nullable=True)
+
+    #: The folder this is filed under, if any. Unfiled is the normal case and
+    #: stays normal: a folder is something somebody chooses, never something
+    #: they have to pick before saving.
+    folder_id = Column(
+        key_type("DashboardFolder"), db.ForeignKey("dashboard_folders.id", ondelete="SET NULL"), nullable=True
+    )
+    folder = db.relationship(DashboardFolder, backref="dashboards")
+
+    @property
+    def is_locked(self):
+        """Whether only an administrator may change this dashboard."""
+        return bool(self.folder is not None and self.folder.locked)
 
     __tablename__ = "dashboards"
     __mapper_args__ = {"version_id_col": version}

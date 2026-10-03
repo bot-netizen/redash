@@ -64,6 +64,18 @@ class DashboardListResource(BaseResource):
 
         results = filter_by_tags(results, models.Dashboard.tags)
 
+        # `?folder=N` for one folder, `?folder=none` for the ones nobody has
+        # filed. Absent means all of them, which is what the tab does by
+        # default and what it did before folders existed.
+        folder = request.args.get("folder")
+        if folder == "none":
+            results = results.filter(models.Dashboard.folder_id.is_(None))
+        elif folder:
+            try:
+                results = results.filter(models.Dashboard.folder_id == int(folder))
+            except ValueError:
+                abort(400, message='`folder` is a folder\'s id, or "none".')
+
         # order results according to passed order parameter,
         # special-casing search queries where the database
         # provides an order by search rank

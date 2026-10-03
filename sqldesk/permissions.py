@@ -162,6 +162,13 @@ def require_admin_or_owner(object_owner_id):
 
 
 def can_modify(obj, user):
+    # A dashboard in a locked folder is an administrator's to change, and
+    # nobody else's -- not even the person who made it. Checked here rather
+    # than in each handler because editing, renaming, archiving and adding a
+    # widget are four different ones, and a lock that covered three of them
+    # would be worse than no lock at all.
+    if getattr(obj, "is_locked", False) and not user.has_permission("admin"):
+        return False
     return is_admin_or_owner(obj.user_id) or user.has_access(obj, ACCESS_TYPE_MODIFY)
 
 
