@@ -10,6 +10,7 @@ import HelpTrigger from "@/components/HelpTrigger";
 import CreateDashboardDialog from "@/components/dashboards/CreateDashboardDialog";
 import { useCurrentRoute } from "@/components/ApplicationArea/Router";
 import { Auth, clientConfig, currentUser } from "@/services/auth";
+import { axios } from "@/services/axios";
 import settingsMenu from "@/services/settingsMenu";
 import logoUrl from "@/assets/images/sqldesk_icon.svg";
 
@@ -47,6 +48,8 @@ function useNavbarActiveState() {
           "Dashboards.List",
           "Dashboards.Favorites",
           "Dashboards.My",
+          "Dashboards.Folder",
+          "Dashboards.Folders",
           "Dashboards.ViewOrEdit",
           "Dashboards.LegacyViewOrEdit",
         ],
@@ -77,9 +80,35 @@ function useNavbarActiveState() {
   );
 }
 
+/*
+  The folders, for the Dashboards menu.
+
+  Fetched once when the navbar mounts rather than on every open: the list is
+  short, it changes rarely, and a dropdown that waits for a request before it
+  can draw is a dropdown that feels broken. A failure leaves it empty, which
+  degrades to exactly the menu there was before folders existed.
+*/
+function useDashboardFolders() {
+  const [folders, setFolders] = React.useState([]);
+
+  React.useEffect(() => {
+    let live = true;
+    axios
+      .get("api/dashboard_folders")
+      .then((found) => live && setFolders(found || []))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  return folders;
+}
+
 export default function DesktopNavbar() {
   const firstSettingsTab = first(settingsMenu.getAvailableItems());
   const activeState = useNavbarActiveState();
+  const folders = useDashboardFolders();
 
   const canCreateQuery = currentUser.hasPermission("create_query");
   const canCreateDashboard = currentUser.hasPermission("create_dashboard");
@@ -138,6 +167,36 @@ export default function DesktopNavbar() {
       </Menu.Item>
       <Menu.Item key="admin-outdated">
         <Link href="admin/queries/outdated">Outdated Queries</Link>
+      </Menu.Item>
+    </Menu>
+  );
+
+  /*
+    Dashboards opens on all of them, as it always has. The folders are under
+    it, each a set with a stated meaning -- which is only useful if people can
+    get to them without knowing they exist, hence here rather than only on a
+    page of their own.
+  */
+  const dashboardsMenu = (
+    <Menu className="desktop-navbar-dropdown-menu">
+      <Menu.Item key="dashboards-all">
+        <Link href="dashboards">All dashboards</Link>
+      </Menu.Item>
+      <Menu.Item key="dashboards-favorites">
+        <Link href="dashboards/favorites">Favorites</Link>
+      </Menu.Item>
+      <Menu.Item key="dashboards-my">
+        <Link href="dashboards/my">Mine</Link>
+      </Menu.Item>
+      {folders.length > 0 && <Menu.Divider />}
+      {folders.map((folder) => (
+        <Menu.Item key={`folder-${folder.id}`}>
+          <Link href={`dashboards/folder/${folder.id}`}>{folder.name}</Link>
+        </Menu.Item>
+      ))}
+      <Menu.Divider />
+      <Menu.Item key="dashboards-folders">
+        <Link href="dashboards/folders">Browse folders…</Link>
       </Menu.Item>
     </Menu>
   );
@@ -203,9 +262,15 @@ export default function DesktopNavbar() {
 
       <div className="desktop-navbar-links">
         {currentUser.hasPermission("list_dashboards") && (
-          <NavLink href="dashboards" active={activeState.dashboards}>
-            Dashboards
-          </NavLink>
+          <Dropdown overlay={dashboardsMenu} trigger={["click"]} placement="bottomLeft">
+            <PlainButton
+              className={cx("desktop-navbar-link", { "desktop-navbar-link-active": activeState.dashboards })}
+              data-test="DashboardsMenuButton"
+            >
+              Dashboards
+              <i className="fa fa-angle-down m-l-5" aria-hidden="true" />
+            </PlainButton>
+          </Dropdown>
         )}
         {currentUser.hasPermission("view_query") && (
           <NavLink href="queries" active={activeState.queries}>

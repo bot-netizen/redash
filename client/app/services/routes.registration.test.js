@@ -61,6 +61,8 @@ const EXPECTED = [
   ["Admin.Storage", "/admin/storage"],
   ["Admin.Streams", "/admin/streams"],
   ["Mcp.Mine", "/mcp/mine"],
+  ["Dashboards.Folders", "/dashboards/folders"],
+  ["Dashboards.Folder", "/dashboards/folder/:folderId"],
   ["Streams.Topics", "/streams/topics"],
   ["Streams.Query", "/streams/query"],
   ["Streams.Running", "/streams/running"],

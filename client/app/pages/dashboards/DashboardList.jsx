@@ -244,7 +244,13 @@ const DashboardListPage = itemsList(
   DashboardList,
   () =>
     new ResourceItemsSource({
-      getResource({ params: { currentPage } }) {
+      getResource({ params: { currentPage, folderId } }) {
+        if (currentPage === "folder") {
+          // One folder's dashboards. The same list endpoint with `?folder=`,
+          // so searching, tags, ordering and paging work here exactly as they
+          // do everywhere else rather than being reimplemented for folders.
+          return (request) => Dashboard.query({ ...request, folder: folderId });
+        }
         return {
           all: Dashboard.query.bind(Dashboard),
           my: Dashboard.myDashboards.bind(Dashboard),
@@ -280,5 +286,13 @@ routes.register(
     path: "/dashboards/my",
     title: "My Dashboards",
     render: (pageProps) => <DashboardListPage {...pageProps} currentPage="my" />,
+  })
+);
+routes.register(
+  "Dashboards.Folder",
+  routeWithUserSession({
+    path: "/dashboards/folder/:folderId",
+    title: "Dashboards",
+    render: (pageProps) => <DashboardListPage {...pageProps} currentPage="folder" folderId={pageProps.folderId} />,
   })
 );

@@ -1,0 +1,50 @@
+@import (reference) "~@/assets/less/ant";
+
+.folders-page {
+  padding-top: 24px;
+
+  .folders-header {
+    margin-bottom: 20px;
+
+    h2 {
+      margin: 0 0 4px;
+      display: inline-block;
+    }
+
+    .ant-btn {
+      float: right;
+    }
+  }
+
+  .folders-muted {
+    color: @text-color-secondary;
+    font-size: 12px;
+    margin: 0;
+  }
+
+  .folders-folder {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+    border: 1px solid @border-color-split;
+    border-radius: 3px;
+    background: @component-background;
+
+    h3 {
+      margin: 0 0 4px;
+      font-size: 15px;
+    }
+
+    p {
+      margin: 0 0 2px;
+      font-size: 13px;
+    }
+  }
+
+  .folders-folder-main {
+    min-width: 0;
+  }
+}

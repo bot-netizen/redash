@@ -18,6 +18,7 @@ import routes from "@/services/routes";
 
   The Suspense boundary that covers the wait is in Router.
 */
+const DashboardFolders = React.lazy(() => import(/* webpackChunkName: "dashboard" */ "./DashboardFolders"));
 const DashboardPage = React.lazy(() => import(/* webpackChunkName: "dashboard" */ "./DashboardPage"));
 const PublicDashboardPage = React.lazy(() => import(/* webpackChunkName: "dashboard" */ "./PublicDashboardPage"));
 const WallDashboardPage = React.lazy(() => import(/* webpackChunkName: "dashboard" */ "./WallDashboardPage"));
@@ -54,5 +55,14 @@ routes.register(
     path: "/wall/dashboards/:token",
     render: (pageProps) => <WallDashboardPage {...pageProps} />,
     getApiKey: (currentRoute) => currentRoute.routeParams.token,
+  })
+);
+
+routes.register(
+  "Dashboards.Folders",
+  routeWithUserSession({
+    path: "/dashboards/folders",
+    title: "Dashboard folders",
+    render: (pageProps) => <DashboardFolders {...pageProps} />,
   })
 );
