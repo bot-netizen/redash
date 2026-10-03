@@ -14,6 +14,7 @@ none of those are a reader's to set.
 """
 
 import logging
+import os
 
 from flask import request
 from flask_restful import abort
@@ -519,6 +520,24 @@ class StreamQueryResource(BaseResource):
             models.db.session.commit()
         return None
 
+    def _waiting_for_events(self, source, query):
+        """
+        Whether the only thing wrong is that nothing has arrived yet.
+
+        True when every topic the query names is being consumed and has no
+        window to read. That is a state, not a fault, and the difference
+        matters: a red banner for a topic nobody is producing to sends somebody
+        to the broker looking for a problem that is not there.
+        """
+        from sqldesk.query_runner.kafka_stream import names_in, table_name
+
+        named = [stream for stream in source.streams if names_in(query, table_name(stream.topic))]
+        if not named:
+            return False
+        return all(
+            watching.state(stream) == watching.RUNNING and not os.path.exists(stream.store_path()) for stream in named
+        )
+
     def post(self, data_source_id):
         source = get_object_or_404(models.DataSource.get_by_id_and_org, data_source_id, self.current_org)
         require_access(source, self.current_user, view_only)
@@ -549,6 +568,14 @@ class StreamQueryResource(BaseResource):
 
         data, error = runner.run_query(query, self.current_user)
         if error:
+            # A stream that is consuming and has not seen an event yet is the
+            # ordinary state of a quiet topic for the first few seconds, and
+            # the normal state of one nothing is producing to. Answering 400
+            # paints the page red for something that is working: it comes back
+            # as an empty result with a note, and the page says so calmly.
+            waiting = self._waiting_for_events(source, query)
+            if waiting:
+                return {"columns": [], "rows": [], "truncated": False, "note": error}
             abort(400, message=error)
 
         import json

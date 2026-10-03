@@ -26,9 +26,34 @@ function topicsIn(text, streams) {
   return streams.filter((stream) => new RegExp(`\\b${stream.table}\\b`, "i").test(text || ""));
 }
 
-export default function StreamStatus({ dataSource, query, streaming }) {
+/** How long it has been running, in the largest unit that still reads. */
+function elapsed(since, now) {
+  const seconds = Math.max(0, Math.round((now - since) / 1000));
+  if (seconds < 90) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 90) {
+    return `${minutes}m ${seconds % 60}s`;
+  }
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+}
+
+export default function StreamStatus({ dataSource, query, streaming, startedAt, note, error }) {
   const [streams, setStreams] = useState([]);
+  const [now, setNow] = useState(Date.now());
   const dataSourceId = dataSource && dataSource.id;
+
+  // A second hand, only while it is running. "for 3m 20s" is how somebody
+  // knows a stream drawing nothing has been drawing nothing for a while,
+  // rather than having just started.
+  useEffect(() => {
+    if (!startedAt) {
+      return undefined;
+    }
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [startedAt]);
 
   useEffect(() => {
     let live = true;
@@ -64,14 +89,22 @@ export default function StreamStatus({ dataSource, query, streaming }) {
     );
   }
 
+  const waiting = !!note;
   return (
     <span className="stream-status" data-test="StreamStatus">
-      <Tag color={stream.state === "running" ? "green" : "orange"}>
+      <Tag color={stream.state === "running" ? "cyan" : "orange"}>
         {stream.state === "running" ? "consuming" : "paused"}
       </Tag>
+      {startedAt && (
+        <span className="stream-status-note" data-test="StreamElapsed">
+          for {elapsed(startedAt, now)}
+        </span>
+      )}
       <span className="stream-status-figure" data-test="StreamRate">
-        {stream.observed_rate || 0}/s
+        {stream.observed_rate || 0}
       </span>
+      <span className="stream-status-note">events a second</span>
+      <span className="stream-status-sep">&middot;</span>
       <span className="stream-status-note">{stream.describes}</span>
       {stream.sampled && (
         <Tooltip
@@ -81,6 +114,22 @@ export default function StreamStatus({ dataSource, query, streaming }) {
         </Tooltip>
       )}
       {stream.watchers > 1 && <span className="stream-status-note">{stream.watchers} watching</span>}
+      {/*
+        Nothing has arrived yet: a state, not a fault. A quiet topic looks like
+        this for its first few seconds and a topic nobody is producing to looks
+        like it all day -- a red banner for either sends somebody to the broker
+        to find a problem that is not there.
+      */}
+      {waiting && (
+        <span className="stream-status-waiting" data-test="StreamWaiting">
+          {note}
+        </span>
+      )}
+      {!waiting && error && (
+        <span className="stream-status-error" data-test="StreamError">
+          {error}
+        </span>
+      )}
     </span>
   );
 }
@@ -89,6 +138,15 @@ StreamStatus.propTypes = {
   dataSource: PropTypes.object,
   query: PropTypes.object.isRequired,
   streaming: PropTypes.bool,
+  startedAt: PropTypes.number,
+  note: PropTypes.string,
+  error: PropTypes.string,
 };
 
-StreamStatus.defaultProps = { dataSource: null, streaming: false };
+StreamStatus.defaultProps = {
+  dataSource: null,
+  streaming: false,
+  startedAt: null,
+  note: null,
+  error: null,
+};

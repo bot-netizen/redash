@@ -46,6 +46,31 @@
   .stream-status-note {
     color: rgba(0, 0, 0, 0.45);
   }
+
+  .stream-status-sep {
+    color: rgba(0, 0, 0, 0.25);
+  }
+
+  // Waiting for the first event is a state, not a fault, so it reads in
+  // SQLDesk's own teal rather than in the red reserved for things that broke.
+  .stream-status-waiting {
+    color: #0a7c93;
+  }
+
+  .stream-status-error {
+    color: #c0392b;
+  }
+
+  // The editor's chrome, tinted. Enough that somebody glancing at a screenshot
+  // knows which page it is, not so much that it stops looking like SQLDesk.
+  .query-editor-controls,
+  .editor__left__data-source {
+    background: fade(#0a7c93, 4%);
+  }
+
+  .editor__left__data-source .ant-select-selector {
+    border-color: fade(#0a7c93, 35%);
+  }
 }
 
 // While it is actually consuming, the band is solid and alive.

@@ -73,6 +73,17 @@ function QuerySource(props) {
   // parameters, Add to dashboard -- is unchanged, which is the whole reason
   // for reusing this page rather than writing a second one.
   const streamsOnly = !!props.streamsOnly;
+
+  // "New Query" is the default name every query is born with. A stream query
+  // deserves to say what it is before it is saved, because the page it opens
+  // on is the only place somebody learns which editor they are in.
+  useEffect(() => {
+    if (streamsOnly && query.isNew() && query.name === "New Query") {
+      setQuery(extend(query.clone(), { name: "New Streaming Query" }));
+    }
+    // Once, when the page opens with an unnamed new query.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamsOnly]);
   const { dataSourcesLoaded, dataSources, dataSource } = useQueryDataSources(query, streamsOnly);
   const isStream = !!(dataSource && dataSource.streams_only);
   const [schema, setSchema] = useState([]);
@@ -231,6 +242,11 @@ function QuerySource(props) {
   // effect depending on it tears down and re-arms constantly, and the first
   // version of this fired a burst of requests a second instead of one every
   // two. The timer depends only on whether streaming is on.
+  const [startedAt, setStartedAt] = useState(null);
+  useEffect(() => {
+    setStartedAt(streaming ? Date.now() : null);
+  }, [streaming]);
+
   const executeRef = useRef(doExecuteQuery);
   executeRef.current = doExecuteQuery;
   useEffect(() => {
@@ -332,7 +348,16 @@ function QuerySource(props) {
                   disabled={!queryFlags.canEdit || !queryFlags.canSchedule}
                 />
               )}
-              {isStream && <StreamStatus dataSource={dataSource} query={query} streaming={streaming} />}
+              {isStream && (
+                <StreamStatus
+                  dataSource={dataSource}
+                  query={query}
+                  streaming={streaming}
+                  startedAt={startedAt}
+                  note={queryResult && queryResult.streamNote}
+                  error={executionError}
+                />
+              )}
             </DynamicComponent>
           }
           onChange={setQuery}
@@ -347,6 +372,7 @@ function QuerySource(props) {
                 <DynamicComponent
                   name={"QuerySourceDropdown"}
                   dataSources={dataSources}
+                  streamsOnly={streamsOnly}
                   value={dataSource ? dataSource.id : undefined}
                   disabled={!queryFlags.canEdit || !dataSourcesLoaded || dataSources.length === 0}
                   loading={!dataSourcesLoaded}
@@ -478,7 +504,11 @@ function QuerySource(props) {
                     it does not push the results down on every run. This is what
                     is left: an error, which has to be read, and the very first
                     run of a query, when there is no footer yet to report into. */}
-                {(executionError || (isQueryExecuting && !queryResult)) && (
+                {/* Nothing is queued for a stream and there is no job to
+                    cancel, so the prompt that offers both is for the ordinary
+                    path only. What a stream has to say, it says in the strip
+                    beside its button. */}
+                {!isStream && (executionError || (isQueryExecuting && !queryResult)) && (
                   <div className="query-alerts">
                     <QueryExecutionStatus
                       status={executionStatus}

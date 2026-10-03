@@ -44,6 +44,10 @@ export default function runStreamQuery(dataSourceId, text) {
           runtime: 0,
         },
       });
+      // A stream that is consuming and has not seen an event yet. Carried on
+      // the result rather than thrown, so the page can say it calmly instead
+      // of painting itself red about a thing that is working.
+      result.streamNote = data.note || null;
     })
     .catch((error) => {
       result.update({

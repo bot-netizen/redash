@@ -11,7 +11,7 @@ export function QuerySourceDropdown(props) {
     <Select
       className="w-100"
       data-test="SelectDataSource"
-      placeholder="Choose data source..."
+      placeholder={props.streamsOnly ? "Choose a Kafka cluster\u2026" : "Choose data source..."}
       value={props.value}
       disabled={props.disabled}
       loading={props.loading}
@@ -30,6 +30,9 @@ export function QuerySourceDropdown(props) {
 
 QuerySourceDropdown.propTypes = {
   dataSources: PropTypes.any,
+  // The stream editor offers only clusters, so it says so rather than leaving
+  // somebody to work out why the list is short.
+  streamsOnly: PropTypes.bool,
   value: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   disabled: PropTypes.bool,
   loading: PropTypes.bool,
