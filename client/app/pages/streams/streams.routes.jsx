@@ -12,8 +12,8 @@ import routes from "@/services/routes";
   exist instead: one to choose which topics can be queried, one to watch one,
   and one to see what is running and what is left.
 */
+const QuerySourcePage = React.lazy(() => import(/* webpackChunkName: "query-editor" */ "../queries/QuerySource"));
 const ManageTopics = React.lazy(() => import(/* webpackChunkName: "streams" */ "./ManageTopics"));
-const StreamQuery = React.lazy(() => import(/* webpackChunkName: "streams" */ "./StreamQuery"));
 const RunningStreams = React.lazy(() => import(/* webpackChunkName: "streams" */ "./RunningStreams"));
 
 routes.register(
@@ -25,12 +25,30 @@ routes.register(
   })
 );
 
+/*
+  The stream editor *is* the query editor.
+
+  A stream query written on a page of its own would get no visualizations, no
+  parameters and no way onto a dashboard -- all of which hang off a query. So
+  it is one, and this is the same page with `streamsOnly`: a picker offering
+  only clusters, a button that says Start streaming, and no result ever stored.
+*/
 routes.register(
   "Streams.Query",
   routeWithUserSession({
     path: "/streams/query",
     title: "Query a stream",
-    render: (pageProps) => <StreamQuery {...pageProps} />,
+    render: (pageProps) => <QuerySourcePage {...pageProps} streamsOnly />,
+    bodyClass: "fixed-layout",
+  })
+);
+routes.register(
+  "Streams.QueryEdit",
+  routeWithUserSession({
+    path: "/streams/query/:queryId",
+    title: "Query a stream",
+    render: (pageProps) => <QuerySourcePage {...pageProps} streamsOnly />,
+    bodyClass: "fixed-layout",
   })
 );
 

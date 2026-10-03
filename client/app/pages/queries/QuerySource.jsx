@@ -29,6 +29,7 @@ import useVisualizationTabHandler from "./hooks/useVisualizationTabHandler";
 import useAutocompleteFlags from "./hooks/useAutocompleteFlags";
 import useAutoLimitFlags from "./hooks/useAutoLimitFlags";
 import useQueryExecute from "./hooks/useQueryExecute";
+import runStreamQuery from "@/services/stream-query";
 import useQueryResultData from "@/lib/useQueryResultData";
 import useQueryDataSources from "./hooks/useQueryDataSources";
 import useQueryFlags from "./hooks/useQueryFlags";
@@ -59,9 +60,20 @@ const EDITOR_CHROME_HEIGHT = 76; // wrapper padding plus the control strip
 const EDITOR_MIN_LINES = 3;
 const EDITOR_MAX_LINES = 20;
 
+// How often a running stream re-reads its window. Fast enough to feel live,
+// slow enough that a tab left open is not a load.
+const STREAM_REFRESH_MS = 2000;
+
 function QuerySource(props) {
   const { query, setQuery, markSaved, isDirty, saveQuery } = useQuery(props.query);
-  const { dataSourcesLoaded, dataSources, dataSource } = useQueryDataSources(query);
+  // `streamsOnly` makes this the stream editor: the same page, offering only
+  // Kafka clusters, running against their windows rather than enqueueing a
+  // job, and never storing a result. Everything else -- visualizations,
+  // parameters, Add to dashboard -- is unchanged, which is the whole reason
+  // for reusing this page rather than writing a second one.
+  const streamsOnly = !!props.streamsOnly;
+  const { dataSourcesLoaded, dataSources, dataSource } = useQueryDataSources(query, streamsOnly);
+  const isStream = !!(dataSource && dataSource.streams_only);
   const [schema, setSchema] = useState([]);
   const queryFlags = useQueryFlags(query, dataSource);
   const [parameters, areParametersDirty, updateParametersDirtyFlag] = useQueryParameters(query);
@@ -172,6 +184,12 @@ function QuerySource(props) {
       if (!queryFlags.canExecute || (!skipParametersDirtyFlag && (areParametersDirty || isQueryExecuting))) {
         return;
       }
+      if (isStream) {
+        // Against the window, now, in the web process. Nothing is enqueued and
+        // nothing is stored; see `services/stream-query`.
+        executeQuery(runNow(), () => runStreamQuery(dataSource.id, selectedText || query.query));
+        return;
+      }
       if (isDirty || !isEmpty(selectedText)) {
         executeQuery(runNow(), () => {
           return query.getQueryResultByText(runNow(), selectedText);
@@ -180,8 +198,41 @@ function QuerySource(props) {
         executeQuery();
       }
     },
-    [query, queryFlags.canExecute, areParametersDirty, isQueryExecuting, isDirty, selectedText, executeQuery]
+    [
+      query,
+      queryFlags.canExecute,
+      areParametersDirty,
+      isQueryExecuting,
+      isDirty,
+      selectedText,
+      executeQuery,
+      isStream,
+      dataSource,
+    ]
   );
+
+  /*
+    Streaming: the same execute, on a timer.
+
+    `Start streaming` rather than `Execute`, because they are not the same act.
+    Executing runs something once; starting a stream holds a consumer, a broker
+    connection and a slot for as long as the tab is open, and a button that did
+    not say so would be one people press without meaning to.
+  */
+  const [streaming, setStreaming] = useState(false);
+  useEffect(() => {
+    if (!isStream && streaming) {
+      setStreaming(false);
+    }
+  }, [isStream, streaming]);
+  useEffect(() => {
+    if (!streaming) {
+      return undefined;
+    }
+    doExecuteQuery(true);
+    const timer = setInterval(() => doExecuteQuery(true), STREAM_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [streaming, doExecuteQuery]);
 
   const [isQuerySaving, setIsQuerySaving] = useState(false);
 
@@ -213,12 +264,19 @@ function QuerySource(props) {
     loading: isQuerySaving,
   };
 
-  const executeButtonProps = {
-    disabled: !queryFlags.canExecute || isQueryExecuting || areParametersDirty,
-    shortcut: "mod+enter, alt+enter, ctrl+enter, shift+enter",
-    onClick: doExecuteQuery,
-    text: <span className="hidden-xs">{selectedText === null ? "Execute" : "Execute Selected"}</span>,
-  };
+  const executeButtonProps = isStream
+    ? {
+        disabled: !queryFlags.canExecute || areParametersDirty,
+        shortcut: "mod+enter, alt+enter, ctrl+enter, shift+enter",
+        onClick: () => setStreaming((on) => !on),
+        text: <span className="hidden-xs">{streaming ? "Stop" : "Start streaming"}</span>,
+      }
+    : {
+        disabled: !queryFlags.canExecute || isQueryExecuting || areParametersDirty,
+        shortcut: "mod+enter, alt+enter, ctrl+enter, shift+enter",
+        onClick: doExecuteQuery,
+        text: <span className="hidden-xs">{selectedText === null ? "Execute" : "Execute Selected"}</span>,
+      };
 
   // The editor used to be a flat 300px whatever the query was, which on a
   // one-line query is most of a screen of nothing sitting on top of the

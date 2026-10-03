@@ -65,6 +65,7 @@ const EXPECTED = [
   ["Dashboards.Folder", "/dashboards/folder/:folderId"],
   ["Streams.Topics", "/streams/topics"],
   ["Streams.Query", "/streams/query"],
+  ["Streams.QueryEdit", "/streams/query/:queryId"],
   ["Streams.Running", "/streams/running"],
 ];
 
