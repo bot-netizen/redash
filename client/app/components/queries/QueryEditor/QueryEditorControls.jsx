@@ -41,7 +41,6 @@ export default function EditorControl({
   autocompleteToggleProps,
   autoLimitCheckboxProps,
   dataSourceSelectorProps,
-  extra,
 }) {
   useEffect(() => {
     const buttons = filter(
@@ -105,10 +104,6 @@ export default function EditorControl({
           ))}
         </Select>
       )}
-      {/* Beside the buttons it belongs to. A stream's state is read in the
-          same glance as the button that starts and stops it; up in the page
-          header it was a long way from the thing it describes. */}
-      {extra}
       {saveButtonProps !== false && (
         <ButtonTooltip title={saveButtonProps.title} shortcut={saveButtonProps.shortcut}>
           <Button
@@ -166,7 +161,6 @@ EditorControl.propTypes = {
       onToggle: PropTypes.func,
     }),
   ]),
-  extra: PropTypes.node,
   autoLimitCheckboxProps: PropTypes.oneOfType([
     PropTypes.bool, // `false` to hide
     PropTypes.shape(AutoLimitCheckbox.propTypes),
@@ -193,7 +187,6 @@ EditorControl.defaultProps = {
   saveButtonProps: false,
   executeButtonProps: false,
   autocompleteToggleProps: false,
-  extra: null,
   autoLimitCheckboxProps: false,
   dataSourceSelectorProps: false,
 };

@@ -193,6 +193,28 @@ function bubbleSymbolSize(options: any) {
   };
 }
 
+/*
+  Points in x order, on an axis where order is the chart's own.
+
+  A category axis already gets this: every series is aligned to one sorted
+  category list, which is what makes stacking line up. A **time or value** axis
+  had nothing -- `aggregate` returns points in the order the rows arrived, and
+  a line is drawn by joining them in that order. A query without an ORDER BY
+  therefore produced a line that ran backwards and forwards across the chart,
+  which is what a stream query looks like by default: the window is read in
+  whatever order the engine returns it.
+
+  Honouring `sortX` rather than always sorting, because somebody who has turned
+  it off is asking to plot a path in the order the rows came -- a trajectory
+  rather than a function of x.
+*/
+function sortPoints(points: any[], xAxisType: string, options: any) {
+  if (!options.sortX || xAxisType === "category") {
+    return points;
+  }
+  return sortBy(points, (point: any) => (isNil(point.x) ? Infinity : point.x));
+}
+
 function buildCartesianSeries(
   chartData: any[],
   options: any,
@@ -206,7 +228,11 @@ function buildCartesianSeries(
 
   const prepared = map(chartData, (series) => {
     const overrides = extend({ type: options.globalSeriesType, yAxis: 0 }, options.seriesOptions[series.name]);
-    const points = aggregate(series.data, xAxisType, overrides.type, options.missingValuesAsZero);
+    const points = sortPoints(
+      aggregate(series.data, xAxisType, overrides.type, options.missingValuesAsZero),
+      xAxisType,
+      options
+    );
     return { series, overrides, points };
   });
 

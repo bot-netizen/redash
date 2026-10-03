@@ -3,7 +3,15 @@ import { useCallback, useState, useMemo } from "react";
 import useUpdateQuery from "./useUpdateQuery";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 
-export default function useQuery(originalQuery) {
+/**
+ * @param originalQuery the query being edited
+ * @param urlForQuery   where a newly saved query lives. A stream query's home
+ *                      is the stream editor, not `queries/<id>`, and sending
+ *                      it to the ordinary one made saving a bounce through a
+ *                      URL that then redirected -- visible in the address bar,
+ *                      and the address somebody copies.
+ */
+export default function useQuery(originalQuery, urlForQuery = (query) => query.getUrl(true)) {
   const [query, setQuery] = useState(originalQuery);
   const [originalQuerySource, setOriginalQuerySource] = useState(originalQuery.query);
   const [originalAutoLimit, setOriginalAutoLimit] = useState(query.options.apply_auto_limit);
@@ -27,7 +35,7 @@ export default function useQuery(originalQuery) {
     // It's important to update URL first, and only then update state
     if (updatedQuery.id !== query.id) {
       // Don't reload page when saving new query
-      navigateTo(updatedQuery.getUrl(true), true);
+      navigateTo(urlForQuery(updatedQuery), true);
     }
     markSaved(updatedQuery);
   });

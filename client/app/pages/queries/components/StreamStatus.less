@@ -11,7 +11,13 @@
   align-items: center;
   flex-wrap: nowrap;
   gap: 10px;
+  /* It shares a row with whatever else is there, and it must give way rather
+     than run under its neighbours. `min-width: 0` is what lets a flex item
+     shrink below its content; without it the text overflowed and the Save
+     button was drawn on top of it. */
+  flex: 0 1 auto;
   min-width: 0;
+  overflow: hidden;
   margin-right: 10px;
   font-size: 12px;
   line-height: 1;

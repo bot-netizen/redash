@@ -97,6 +97,24 @@ current.</p>
 <p>Streams cannot be scheduled and cannot be alerted on, for the same reason: at three in the morning
 nobody is watching, so there is nothing to refresh and nothing for an alert to check.</p>
 
+<h3 id="received-at">Every topic has <code>_received_at</code></h3>
+<p>The time SQLDesk took the event off the topic, added to every window. It is the column to group by for
+a rate, and the column to order by for anything drawn over time:</p>
+<pre><code>select _received_at, region, sum(amount)
+from orders
+group by 1, 2
+order by 1</code></pre>
+<p>Not the time the event <em>happened</em> &mdash; that is whatever field your producer puts in the
+message, and SQLDesk does not guess which one. Use yours where the difference matters; a late or
+replayed event has an arrival time of now.</p>
+<div class="note">
+  <p><strong>A window comes back in no particular order.</strong> It is a file read by DuckDB, and
+  without an <code>ORDER BY</code> the rows arrive in whatever order the engine found them. A table does
+  not care; a line chart drawn over time does, which is why charts sort their points by the X column
+  unless you turn sorting off in the visualization editor. Adding <code>order by</code> is still worth
+  it: it makes the result right rather than only the picture.</p>
+</div>
+
 <h2 id="lifecycle">Running, paused, cold</h2>
 <p>A stream is <strong>running</strong> while somebody has checked in within the last 45 seconds;
 <strong>paused</strong> when nobody has, keeping its window so coming back resumes in seconds rather

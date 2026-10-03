@@ -67,13 +67,20 @@ const EDITOR_MAX_LINES = 20;
 const STREAM_REFRESH_MS = 2000;
 
 function QuerySource(props) {
-  const { query, setQuery, markSaved, isDirty, saveQuery } = useQuery(props.query);
   // `streamsOnly` makes this the stream editor: the same page, offering only
   // Kafka clusters, running against their windows rather than enqueueing a
   // job, and never storing a result. Everything else -- visualizations,
   // parameters, Add to dashboard -- is unchanged, which is the whole reason
   // for reusing this page rather than writing a second one.
   const streamsOnly = !!props.streamsOnly;
+
+  // Where a newly saved query belongs. A stream query's home is the stream
+  // editor; sending it to `queries/<id>/source` made saving a bounce through
+  // the wrong editor, which redirected a moment later -- visible in the
+  // address bar, and the address somebody copies.
+  const { query, setQuery, markSaved, isDirty, saveQuery } = useQuery(props.query, (saved) =>
+    streamsOnly ? `streams/query/${saved.id}` : saved.getUrl(true)
+  );
 
   // "New Query" is the default name every query is born with. A stream query
   // deserves to say what it is before it is saved, because the page it opens
@@ -395,6 +402,23 @@ function QuerySource(props) {
                 refresh -- offering the control would be offering a setting
                 that silently does nothing.
               */}
+              {/*
+                In the header rather than beside the button it describes. It
+                was next to Save, which reads better -- and the controls strip
+                has no room for it: six controls, two buttons and a status with
+                four figures in it, in a row that cannot wrap. It overlapped the
+                Save button at any ordinary editor width.
+              */}
+              {isStream && (
+                <StreamStatus
+                  dataSource={dataSource}
+                  query={query}
+                  streaming={streaming}
+                  startedAt={startedAt}
+                  note={queryResult && queryResult.streamNote}
+                  error={executionError}
+                />
+              )}
               {!queryFlags.isNew && !isStream && (
                 <ScheduleControl
                   schedule={query.schedule}
@@ -496,18 +520,6 @@ function QuerySource(props) {
                       }}
                       saveButtonProps={saveButtonProps}
                       executeButtonProps={executeButtonProps}
-                      extra={
-                        isStream ? (
-                          <StreamStatus
-                            dataSource={dataSource}
-                            query={query}
-                            streaming={streaming}
-                            startedAt={startedAt}
-                            note={queryResult && queryResult.streamNote}
-                            error={executionError}
-                          />
-                        ) : null
-                      }
                       autocompleteToggleProps={{
                         available: autocompleteAvailable,
                         enabled: autocompleteEnabled,
