@@ -84,8 +84,16 @@ streams:
   worker:
     enabled: true
     replicas: 1
-    # One process per topic that may be consumed at once.
-    workersCount: 5
+    # One process per topic that may be consumed at once -- and each one loads
+    # the whole application, around 150 MB. Two by default, because a default
+    # that matches the five slots would cost three quarters of a gigabyte on an
+    # install where nobody has configured a topic yet.
+    #
+    # Raise it with SQLDESK_STREAM_MAX_CONCURRENT when streams are actually
+    # used: the lower of the two is what limits how many topics consume at
+    # once, and a slot limit of five served by two processes is a limit of two
+    # wearing a five.
+    workersCount: 2
     resources:
       requests:
         cpu: 100m
