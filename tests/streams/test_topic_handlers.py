@@ -299,7 +299,13 @@ class TestRunningSqlAgainstTheWindows(TopicTestCase):
         # What an install looks like after somebody drops the optional
         # dependency group: the rows are here and nothing can read them. A 503
         # with a sentence beats a 500 with a traceback.
-        rv = self.ask("select 1")
+        #
+        # The runner is taken away explicitly rather than relying on this image
+        # not having it. The first version of this test asserted the absence
+        # and passed locally for that reason alone -- then failed in CI, where
+        # the client *is* installed, which is the one place it had never run.
+        with mock.patch.object(models.DataSource, "query_runner", new_callable=mock.PropertyMock, return_value=None):
+            rv = self.ask("select 1")
 
         self.assertEqual(503, rv.status_code)
         self.assertIn("not installed", rv.json["message"])

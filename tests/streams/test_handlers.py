@@ -349,13 +349,21 @@ class TestARunnerFindsItsStream(BaseTestCase):
         models.db.session.add(stream)
         models.db.session.commit()
 
-        found = source.query_runner._stream()
+        found = source.query_runner._streams()
 
-        self.assertIsNotNone(found)
-        self.assertEqual(stream.id, found.id)
+        self.assertEqual([stream.id], [one.id for one in found])
 
-    def test_and_a_data_source_with_no_stream_still_says_so(self):
+    def test_and_every_enabled_topic_comes_back(self):
+        # A cluster has as many streams as it has enabled topics.
+        source = self.source()
+        for topic in ("orders", "payments"):
+            models.db.session.add(models.Stream(org=source.org, data_source=source, topic=topic))
+        models.db.session.commit()
+
+        self.assertEqual(["orders", "payments"], [one.topic for one in source.query_runner._streams()])
+
+    def test_and_a_cluster_with_no_topics_enabled_has_none(self):
         source = self.source()
         models.db.session.commit()
 
-        self.assertIsNone(source.query_runner._stream())
+        self.assertEqual([], source.query_runner._streams())
