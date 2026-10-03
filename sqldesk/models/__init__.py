@@ -1563,7 +1563,11 @@ class Dashboard(ChangeTrackingMixin, TimestampMixin, BelongsToOrgMixin, db.Model
         half a minute. Mixing them means either hammering the warehouse or
         showing a stale stream.
         """
-        return any(_widget_is_streaming(widget) for widget in self.widgets)
+        # `loaded_widgets` rather than `widgets`: the latter is a dynamic
+        # relationship, so each widget would lazily fetch its visualization,
+        # its query and that query's data source -- the per-widget cost this
+        # project already paid once to remove.
+        return any(_widget_is_streaming(widget) for widget in self.loaded_widgets())
 
     __tablename__ = "dashboards"
     __mapper_args__ = {"version_id_col": version}

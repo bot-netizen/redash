@@ -248,9 +248,18 @@ def serialize_dashboard(obj, with_widgets=False, user=None, with_favorite_state=
     layout = obj.layout
 
     widgets = []
+    # Whether this is a streaming dashboard, accumulated while the widgets are
+    # walked rather than asked of the dashboard afterwards. `loaded_widgets`
+    # has already joined the visualization, the query and the data source, so
+    # reading it here costs nothing -- where asking the dashboard would walk
+    # the dynamic relationship again and lazily fetch the lot, one widget at a
+    # time. That is the cost `test_dashboard_load_cost` exists to hold flat,
+    # and the first version of this put it straight back.
+    streaming = False
 
     if with_widgets:
         for w in obj.loaded_widgets():
+            streaming = streaming or models._widget_is_streaming(w)
             if w.visualization_id is None:
                 widgets.append(serialize_widget(w))
             elif user and has_access(w.visualization.query_rel, user, view_only):
@@ -301,8 +310,11 @@ def serialize_dashboard(obj, with_widgets=False, user=None, with_favorite_state=
         "folder": obj.folder.to_dict() if obj.folder else None,
         # Derived from what is on it: a streaming dashboard is one whose
         # widgets draw on windows. The page needs it to know which refresh
-        # intervals to offer and what to say when nothing is watching.
-        "is_streaming": obj.is_streaming,
+        # intervals to offer and what to say when nothing is watching -- and
+        # the page is the caller that asks for widgets, so it is never wrong
+        # where it is read. A list of dashboards does not load widgets and does
+        # not need it.
+        "is_streaming": streaming if with_widgets else None,
     }
 
     return d
