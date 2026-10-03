@@ -36,7 +36,8 @@ function buttonType(value) {
   return value ? "primary" : "default";
 }
 
-function DashboardPageTitle({ dashboardConfiguration }) {
+// Exported for its own test: what a dashboard says it is, beside its name.
+export function DashboardPageTitle({ dashboardConfiguration }) {
   const { dashboard, canEditDashboard, updateDashboard, editingLayout } = dashboardConfiguration;
   return (
     <div className="title-with-tags">

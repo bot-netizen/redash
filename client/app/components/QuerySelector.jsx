@@ -12,24 +12,42 @@ import useSearchResults from "@/lib/hooks/useSearchResults";
 import Spinner from "@/components/Spinner";
 
 const { Option } = Select;
-function search(term) {
-  if (term === null) {
-    return Promise.resolve(null);
-  }
 
-  // get recent
-  if (!term) {
-    return Query.recent().then((results) => results.filter((item) => !item.is_draft)); // filter out draft
-  }
+/*
+  `kind` narrows this to one half of the queries list.
 
-  // search by query
-  return Query.query({ q: term }).then(({ results }) => results);
+  A dashboard shows streams or saved queries and never both, and the server
+  refuses a panel that would mix them. Offering the wrong kind here is
+  therefore offering something that is going to fail -- which is worse than
+  not offering it, because the person has already chosen by then.
+
+  Recent queries are filtered in the browser: `api/queries/recent` is a short
+  list of what this person touched, with no filter of its own, and ten rows do
+  not need one.
+*/
+function searchFor(kind) {
+  return function search(term) {
+    if (term === null) {
+      return Promise.resolve(null);
+    }
+
+    const wanted = (results) =>
+      kind ? results.filter((item) => !!item.is_streaming === (kind === "streaming")) : results;
+
+    // get recent
+    if (!term) {
+      return Query.recent().then((results) => wanted(results.filter((item) => !item.is_draft))); // filter out draft
+    }
+
+    // search by query
+    return Query.query({ q: term, kind }).then(({ results }) => results);
+  };
 }
 
 export default function QuerySelector(props) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedQuery, setSelectedQuery] = useState();
-  const [doSearch, searchResults, searching] = useSearchResults(search, { initialResults: [] });
+  const [doSearch, searchResults, searching] = useSearchResults(searchFor(props.kind), { initialResults: [] });
 
   const placeholder = "Search a query by name";
   const clearIcon = (
@@ -171,6 +189,8 @@ QuerySelector.propTypes = {
   type: PropTypes.oneOf(["select", "default"]),
   className: PropTypes.string,
   disabled: PropTypes.bool,
+  //: "streaming", "saved", or nothing for both.
+  kind: PropTypes.oneOf(["streaming", "saved"]),
 };
 
 QuerySelector.defaultProps = {
@@ -178,4 +198,5 @@ QuerySelector.defaultProps = {
   type: "default",
   className: null,
   disabled: false,
+  kind: null,
 };

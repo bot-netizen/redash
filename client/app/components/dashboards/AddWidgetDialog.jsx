@@ -127,7 +127,16 @@ function AddWidgetDialog({ dialog, dashboard }) {
       width={700}
     >
       <div data-test="AddWidgetDialog">
-        <QuerySelector onChange={(query) => selectQuery(query ? query.id : null)} />
+        {/*
+          Only the kind this dashboard can hold. A dashboard has one refresh
+          interval, so the server refuses a panel that would mix streams with
+          saved queries -- and a picker that offers the other kind is offering
+          a refusal, after somebody has already made their choice.
+        */}
+        <QuerySelector
+          kind={dashboard.is_streaming ? "streaming" : "saved"}
+          onChange={(query) => selectQuery(query ? query.id : null)}
+        />
 
         {selectedQuery && (
           <VisualizationSelect
