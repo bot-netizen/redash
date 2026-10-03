@@ -1,5 +1,77 @@
 # Changelog
 
+## 0.7.0-rc.1
+
+Kafka topics you can query, with the same editor, the same visualizations and
+the same dashboards as everything else -- and nothing new switched on for
+anybody who does not ask for it.
+
+**A cluster is a data source; its topics are its tables.** A stream query is a
+*query*: written in the query editor, saved like any other, charted like any
+other, put on a dashboard like any other. What differs is that Execute says
+**Start streaming** and **no result is ever stored** -- a window is what a
+consumer saw while somebody was watching, and writing it down would be making a
+copy of the one thing whose point is that it is current. A topic is consumed
+only while somebody is watching it, and stops about a minute after the last
+person looks away.
+
+**Analyse a topic before enabling it.** It reads the last few hundred messages
+and says what the columns are, how many could not be parsed, how fast they
+arrive, how much history that buys, and whether it will be sampled. None of
+that can be guessed from a topic's name, and finding out an hour later is the
+bad way. Each topic's row budget and events-per-second ceiling are set per
+topic; over the ceiling, events are kept one in N by a hash of the message key,
+so per-key counts still scale back up honestly -- and anything drawn from a
+sampled stream says so.
+
+**A slot is a topic, not a viewer.** Five people watching `orders` share one
+consumer and one window and take one slot between them, which makes a team
+round one dashboard during an incident nearly free. When there is no room, the
+editor says so beside the button that will not start.
+
+**Streaming is a kind of query, not a section of the application.** There is no
+Kafka in the navigation: streaming queries are a half of **Queries**, streaming
+dashboards a half of **Dashboards**, and the two halves never overlap, so
+nothing is filed in two places. Which topics may be queried is a tab beside
+Data Sources, because it configures a connection. A dashboard declares which
+kind it is when you make it, carries a **streaming** chip when it is open, and
+shows a band that turns green while its topics are actually being consumed.
+`Live` keeps its old meaning throughout: refreshing right now, which an
+ordinary dashboard can also be.
+
+**Dashboard folders, with a stated meaning.** A folder says what belongs in it,
+which is the thing a label never did. A locked folder is an administrator's to
+change and read-only for everyone else, including the dashboard's author. A
+folder holds both kinds of dashboard on purpose -- it is a place, not a type.
+
+**Dashboards by email, on a schedule.** A PNG inline and a one-page PDF, or a
+link for people who should sign in. Shares to Slack as well.
+
+**OAuth 2.1 for MCP.** Discovery, PKCE, refresh with rotation, revocation and
+dynamic client registration, so a client can connect without anybody pasting a
+key. *Client ID Metadata Documents are not implemented.*
+
+**Permissions an administrator hands to a group.** Streams, the catalog, live
+dashboards, keeping uploads, MCP and sending dashboards are each granted rather
+than implied by being an administrator -- and a permission the install does not
+offer is not offered to anybody, instead of leading somebody to a page that
+never fills.
+
+**An admin section that answers the question you arrive with.** Overview,
+System Status, RQ Status, Storage Status, Running Queries, Streaming Queries,
+Outdated Queries and MCP. Where the headroom is going, who has been running
+what, why a quiet stream is quiet, and what to clean up now rather than at its
+next slot.
+
+**Uploads expire on a clock people can see**, and stop, if they may.
+
+**Nothing heavy is on by default.** Streams, MCP, uploads and the screenshot
+renderer are each off until a chart value or an environment variable asks for
+them, so an install pays for what it uses and the parts can be scaled apart.
+
+**Half the initial download**: 931 KB gzipped to 525 KB, held there by a CI
+budget. One spinner, drawn in CSS instead of typed from an icon font.
+
 ## 0.6.0-rc.4
 
 A security review of everything reachable from outside: five passes over
