@@ -1,0 +1,60 @@
+@import "../assets/less/inc/tokens";
+
+/*
+  Border-drawn rather than an SVG: one element, no markup to get wrong inside
+  a button, and the arc inherits nothing it should not.
+*/
+.sqldesk-spinner {
+  display: inline-block;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: var(--color-border);
+  border-top-color: var(--color-action);
+  border-radius: @radius-pill;
+  animation: sqldesk-spinner-turn 0.7s linear infinite;
+  flex: 0 0 auto;
+
+  &-inline {
+    width: 1em;
+    height: 1em;
+    border-width: 2px;
+    /* Sits on the text baseline rather than hanging below it, which is what
+       makes it usable in the middle of a sentence or a button label. */
+    vertical-align: -0.125em;
+  }
+
+  &-small {
+    width: 16px;
+    height: 16px;
+    border-width: 2px;
+  }
+
+  &-medium {
+    width: 24px;
+    height: 24px;
+    border-width: 2px;
+  }
+
+  &-large {
+    width: 40px;
+    height: 40px;
+    border-width: 3px;
+  }
+}
+
+@keyframes sqldesk-spinner-turn {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/*
+  Still turning, four times slower. A spinner that stops is a page that has
+  frozen; what somebody who asked for less motion needs is for it to stop
+  drawing the eye, not to stop saying that something is happening.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .sqldesk-spinner {
+    animation-duration: 2.8s;
+  }
+}

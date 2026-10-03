@@ -9,6 +9,7 @@ import PlainButton from "@/components/PlainButton";
 import notification from "@/services/notification";
 import { QueryTagsControl } from "@/components/tags-control/TagsControl";
 import useSearchResults from "@/lib/hooks/useSearchResults";
+import Spinner from "@/components/Spinner";
 
 const { Option } = Select;
 function search(term) {
@@ -42,7 +43,7 @@ export default function QuerySelector(props) {
   );
   const spinIcon = (
     <span role="status" aria-live="polite" aria-relevant="additions removals">
-      <i className={cx("fa fa-spinner fa-pulse hide-in-percy", { hidden: !searching })} aria-hidden="true" />
+      <Spinner className={cx("hide-in-percy", { hidden: !searching })} />
       <span className="sr-only">Searching...</span>
     </span>
   );

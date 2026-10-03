@@ -17,6 +17,7 @@ import notification from "@/services/notification";
 import User from "@/services/user";
 
 import "./index.less";
+import Spinner from "@/components/Spinner";
 
 const { Option } = Select;
 const DEBOUNCE_SEARCH_DURATION = 200;
@@ -107,7 +108,7 @@ function UserSelect({ onSelect, shouldShowUser }) {
       suffixIcon={
         loadingUsers ? (
           <span role="status" aria-live="polite" aria-relevant="additions removals">
-            <i className="fa fa-spinner fa-pulse" aria-hidden="true" />
+            <Spinner />
             <span className="sr-only">Loading...</span>
           </span>
         ) : (
@@ -171,7 +172,7 @@ function PermissionsEditorDialog({ dialog, author, context, aclUrl }) {
         <h5 className="flex-fill">Users with permissions</h5>
         {loadingGrantees && (
           <span role="status" aria-live="polite" aria-relevant="additions removals">
-            <i className="fa fa-spinner fa-pulse" aria-hidden="true" />
+            <Spinner />
             <span className="sr-only">Loading...</span>
           </span>
         )}

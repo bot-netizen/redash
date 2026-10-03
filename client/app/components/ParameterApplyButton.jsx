@@ -4,12 +4,13 @@ import Button from "antd/lib/button";
 import Badge from "antd/lib/badge";
 import Tooltip from "@/components/Tooltip";
 import KeyboardShortcuts from "@/services/KeyboardShortcuts";
+import Spinner from "@/components/Spinner";
 
 function ParameterApplyButton({ paramCount, onClick }) {
   // show spinner when count is empty so the fade out is consistent
   const icon = !paramCount ? (
     <span role="status" aria-live="polite" aria-relevant="additions removals">
-      <i className="fa fa-spinner fa-pulse" aria-hidden="true" />
+      <Spinner />
       <span className="sr-only">Loading...</span>
     </span>
   ) : (

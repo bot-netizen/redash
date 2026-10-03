@@ -2,7 +2,6 @@ import React from "react";
 import PropTypes from "prop-types";
 
 import Link from "@/components/Link";
-import BigMessage from "@/components/BigMessage";
 import PageHeader from "@/components/PageHeader";
 import DashboardGrid from "@/components/dashboards/DashboardGrid";
 
@@ -17,6 +16,7 @@ import DashboardFilters from "./components/DashboardFilters";
 import useScreenshotMode, { everyWidgetHasFinished } from "@/lib/hooks/useScreenshotMode";
 
 import "./PublicDashboardPage.less";
+import Spinner from "@/components/Spinner";
 
 function PublicDashboard({ dashboard, token }) {
   const dashboardConfiguration = useDashboard(dashboard, { publicToken: token });
@@ -92,8 +92,9 @@ class PublicDashboardPage extends React.Component {
     return (
       <div className="public-dashboard-page">
         {loading ? (
-          <div className="container loading-message">
-            <BigMessage className="" icon="fa-spinner fa-2x fa-pulse" message="Loading..." />
+          <div className="container loading-message text-center" role="status" aria-live="polite">
+            <Spinner size="large" />
+            <div className="m-t-15">Loading...</div>
           </div>
         ) : (
           <PublicDashboard dashboard={dashboard} token={this.props.token} />

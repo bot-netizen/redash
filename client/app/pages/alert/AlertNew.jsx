@@ -15,6 +15,7 @@ import { clientConfig } from "@/services/auth";
 import Rearm from "./components/Rearm";
 import Query from "./components/Query";
 import HorizontalFormItem from "./components/HorizontalFormItem";
+import Spinner from "@/components/Spinner";
 
 export default class AlertNew extends React.Component {
   state = {
@@ -89,7 +90,7 @@ export default class AlertNew extends React.Component {
                 <Button type="primary" onClick={this.save} disabled={!query} className="btn-create-alert">
                   {saving && (
                     <span role="status" aria-live="polite" aria-relevant="additions removals">
-                      <i className="fa fa-spinner fa-pulse m-r-5" aria-hidden="true" />
+                      <Spinner className="m-r-5" />
                       <span className="sr-only">Saving...</span>
                     </span>
                   )}

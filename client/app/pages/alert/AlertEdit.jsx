@@ -17,6 +17,7 @@ import Rearm from "./components/Rearm";
 import Query from "./components/Query";
 
 import HorizontalFormItem from "./components/HorizontalFormItem";
+import Spinner from "@/components/Spinner";
 
 export default class AlertEdit extends React.Component {
   _isMounted = false;
@@ -63,7 +64,7 @@ export default class AlertEdit extends React.Component {
           <Button type="primary" onClick={() => this.save()}>
             {saving ? (
               <span role="status" aria-live="polite" aria-relevant="additions removals">
-                <i className="fa fa-spinner fa-pulse m-r-5" aria-hidden="true" />
+                <Spinner className="m-r-5" />
                 <span className="sr-only">Saving...</span>
               </span>
             ) : (

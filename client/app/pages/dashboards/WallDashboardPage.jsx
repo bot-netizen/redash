@@ -16,6 +16,7 @@ import useDashboardCycle from "./hooks/useDashboardCycle";
 import useWallScroll from "./hooks/useWallScroll";
 
 import "./WallDashboardPage.less";
+import Spinner from "@/components/Spinner";
 
 function WallDashboard({ dashboard, token }) {
   const { filters, setFilters, loadWidget, refreshWidget, live } = useDashboard(dashboard, { publicToken: token });
@@ -137,7 +138,9 @@ function WallDashboardPage({ token }) {
           message="This dashboard is not available."
         />
       ) : loading && !dashboard ? (
-        <BigMessage className="wall-message" icon="fa-spinner fa-2x fa-pulse" message="" />
+        <div className="wall-message text-center" role="status" aria-live="polite">
+          <Spinner size="large" />
+        </div>
       ) : (
         // Keyed by the token of the dashboard being shown, so moving to the
         // next one starts a clean dashboard rather than reconciling two

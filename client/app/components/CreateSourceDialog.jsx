@@ -15,6 +15,7 @@ import helper from "@/components/dynamic-form/dynamicFormHelper";
 import HelpTrigger, { TYPES as HELP_TRIGGER_TYPES } from "@/components/HelpTrigger";
 import Uploads from "@/services/uploads";
 import notification from "@/services/notification";
+import Spinner from "@/components/Spinner";
 
 // Data source types that skip the configuration form entirely: selecting the
 // type immediately opens a native file picker, and the data source is created
@@ -221,7 +222,7 @@ class CreateSourceDialog extends React.Component {
     return (
       <div className="text-center p-l-15 p-r-15" style={{ minHeight: "30vh" }}>
         <div className="p-t-15 p-b-15">
-          <i className="fa fa-spinner fa-pulse fa-2x" aria-hidden="true" />
+          <Spinner size="medium" />
         </div>
         <p>Uploading {get(pendingFile, "name")}&hellip;</p>
       </div>

@@ -21,6 +21,7 @@ import VisualizationDescription from "@/components/visualizations/VisualizationD
 
 import Widget from "./Widget";
 import LiveCountdown from "./LiveCountdown";
+import Spinner from "@/components/Spinner";
 
 function visualizationWidgetMenuOptions({ widget, canEditDashboard, onParametersEdit }) {
   const canViewQuery = currentUser.hasPermission("view_query");
@@ -344,7 +345,7 @@ class VisualizationWidget extends React.Component {
             aria-relevant="additions removals"
           >
             <div className="spinner">
-              <i className="zmdi zmdi-refresh zmdi-hc-spin zmdi-hc-5x" aria-hidden="true" />
+              <Spinner size="large" />
               <span className="sr-only">Loading...</span>
             </div>
           </div>

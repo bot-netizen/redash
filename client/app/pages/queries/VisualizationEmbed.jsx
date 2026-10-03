@@ -30,6 +30,7 @@ import location from "@/services/location";
 import useScreenshotMode, { inScreenshotMode } from "@/lib/hooks/useScreenshotMode";
 
 import logoUrl from "@/assets/images/sqldesk_icon.svg";
+import Spinner from "@/components/Spinner";
 
 function VisualizationEmbedHeader({ queryName, queryDescription, visualization }) {
   return (
@@ -256,7 +257,7 @@ function VisualizationEmbed({ queryId, visualizationId, apiKey, onError }) {
         {!queryResults && refreshStartedAt && (
           <div className="d-flex justify-content-center">
             <div className="spinner">
-              <i className="zmdi zmdi-refresh zmdi-hc-spin zmdi-hc-5x" aria-hidden="true" />
+              <Spinner size="large" />
               <span className="sr-only">Refreshing...</span>
             </div>
           </div>
