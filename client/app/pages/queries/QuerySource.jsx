@@ -28,6 +28,7 @@ import useQuery from "./hooks/useQuery";
 import useVisualizationTabHandler from "./hooks/useVisualizationTabHandler";
 import useAutocompleteFlags from "./hooks/useAutocompleteFlags";
 import useAutoLimitFlags from "./hooks/useAutoLimitFlags";
+import navigateTo from "@/components/ApplicationArea/navigateTo";
 import useQueryExecute from "./hooks/useQueryExecute";
 import runStreamQuery from "@/services/stream-query";
 import StreamStatus from "./components/StreamStatus";
@@ -86,6 +87,28 @@ function QuerySource(props) {
   }, [streamsOnly]);
   const { dataSourcesLoaded, dataSources, dataSource } = useQueryDataSources(query, streamsOnly);
   const isStream = !!(dataSource && dataSource.streams_only);
+
+  /*
+    A saved query opens in the editor that can run it.
+
+    A stream query reached through the ordinary Queries list would offer
+    Execute, enqueue a job, and wait for a worker that will never find a window
+    -- and an ordinary query reached through the stream editor would offer
+    Start streaming for a warehouse. Either is a dead end somebody has to work
+    out for themselves, so the page sends them to the right one instead.
+
+    Replaced rather than pushed: the wrong editor should not be a stop on the
+    way back.
+  */
+  useEffect(() => {
+    if (!dataSourcesLoaded || query.isNew() || !dataSource) {
+      return;
+    }
+    if (isStream !== streamsOnly) {
+      navigateTo(isStream ? `streams/query/${query.id}` : `queries/${query.id}/source`, true);
+    }
+  }, [dataSourcesLoaded, dataSource, isStream, streamsOnly, query]);
+
   const [schema, setSchema] = useState([]);
   const queryFlags = useQueryFlags(query, dataSource);
   const [parameters, areParametersDirty, updateParametersDirtyFlag] = useQueryParameters(query);

@@ -222,3 +222,66 @@ class TestAClusterIsNotOfferedInTheQueryEditor(BaseTestCase):
 
         self.assertTrue(listed["Cluster"]["streams_only"])
         self.assertFalse(listed["Warehouse"]["streams_only"])
+
+
+@unittest.skipUnless(
+    _kafka_runner_available(),
+    "without the kafka runner a cluster is not recognised as one, so the guard " "has nothing to fire on",
+)
+class TestAnAlertCannotWatchAStream(BaseTestCase):
+    """
+    An alert is checked when its query's new result is stored, and a stream
+    stores no result -- its window exists only while somebody is watching, and
+    at three in the morning nobody is.
+
+    So an alert on one would be an alert that never fires, which is worse than
+    one that cannot be made: a person told no goes and builds something that
+    works, and a person whose alert is silent believes nothing has happened.
+    """
+
+    def stream_query(self):
+        from sqldesk.models import db
+
+        source = self.factory.create_data_source(name="Cluster", type="kafka_stream", group=self.factory.default_group)
+        query = self.factory.create_query(data_source=source)
+        db.session.commit()
+        return query
+
+    def test_making_one_is_refused_with_the_reason(self):
+        query = self.stream_query()
+
+        rv = self.make_request(
+            "post",
+            "/api/alerts",
+            data={"name": "Too many", "query_id": query.id, "options": {"op": ">", "value": 1}},
+        )
+
+        self.assertEqual(400, rv.status_code)
+        self.assertIn("stream", rv.json["message"])
+
+    def test_and_so_is_pointing_an_existing_one_at_a_stream(self):
+        # The same decision, made the other way round -- and the way somebody
+        # would get there if only the create path were guarded.
+        from sqldesk.models import db
+
+        alert = self.factory.create_alert()
+        db.session.commit()
+        query = self.stream_query()
+
+        rv = self.make_request("post", "/api/alerts/{}".format(alert.id), data={"query_id": query.id})
+
+        self.assertEqual(400, rv.status_code)
+
+    def test_an_ordinary_query_is_unaffected(self):
+        from sqldesk.models import db
+
+        query = self.factory.create_query()
+        db.session.commit()
+
+        rv = self.make_request(
+            "post",
+            "/api/alerts",
+            data={"name": "Too many", "query_id": query.id, "options": {"op": ">", "value": 1}},
+        )
+
+        self.assertEqual(200, rv.status_code)

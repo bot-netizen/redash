@@ -64,6 +64,7 @@ class AlertResource(BaseResource):
             # then carry that query's rows.
             query = get_object_or_404(models.Query.get_by_id_and_org, params.pop("query_id"), self.current_org)
             require_access(query, self.current_user, view_only)
+            refuse_a_stream(query)
             params["query_rel"] = query
         if "options" in params:
             require_access_to_attachments(params["options"], self.current_user, self.current_org)
@@ -117,6 +118,27 @@ class AlertMuteResource(BaseResource):
         self.record_event({"action": "unmute", "object_id": alert.id, "object_type": "alert"})
 
 
+def refuse_a_stream(query):
+    """
+    An alert cannot watch a stream.
+
+    An alert is checked when its query's new result is stored, and a stream
+    stores no result -- its window exists only while somebody is watching it,
+    and at three in the morning nobody is. An alert on one would be an alert
+    that never fires, which is worse than one that cannot be made: a person who
+    is told no goes and builds something that works.
+    """
+    source = query.data_source
+    if source is not None and source.streams_only:
+        abort(
+            400,
+            message=(
+                "An alert cannot watch a stream. A stream is consumed only while somebody is "
+                "looking at it and stores no result for an alert to check."
+            ),
+        )
+
+
 class AlertListResource(BaseResource):
     def post(self):
         req = request.get_json(True)
@@ -124,6 +146,7 @@ class AlertListResource(BaseResource):
 
         query = get_object_or_404(models.Query.get_by_id_and_org, req["query_id"], self.current_org)
         require_access(query, self.current_user, view_only)
+        refuse_a_stream(query)
         require_access_to_attachments(req["options"], self.current_user, self.current_org)
 
         alert = models.Alert(
