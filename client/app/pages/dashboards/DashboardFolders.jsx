@@ -127,10 +127,12 @@ function DashboardFolders() {
   return (
     <div className="container folders-page" data-test="DashboardFolders">
       <div className="folders-header">
-        <h2>Dashboard folders</h2>
-        <p className="folders-muted">
-          Sets of dashboards with a stated meaning. A locked folder is one only administrators change.
-        </p>
+        <div className="folders-header-text">
+          <h2>Dashboard folders</h2>
+          <p className="folders-muted">
+            Sets of dashboards with a stated meaning. A locked folder is one only administrators change.
+          </p>
+        </div>
         {admin && (
           <Button type="primary" onClick={() => setEditing(null)} data-test="NewFolder">
             New folder

@@ -3,17 +3,26 @@
 .folders-page {
   padding-top: 24px;
 
+  // A row, not a float. Floating the button took it out of flow, so the first
+  // folder card rose up beside it and sat underneath.
   .folders-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
     margin-bottom: 20px;
 
     h2 {
       margin: 0 0 4px;
-      display: inline-block;
     }
 
     .ant-btn {
-      float: right;
+      flex: 0 0 auto;
     }
+  }
+
+  .folders-header-text {
+    min-width: 0;
   }
 
   .folders-muted {
