@@ -1,4 +1,3 @@
-
 /*
   The streaming editor, told apart from the ordinary one.
 
@@ -26,40 +25,6 @@
   // including the one the results fill, where a badge in the header is
   // scrolled out of sight.
   border-left: 3px solid fade(#0a7c93, 55%);
-
-  .stream-status {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-
-    .ant-tag {
-      margin: 0;
-    }
-  }
-
-  .stream-status-figure {
-    font-variant-numeric: tabular-nums;
-    font-weight: 600;
-  }
-
-  .stream-status-note {
-    color: rgba(0, 0, 0, 0.45);
-  }
-
-  .stream-status-sep {
-    color: rgba(0, 0, 0, 0.25);
-  }
-
-  // Waiting for the first event is a state, not a fault, so it reads in
-  // SQLDesk's own teal rather than in the red reserved for things that broke.
-  .stream-status-waiting {
-    color: #0a7c93;
-  }
-
-  .stream-status-error {
-    color: #c0392b;
-  }
 
   // The editor's chrome, tinted. Enough that somebody glancing at a screenshot
   // knows which page it is, not so much that it stops looking like SQLDesk.

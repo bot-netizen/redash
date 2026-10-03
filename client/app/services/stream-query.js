@@ -28,7 +28,7 @@ import { axios } from "@/services/axios";
 //: show an error, so a failure has to arrive looking like one.
 const FAILED = 4;
 
-export default function runStreamQuery(dataSourceId, text) {
+export function runStreamQuery(dataSourceId, text) {
   const result = new QueryResult();
 
   axios
@@ -63,3 +63,21 @@ export default function runStreamQuery(dataSourceId, text) {
 
   return result;
 }
+
+/*
+  Tell the server this tab has stopped watching.
+
+  The other half of running one, and it was missing: pressing Stop ended the
+  page's own polling and said nothing to the server, so the consumer ran on
+  until the check-in timed out and the status strip went on saying "consuming"
+  against a stream the person had just stopped.
+
+  It never fails loudly. Leaving is best-effort by nature -- a closed laptop
+  never gets to say it -- which is why the check-in expires on its own, and why
+  a failure here is not worth a message.
+*/
+export function stopStreamQuery(dataSourceId, text) {
+  return axios.delete(`api/data_sources/${dataSourceId}/stream_query`, { data: { query: text } }).catch(() => {});
+}
+
+export default runStreamQuery;

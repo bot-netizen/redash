@@ -30,7 +30,7 @@ import useAutocompleteFlags from "./hooks/useAutocompleteFlags";
 import useAutoLimitFlags from "./hooks/useAutoLimitFlags";
 import navigateTo from "@/components/ApplicationArea/navigateTo";
 import useQueryExecute from "./hooks/useQueryExecute";
-import runStreamQuery from "@/services/stream-query";
+import runStreamQuery, { stopStreamQuery } from "@/services/stream-query";
 import StreamStatus from "./components/StreamStatus";
 import useQueryResultData from "@/lib/useQueryResultData";
 import useQueryDataSources from "./hooks/useQueryDataSources";
@@ -272,14 +272,47 @@ function QuerySource(props) {
 
   const executeRef = useRef(doExecuteQuery);
   executeRef.current = doExecuteQuery;
+
+  /*
+    Leaving, said out loud.
+
+    Stopping used to end the polling and tell the server nothing, so the
+    consumer ran on until the check-in expired and every status read still
+    said "consuming" against a stream somebody had just stopped. The same call
+    covers the tab being closed and the query being navigated away from, which
+    is the common case and the one nobody presses a button for.
+
+    `leaveRef` holds what to leave, because by the time the cleanup runs the
+    data source or the SQL may already have changed to something else.
+  */
+  const leaveRef = useRef(null);
+  leaveRef.current = isStream && dataSource ? { id: dataSource.id, text: query.query } : null;
+
+  const stopWatching = useCallback(() => {
+    const leaving = leaveRef.current;
+    if (leaving) {
+      stopStreamQuery(leaving.id, leaving.text);
+    }
+  }, []);
+
   useEffect(() => {
     if (!streaming) {
       return undefined;
     }
     executeRef.current(true);
     const timer = setInterval(() => executeRef.current(true), STREAM_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [streaming]);
+    return () => {
+      clearInterval(timer);
+      stopWatching();
+    };
+  }, [streaming, stopWatching]);
+
+  // A closed tab never gets to run a React cleanup. `keepalive` is what makes
+  // the request survive the page going away.
+  useEffect(() => {
+    window.addEventListener("pagehide", stopWatching);
+    return () => window.removeEventListener("pagehide", stopWatching);
+  }, [stopWatching]);
 
   const [isQuerySaving, setIsQuerySaving] = useState(false);
 
@@ -369,16 +402,6 @@ function QuerySource(props) {
                   refreshOptions={refreshOptions}
                   onSelectInterval={setScheduleInterval}
                   disabled={!queryFlags.canEdit || !queryFlags.canSchedule}
-                />
-              )}
-              {isStream && (
-                <StreamStatus
-                  dataSource={dataSource}
-                  query={query}
-                  streaming={streaming}
-                  startedAt={startedAt}
-                  note={queryResult && queryResult.streamNote}
-                  error={executionError}
                 />
               )}
             </DynamicComponent>
@@ -473,6 +496,18 @@ function QuerySource(props) {
                       }}
                       saveButtonProps={saveButtonProps}
                       executeButtonProps={executeButtonProps}
+                      extra={
+                        isStream ? (
+                          <StreamStatus
+                            dataSource={dataSource}
+                            query={query}
+                            streaming={streaming}
+                            startedAt={startedAt}
+                            note={queryResult && queryResult.streamNote}
+                            error={executionError}
+                          />
+                        ) : null
+                      }
                       autocompleteToggleProps={{
                         available: autocompleteAvailable,
                         enabled: autocompleteEnabled,

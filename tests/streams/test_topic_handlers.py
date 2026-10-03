@@ -11,6 +11,7 @@ from unittest import mock
 
 from sqldesk import models
 from sqldesk.models import db
+from sqldesk.streams import watching
 from tests import BaseTestCase
 
 
@@ -294,6 +295,56 @@ class TestRunningSqlAgainstTheWindows(TopicTestCase):
             "/api/data_sources/{}/stream_query".format((source or self.source).id),
             data={"query": sql},
         )
+
+    def leave(self, sql, source=None):
+        return self.make_request(
+            "delete",
+            "/api/data_sources/{}/stream_query".format((source or self.source).id),
+            data={"query": sql},
+        )
+
+    def test_stopping_says_so_rather_than_waiting_to_be_timed_out(self):
+        """
+        The other half of running one, and for a while it did not exist.
+
+        Pressing Stop ended the page's own polling and told the server nothing,
+        so the consumer ran on until the check-in expired and every status read
+        still said "consuming" against a stream somebody had just stopped.
+        """
+        stream = models.Stream(org=self.source.org, data_source=self.source, topic="orders")
+        db.session.add(stream)
+        db.session.commit()
+        watching.check_in(stream.id, self.factory.user.id)
+        self.assertEqual(watching.state(stream), watching.RUNNING)
+
+        rv = self.leave("select * from orders")
+
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(rv.json["left"], [stream.id])
+        self.assertNotEqual(watching.state(stream), watching.RUNNING)
+
+    def test_and_leaves_alone_a_topic_the_query_never_named(self):
+        # A slot is a topic, not a viewer: stopping one query must not stop a
+        # stream somebody else is reading through another.
+        named = models.Stream(org=self.source.org, data_source=self.source, topic="orders")
+        other = models.Stream(org=self.source.org, data_source=self.source, topic="payments")
+        db.session.add_all([named, other])
+        db.session.commit()
+        watching.check_in(named.id, self.factory.user.id)
+        watching.check_in(other.id, self.factory.user.id)
+
+        rv = self.leave("select * from orders")
+
+        self.assertEqual(rv.json["left"], [named.id])
+        self.assertEqual(watching.state(other), watching.RUNNING)
+
+    def test_stopping_something_that_was_never_started_is_not_an_error(self):
+        # A page unmounting, a tab closing, a double press: all of them land
+        # here and none of them is a fault.
+        rv = self.leave("select * from orders")
+
+        self.assertEqual(rv.status_code, 200)
+        self.assertEqual(rv.json["left"], [])
 
     def test_an_install_with_no_kafka_client_says_so_rather_than_failing(self):
         # What an install looks like after somebody drops the optional

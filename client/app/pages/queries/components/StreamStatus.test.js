@@ -30,12 +30,7 @@ const STREAM = {
 async function render(streams, props = {}) {
   jest.spyOn(axios, "get").mockResolvedValue({ streams });
   const wrapper = mount(
-    <StreamStatus
-      dataSource={{ id: 7 }}
-      query={{ query: "select * from orders" }}
-      streaming
-      {...props}
-    />
+    <StreamStatus dataSource={{ id: 7 }} query={{ query: "select * from orders" }} streaming {...props} />
   );
   for (let index = 0; index < 3; index += 1) {
     // eslint-disable-next-line no-await-in-loop
@@ -53,14 +48,69 @@ describe("the stream status strip", () => {
   test("it shows the rate and what the window holds", async () => {
     const wrapper = await render([STREAM]);
 
-    expect(wrapper.find('[data-test="StreamRate"]').first().text()).toBe("42.5");
+    expect(wrapper.find('[data-test="StreamRate"]').first().text()).toBe("42.5 /s");
     expect(wrapper.text()).toContain("last 5 minutes");
   });
 
-  test("before anything is started it says what to press", async () => {
+  test("before anything is started it says it is not streaming", async () => {
     const wrapper = await render([]);
 
-    expect(wrapper.text()).toContain("Press Start streaming");
+    expect(wrapper.text()).toContain("not streaming");
+  });
+
+  /*
+    The bug this exists for: Stop ended the polling and left whatever the
+    server last said on screen, so the strip went on claiming "consuming"
+    against a stream the person had just stopped.
+
+    Two things in the component stop that, and only one of them is observable
+    here. Clearing what was fetched is covered by the restart test below. The
+    render-time gate on `streaming` covers the frame between the switch
+    flipping and the effect running -- real in a browser, and invisible in
+    jsdom, where effects have already flushed by the time a test can look.
+    It stays because that frame is exactly what somebody sees when they press
+    Stop, not because a test demands it.
+  */
+  test("and says so the moment streaming is switched off, whatever the server last said", async () => {
+    const wrapper = await render([STREAM]);
+    expect(wrapper.text()).toContain("consuming");
+
+    wrapper.setProps({ streaming: false });
+    wrapper.update();
+
+    expect(wrapper.text()).not.toContain("consuming");
+    expect(wrapper.text()).toContain("not streaming");
+  });
+
+  // Restarting must not flash the previous run's numbers while the first
+  // request is still in the air.
+  test("and forgets what it knew, so starting again does not show the old run", async () => {
+    const wrapper = await render([STREAM]);
+    wrapper.setProps({ streaming: false });
+    wrapper.update();
+
+    // Streaming again, with the server not answering yet.
+    axios.get.mockReturnValue(new Promise(() => {}));
+    wrapper.setProps({ streaming: true });
+    wrapper.update();
+
+    expect(wrapper.text()).not.toContain("consuming");
+    expect(wrapper.text()).not.toContain("last 5 minutes");
+  });
+
+  // Seventeen digits of false precision pushed everything after it off the
+  // end of the strip, and nobody decides anything on the sixteenth decimal
+  // place of a number that changes every two seconds.
+  test("a rate is rounded to something a person can read", async () => {
+    const wrapper = await render([{ ...STREAM, observed_rate: 0.8166666666666667 }]);
+
+    expect(wrapper.find('[data-test="StreamRate"]').first().text()).toBe("0.82 /s");
+  });
+
+  test("and a big one loses its decimals rather than its digits", async () => {
+    const wrapper = await render([{ ...STREAM, observed_rate: 1483.27 }]);
+
+    expect(wrapper.find('[data-test="StreamRate"]').first().text()).toBe("1483 /s");
   });
 
   test("it says how long it has been running", async () => {
@@ -109,6 +159,6 @@ describe("the stream status strip", () => {
   test("a topic the query does not name is not reported", async () => {
     const wrapper = await render([{ ...STREAM, topic: "payments", table: "payments" }]);
 
-    expect(wrapper.text()).toContain("Press Start streaming");
+    expect(wrapper.text()).toContain("not streaming");
   });
 });

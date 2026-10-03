@@ -494,6 +494,12 @@ class StreamQueryResource(BaseResource):
     #: and sending it every two seconds would be unkind to everybody.
     MAX_ROWS = 2000
 
+    def _named(self, source, query):
+        """The cluster's enabled topics this SQL actually mentions."""
+        from sqldesk.query_runner.kafka_stream import names_in, table_name
+
+        return [stream for stream in source.streams if names_in(query, table_name(stream.topic))]
+
     def _watch(self, source, query):
         """
         Check in on the topics this query names, taking a slot where needed.
@@ -503,9 +509,7 @@ class StreamQueryResource(BaseResource):
         their colleague started never needs a slot or the permission to take
         one.
         """
-        from sqldesk.query_runner.kafka_stream import names_in, table_name
-
-        named = [stream for stream in source.streams if names_in(query, table_name(stream.topic))]
+        named = self._named(source, query)
         for stream in named:
             if watching.state(stream) != watching.RUNNING:
                 if not features.can(self.current_user, features.USE_STREAMS):
@@ -529,14 +533,38 @@ class StreamQueryResource(BaseResource):
         matters: a red banner for a topic nobody is producing to sends somebody
         to the broker looking for a problem that is not there.
         """
-        from sqldesk.query_runner.kafka_stream import names_in, table_name
-
-        named = [stream for stream in source.streams if names_in(query, table_name(stream.topic))]
+        named = self._named(source, query)
         if not named:
             return False
         return all(
             watching.state(stream) == watching.RUNNING and not os.path.exists(stream.store_path()) for stream in named
         )
+
+    def delete(self, data_source_id):
+        """
+        Stop watching the topics this query names.
+
+        The other half of `post`, and it was missing: pressing Stop ended the
+        page's own polling and told the server nothing, so the consumer ran on
+        until the check-in timed out and every status read still said
+        "consuming". A viewer who leaves says so.
+
+        It does not stop the stream -- somebody else may be watching the same
+        topic, and a slot is a topic rather than a viewer. It stops *this*
+        person watching, which is what makes the stream go quiet when the last
+        one leaves.
+        """
+        source = get_object_or_404(models.DataSource.get_by_id_and_org, data_source_id, self.current_org)
+        require_access(source, self.current_user, view_only)
+        if source.type != "kafka_stream":
+            abort(400, message="That data source is not a Kafka cluster.")
+
+        query = (request.get_json(force=True, silent=True) or {}).get("query") or ""
+        left = []
+        for stream in self._named(source, query):
+            watching.left(stream.id, self.current_user.id)
+            left.append(stream.id)
+        return {"left": left}
 
     def post(self, data_source_id):
         source = get_object_or_404(models.DataSource.get_by_id_and_org, data_source_id, self.current_org)

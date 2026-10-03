@@ -6,6 +6,8 @@ import Tooltip from "antd/lib/tooltip";
 
 import { axios } from "@/services/axios";
 
+import "./StreamStatus.less";
+
 /*
   What the topic under this query is doing, beside the button that starts it.
 
@@ -13,8 +15,7 @@ import { axios } from "@/services/axios";
   numbers that tell you whether to believe the answer -- the rate, how much
   history the window holds, whether it is sampled -- live nowhere else on this
   page. A count from a sampled stream is an estimate, and somebody reading a
-  chart drawn from one has to be told so where they are looking, not in a
-  settings page they will never open.
+  chart drawn from one has to be told so where they are looking.
 
   It polls only while the stream is running. Asking every few seconds about a
   stream nobody started is a request per viewer per tab for an answer that will
@@ -39,6 +40,29 @@ function elapsed(since, now) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
+/*
+  A rate a person can read.
+
+  The server measures events over a window and divides, so a quiet topic
+  arrives as 0.8166666666666667 — seventeen digits of false precision, and in a
+  strip this size it pushed everything after it off the end. Nobody is making a
+  decision on the sixteenth decimal place of a number that changes every two
+  seconds.
+*/
+function rate(events) {
+  const n = Number(events) || 0;
+  if (n === 0) {
+    return "0";
+  }
+  if (n >= 100) {
+    return String(Math.round(n));
+  }
+  if (n >= 10) {
+    return n.toFixed(1);
+  }
+  return n.toFixed(2).replace(/\.?0+$/, "");
+}
+
 export default function StreamStatus({ dataSource, query, streaming, startedAt, note, error }) {
   const [streams, setStreams] = useState([]);
   const [now, setNow] = useState(Date.now());
@@ -56,6 +80,13 @@ export default function StreamStatus({ dataSource, query, streaming, startedAt, 
   }, [startedAt]);
 
   useEffect(() => {
+    if (!streaming) {
+      // Not running: nothing to ask about, and whatever was on screen is now
+      // describing a stream this page stopped. Clearing it is what stops the
+      // strip insisting "consuming" at somebody who has just pressed Stop.
+      setStreams([]);
+      return undefined;
+    }
     let live = true;
     const ask = () =>
       axios
@@ -63,11 +94,6 @@ export default function StreamStatus({ dataSource, query, streaming, startedAt, 
         .then((data) => live && setStreams((data && data.streams) || []))
         .catch(() => {});
     ask();
-    if (!streaming) {
-      return () => {
-        live = false;
-      };
-    }
     const timer = setInterval(ask, EVERY_MS);
     return () => {
       live = false;
@@ -78,13 +104,17 @@ export default function StreamStatus({ dataSource, query, streaming, startedAt, 
   const mine = topicsIn(query.query, streams).filter(
     (stream) => !dataSource || stream.data_source_id === dataSource.id
   );
-  const stream = find(mine, (one) => one.state === "running") || mine[0];
+  // Gated on the local switch, not only on what the server last said. Stopping
+  // is instant here and takes a moment there -- the consumer has to be told,
+  // and other people may still be watching the same topic -- so a strip that
+  // reported the server's answer went on saying "consuming" at somebody who
+  // had just pressed Stop.
+  const stream = streaming ? find(mine, (one) => one.state === "running") || mine[0] : null;
 
   if (!stream) {
     return (
       <span className="stream-status stream-status-idle" data-test="StreamStatus">
-        <Tag>not started</Tag>
-        <span className="stream-status-note">Press Start streaming to begin consuming.</span>
+        <Tag>not streaming</Tag>
       </span>
     );
   }
@@ -96,16 +126,14 @@ export default function StreamStatus({ dataSource, query, streaming, startedAt, 
         {stream.state === "running" ? "consuming" : "paused"}
       </Tag>
       {startedAt && (
-        <span className="stream-status-note" data-test="StreamElapsed">
-          for {elapsed(startedAt, now)}
+        <span className="stream-status-item" data-test="StreamElapsed">
+          {elapsed(startedAt, now)}
         </span>
       )}
-      <span className="stream-status-figure" data-test="StreamRate">
-        {stream.observed_rate || 0}
+      <span className="stream-status-item" data-test="StreamRate">
+        <b>{rate(stream.observed_rate)}</b> /s
       </span>
-      <span className="stream-status-note">events a second</span>
-      <span className="stream-status-sep">&middot;</span>
-      <span className="stream-status-note">{stream.describes}</span>
+      <span className="stream-status-item">{stream.describes}</span>
       {stream.sampled && (
         <Tooltip
           title={`Faster than the ceiling allows, so 1 event in ${stream.sample_rate} is kept. Counts from this stream are estimates.`}
@@ -113,7 +141,7 @@ export default function StreamStatus({ dataSource, query, streaming, startedAt, 
           <Tag color="orange">1 in {stream.sample_rate}</Tag>
         </Tooltip>
       )}
-      {stream.watchers > 1 && <span className="stream-status-note">{stream.watchers} watching</span>}
+      {stream.watchers > 1 && <span className="stream-status-item">{stream.watchers} watching</span>}
       {/*
         Nothing has arrived yet: a state, not a fault. A quiet topic looks like
         this for its first few seconds and a topic nobody is producing to looks
@@ -126,9 +154,11 @@ export default function StreamStatus({ dataSource, query, streaming, startedAt, 
         </span>
       )}
       {!waiting && error && (
-        <span className="stream-status-error" data-test="StreamError">
-          {error}
-        </span>
+        <Tooltip title={error}>
+          <span className="stream-status-error" data-test="StreamError">
+            {error}
+          </span>
+        </Tooltip>
       )}
     </span>
   );

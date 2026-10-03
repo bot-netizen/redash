@@ -1,0 +1,63 @@
+/*
+  Its own stylesheet, not a block inside the streaming page's.
+
+  It used to be styled under `.query-stream-page`, and when this sat in the
+  page header -- which that class does not reach -- none of it applied: no
+  gaps, no muted colour, so every figure ran into the next word and the line
+  read as one unbroken string. A component carries its own styles.
+*/
+.stream-status {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 10px;
+  min-width: 0;
+  margin-right: 10px;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  color: rgba(0, 0, 0, 0.5);
+
+  .ant-tag {
+    margin: 0;
+    flex: 0 0 auto;
+  }
+
+  b {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    color: rgba(0, 0, 0, 0.75);
+  }
+}
+
+/* Each figure is a thing of its own, separated by a rule rather than by a
+   character, so nothing depends on a space surviving a flex layout. */
+.stream-status-item {
+  flex: 0 0 auto;
+
+  & + .stream-status-item {
+    padding-left: 10px;
+    border-left: 1px solid rgba(0, 0, 0, 0.12);
+  }
+}
+
+.stream-status-idle .ant-tag {
+  color: rgba(0, 0, 0, 0.45);
+}
+
+/* Waiting for the first event is a state, not a fault, so it reads in
+   SQLDesk's own teal rather than the red kept for things that broke. */
+.stream-status-waiting {
+  flex: 0 0 auto;
+  color: #0a7c93;
+}
+
+/* An error can be any length -- a parser message naming a column is longer
+   than this strip -- so it is truncated here and whole on hover. */
+.stream-status-error {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #c0392b;
+}
