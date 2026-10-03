@@ -25,15 +25,6 @@ const TABS = [
       "Start here when the instance feels slow and you do not yet know why.",
   },
   {
-    key: "running_queries",
-    title: "Running Queries",
-    path: "admin/queries/running",
-    description:
-      "Every query the workers have in flight right now, who asked for it, against which data source, and how long it has been going. " +
-      "A scheduled refresh shows as the scheduler rather than a person, because nobody is waiting for it. " +
-      "Any of them can be stopped from here, and stopping one is recorded.",
-  },
-  {
     key: "system_status",
     title: "System Status",
     path: "admin/status",
@@ -51,14 +42,6 @@ const TABS = [
       "A queue that is growing while workers sit idle means the jobs are going somewhere nobody is listening.",
   },
   {
-    key: "outdated_queries",
-    title: "Outdated Queries",
-    path: "admin/queries/outdated",
-    description:
-      "Scheduled queries whose next run is already overdue, with the schedule they were meant to keep. " +
-      "A handful is ordinary. A long list means the workers are not keeping up with the schedules people have set.",
-  },
-  {
     key: "storage",
     title: "Storage Status",
     path: "admin/storage",
@@ -68,6 +51,15 @@ const TABS = [
       "Both clean-ups can be started from here rather than waiting for their slot.",
   },
   {
+    key: "running_queries",
+    title: "Running Queries",
+    path: "admin/queries/running",
+    description:
+      "Every query the workers have in flight right now, who asked for it, against which data source, and how long it has been going. " +
+      "A scheduled refresh shows as the scheduler rather than a person, because nobody is waiting for it. " +
+      "Any of them can be stopped from here, and stopping one is recorded.",
+  },
+  {
     key: "streams",
     title: "Streaming Queries",
     path: "admin/streams",
@@ -75,6 +67,14 @@ const TABS = [
       "Every Kafka topic being consumed, how fast events are arriving and -- the column this page exists for -- why a quiet one is quiet. " +
       "Paused, broken and genuinely empty look identical on a chart and are three different problems. " +
       "The row budget and the events-per-second ceiling for each topic are set here.",
+  },
+  {
+    key: "outdated_queries",
+    title: "Outdated Queries",
+    path: "admin/queries/outdated",
+    description:
+      "Scheduled queries whose next run is already overdue, with the schedule they were meant to keep. " +
+      "A handful is ordinary. A long list means the workers are not keeping up with the schedules people have set.",
   },
   {
     key: "mcp",

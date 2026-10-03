@@ -174,12 +174,12 @@ describe("DesktopNavbar", () => {
 
     expect(adminMenu.find("a").map((a) => a.prop("href"))).toEqual([
       "admin/overview",
-      "admin/queries/running",
       "admin/status",
       "admin/queries/jobs",
-      "admin/queries/outdated",
       "admin/storage",
+      "admin/queries/running",
       "admin/streams",
+      "admin/queries/outdated",
       "admin/mcp",
     ]);
     // Storage and Streaming Queries had routes and pages for days with no way

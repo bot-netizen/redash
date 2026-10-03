@@ -33,12 +33,12 @@ describe("admin Layout", () => {
   test("shows every admin page, in order", () => {
     expect(titles(mount(<Layout activeTab="overview" />))).toEqual([
       "Overview",
-      "Running Queries",
       "System Status",
       "RQ Status",
-      "Outdated Queries",
       "Storage Status",
+      "Running Queries",
       "Streaming Queries",
+      "Outdated Queries",
       "MCP",
     ]);
   });
@@ -64,7 +64,11 @@ describe("admin Layout", () => {
     ["overview", "running_queries", "system_status", "jobs", "outdated_queries", "storage", "streams"].forEach(
       (passedByAPage) => {
         expect(keys).toContain(passedByAPage);
-        expect(mount(<Layout activeTab={passedByAPage} />).find(".admin-tab-description").exists()).toBe(true);
+        expect(
+          mount(<Layout activeTab={passedByAPage} />)
+            .find(".admin-tab-description")
+            .exists()
+        ).toBe(true);
       }
     );
   });
