@@ -374,7 +374,19 @@ footer a:hover{color:var(--accent-ink);text-decoration:underline}
 
     <div class="road">
       <div class="road-item">
-        <div class="road-k"><span class="road-status s-now">New</span>0.6</div>
+        <div class="road-k"><span class="road-status s-now">New</span>0.7</div>
+        <div>
+          <h3>Kafka topics you can chart</h3>
+          <p class="road-b">A cluster is a data source and its enabled topics are its tables, so a stream joins
+          another stream, takes parameters, gets visualizations and goes on a dashboard — in the same editor,
+          with Execute replaced by Start streaming. Nothing is stored: the window exists while somebody is watching.
+          With it, dashboard folders that carry a stated meaning, scheduled subscriptions by email, OAuth for MCP
+          clients, and an admin section that answers what is happening now. The
+          <a href="guide/streams.html">Streams guide</a> has the details.</p>
+        </div>
+      </div>
+      <div class="road-item">
+        <div class="road-k"><span class="road-status s-next">Shipped</span>0.6</div>
         <div>
           <h3>Your warehouse, answerable over MCP</h3>
           <p class="road-b">An endpoint at <code>/mcp</code> with eight tools over a catalog built from your schema
@@ -397,25 +409,17 @@ footer a:hover{color:var(--accent-ink);text-decoration:underline}
           <h3>Live dashboards and KPI tiles</h3>
           <p class="road-b">Dashboards that update every 30 seconds without every viewer re-running the queries,
           plus a gauge, a stat with a trend line, progress bars, a status grid, table formatting and goal lines.
-          The <a href="roadmap.html">visualization roadmap</a> tracks each one.</p>
+          The <a href="roadmap.html">roadmap</a> has the whole history.</p>
         </div>
       </div>
       <div class="road-item">
-        <div class="road-k"><span class="road-status s-next">Next</span>Notes</div>
+        <div class="road-k"><span class="road-status s-next">Next</span>0.8</div>
         <div>
-          <h3>Notebooks, properly isolated</h3>
-          <p class="road-b">Write Python next to your SQL, run cells, chart the result, and export or share the whole
-          note. Built on Zeppelin's interpreter model and Jupyter's <code>.ipynb</code> format — with execution in a
-          hardware-isolated tier that never holds a database credential.</p>
-        </div>
-      </div>
-      <div class="road-item">
-        <div class="road-k"><span class="road-status s-next">Next</span>Streaming</div>
-        <div>
-          <h3>Kafka as a first-class source</h3>
-          <p class="road-b">Point SQLDesk at a topic, take a bounded read by offset, timestamp or message count, and
-          treat it like any other result — cached, charted, scheduled and alertable. Materialisation to Parquet for
-          real history comes after.</p>
+          <h3>Notebooks, and knowing what a query costs</h3>
+          <p class="road-b">Everything in SQLDesk today ends in one SELECT. A notebook is for the work that does not:
+          cells in SQL and in Python, each reading the last one's result, saved and re-runnable. Beside it, the rule
+          the rest of 0.8 is organised around — bytes scanned and an estimate of the work, shown as a number you
+          can refuse, before the query runs rather than after the invoice arrives.</p>
         </div>
       </div>
       <div class="road-item">
