@@ -16,6 +16,7 @@ import routes from "@/services/routes";
 */
 const Overview = React.lazy(() => import(/* webpackChunkName: "admin" */ "./overview/Overview"));
 const Jobs = React.lazy(() => import(/* webpackChunkName: "admin" */ "./Jobs"));
+const RunningQueries = React.lazy(() => import(/* webpackChunkName: "admin" */ "./RunningQueries"));
 const OutdatedQueries = React.lazy(() => import(/* webpackChunkName: "admin" */ "./OutdatedQueries"));
 const SystemStatus = React.lazy(() => import(/* webpackChunkName: "admin" */ "./SystemStatus"));
 const Catalog = React.lazy(() => import(/* webpackChunkName: "admin" */ "./Catalog"));
@@ -47,6 +48,14 @@ routes.register(
     path: "/admin/overview",
     title: "Admin Overview",
     render: (pageProps) => <Overview {...pageProps} />,
+  })
+);
+routes.register(
+  "Admin.RunningQueries",
+  routeWithUserSession({
+    path: "/admin/queries/running",
+    title: "Running Queries",
+    render: (pageProps) => <RunningQueries {...pageProps} />,
   })
 );
 routes.register(

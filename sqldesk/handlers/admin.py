@@ -14,7 +14,7 @@ from sqldesk.ai.catalog.semantic import catalog_documents
 from sqldesk.authentication import current_org
 from sqldesk.handlers import routes
 from sqldesk.handlers.base import json_response, record_event
-from sqldesk.monitor import get_db_sizes, get_overview, rq_status
+from sqldesk.monitor import get_db_sizes, get_overview, get_running_queries, rq_status
 from sqldesk.permissions import (
     require_access,
     require_feature,
@@ -87,6 +87,23 @@ def admin_overview():
     contradicting itself.
     """
     return json_response(get_overview(current_org.id))
+
+
+@routes.route("/api/admin/queries/running", methods=["GET"])
+@login_required
+@require_super_admin
+def admin_running_queries():
+    """
+    Only what the workers have in flight.
+
+    Its own endpoint rather than a slice of the overview, because the page that
+    shows this is read while somebody is waiting for a query to end, and it
+    refreshes four times as often as the overview does. The overview also
+    measures table sizes and aggregates an hour of events; doing that every few
+    seconds to find out whether one job is still running would make the page
+    part of the problem it is there to diagnose.
+    """
+    return json_response({"running": get_running_queries()})
 
 
 @routes.route("/api/admin/jobs/<job_id>", methods=["DELETE"])

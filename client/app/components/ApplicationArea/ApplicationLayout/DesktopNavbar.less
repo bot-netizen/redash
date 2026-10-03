@@ -88,6 +88,14 @@
     }
   }
 
+  /* On every control that opens a menu, and nowhere else, so the chevron
+     means one thing: a click here produces a menu rather than a page. */
+  &-caret {
+    margin-left: @sp-2;
+    font-size: 11px;
+    opacity: 0.65;
+  }
+
   &-spacer {
     flex: 1 1 auto;
   }
@@ -168,6 +176,41 @@
       color: inherit;
       font-family: inherit;
     }
+  }
+
+  /* A menu whose entries carry a line of explanation. Wider than the plain
+     ones, and the rows have to grow: antd gives a menu item one line's height
+     and crops anything past it. */
+  &.desktop-navbar-described-menu {
+    min-width: 340px;
+    max-width: 420px;
+
+    .ant-dropdown-menu-item,
+    .ant-menu-item {
+      height: auto;
+      line-height: normal;
+      padding-top: @sp-3;
+      padding-bottom: @sp-3;
+    }
+  }
+
+  .desktop-navbar-menu-entry {
+    display: block;
+  }
+
+  .desktop-navbar-menu-title {
+    display: block;
+    color: var(--color-text);
+    font-weight: 500;
+  }
+
+  .desktop-navbar-menu-hint {
+    display: block;
+    margin-top: 2px;
+    color: var(--color-text-muted);
+    font-size: @fs-micro;
+    line-height: 1.45;
+    white-space: normal;
   }
 
   .version-info {

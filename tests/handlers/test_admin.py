@@ -75,6 +75,34 @@ class TestRqStatus(AdminEndpointTestMixin, BaseTestCase):
     path = "/api/admin/queries/rq_status"
 
 
+class TestRunningQueries(AdminEndpointTestMixin, BaseTestCase):
+    path = "/api/admin/queries/running"
+
+    def test_answers_with_only_what_is_in_flight(self):
+        # The point of it being its own endpoint: the page behind it refreshes
+        # four times as often as the overview, and must not drag table sizes
+        # and an hour of event aggregation along each time.
+        admin = self.factory.create_admin()
+        db.session.commit()
+
+        rv = self._get(admin)
+
+        self.assertEqual(list(rv.json.keys()), ["running"])
+        self.assertIsInstance(rv.json["running"], list)
+
+    def test_reports_the_same_jobs_the_overview_does(self):
+        # Two pages showing different answers to "what is running" is worse
+        # than one page, so both read the same function.
+        admin = self.factory.create_admin()
+        db.session.commit()
+        job = {"job_id": "abc", "query_id": 1, "user_id": None, "elapsed": 3.0}
+
+        with mock.patch("sqldesk.handlers.admin.get_running_queries", return_value=[job]):
+            rv = self._get(admin)
+
+        self.assertEqual(rv.json["running"], [job])
+
+
 class TestOverview(AdminEndpointTestMixin, BaseTestCase):
     path = "/api/admin/overview"
 

@@ -3,35 +3,32 @@ import PropTypes from "prop-types";
 import Menu from "antd/lib/menu";
 import PageHeader from "@/components/PageHeader";
 import Link from "@/components/Link";
+import { adminTab, adminTabs } from "@/pages/admin/adminTabs";
 
 import "./layout.less";
 
 export default function Layout({ activeTab, children }) {
+  const tabs = adminTabs();
+  const current = adminTab(activeTab);
+
   return (
     <div className="admin-page-layout">
       <div className="container">
         <PageHeader title="Admin" />
         <div className="bg-white tiled">
           <Menu selectedKeys={[activeTab]} selectable={false} mode="horizontal">
-            <Menu.Item key="overview">
-              <Link href="admin/overview">Overview</Link>
-            </Menu.Item>
-            <Menu.Item key="system_status">
-              <Link href="admin/status">System Status</Link>
-            </Menu.Item>
-            <Menu.Item key="jobs">
-              <Link href="admin/queries/jobs">RQ Status</Link>
-            </Menu.Item>
-            <Menu.Item key="outdated_queries">
-              <Link href="admin/queries/outdated">Outdated Queries</Link>
-            </Menu.Item>
-            <Menu.Item key="storage">
-              <Link href="admin/storage">Storage</Link>
-            </Menu.Item>
-            <Menu.Item key="streams">
-              <Link href="admin/streams">Streams</Link>
-            </Menu.Item>
+            {tabs.map((tab) => (
+              <Menu.Item key={tab.key}>
+                <Link href={tab.path}>{tab.title}</Link>
+              </Menu.Item>
+            ))}
           </Menu>
+          {/*
+            What this page is, before the numbers on it. Someone opens this
+            section when something is wrong, which is the worst moment to be
+            working out which of seven pages holds the figure they are after.
+          */}
+          {current && <p className="admin-tab-description">{current.description}</p>}
           {children}
         </div>
       </div>

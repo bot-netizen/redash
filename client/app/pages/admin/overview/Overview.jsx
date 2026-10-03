@@ -2,8 +2,6 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import PropTypes from "prop-types";
 import cx from "classnames";
 import Button from "antd/lib/button";
-import Table from "antd/lib/table";
-import Modal from "antd/lib/modal";
 import Tooltip from "@/components/Tooltip";
 
 import Layout from "@/components/admin/Layout";
@@ -12,7 +10,7 @@ import { axios } from "@/services/axios";
 import notification from "@/services/notification";
 import recordEvent from "@/services/recordEvent";
 
-import { pressure, formatBytes, formatElapsed, formatRatio, UNKNOWN } from "./pressure";
+import { pressure, formatBytes, formatRatio, UNKNOWN } from "./pressure";
 
 import "./overview.less";
 
@@ -80,73 +78,6 @@ Panel.propTypes = {
 
 Panel.defaultProps = { note: null, children: null, actions: null, className: null };
 
-function RunningQueries({ rows, onKill }) {
-  const columns = [
-    {
-      title: "Query",
-      dataIndex: "query_name",
-      render: (name, row) =>
-        row.query_id ? (
-          <Link href={`queries/${row.query_id}`}>{name || `Query ${row.query_id}`}</Link>
-        ) : (
-          <span className="admin-muted">Ad-hoc</span>
-        ),
-    },
-    {
-      title: "Who",
-      dataIndex: "user_name",
-      // A scheduled refresh has no user. Saying so beats an empty cell,
-      // because "nobody is waiting for this" changes what you do about it.
-      // An MCP run does have one -- whoever's API key it was -- but they are
-      // not sitting in front of it, which is the same distinction again.
-      render: (name, row) =>
-        name ? (
-          <span>
-            {name}
-            {row.mcp && <span className="admin-muted"> via MCP</span>}
-          </span>
-        ) : (
-          <span className="admin-muted">{row.scheduled ? "Scheduler" : "—"}</span>
-        ),
-    },
-    { title: "Data source", dataIndex: "data_source", render: (name) => name || "—" },
-    {
-      title: "Running for",
-      dataIndex: "elapsed",
-      align: "right",
-      render: (elapsed) => <span className="admin-elapsed">{formatElapsed(elapsed)}</span>,
-    },
-    {
-      title: "",
-      dataIndex: "job_id",
-      align: "right",
-      render: (jobId, row) => (
-        <Button size="small" danger onClick={() => onKill(row)} data-test="KillQueryButton">
-          Kill
-        </Button>
-      ),
-    },
-  ];
-
-  return (
-    <Table
-      size="small"
-      rowKey="job_id"
-      dataSource={rows}
-      columns={columns}
-      pagination={false}
-      locale={{ emptyText: "Nothing is running." }}
-    />
-  );
-}
-
-RunningQueries.propTypes = {
-  rows: PropTypes.arrayOf(PropTypes.object), // eslint-disable-line react/forbid-prop-types
-  onKill: PropTypes.func.isRequired,
-};
-
-RunningQueries.defaultProps = { rows: [] };
-
 function TopUsers({ rows, windowMinutes }) {
   if (!rows.length) {
     return <p className="admin-muted">Nobody has run a query in the last {windowMinutes} minutes.</p>;
@@ -194,25 +125,6 @@ export default function Overview({ onError }) {
     const timer = setInterval(load, REFRESH_MS);
     return () => clearInterval(timer);
   }, [load]);
-
-  const kill = (row) => {
-    Modal.confirm({
-      title: "Stop this query?",
-      content: `${row.query_name || "This query"} has been running for ${formatElapsed(row.elapsed)}${
-        row.user_name ? ` for ${row.user_name}` : ""
-      }. Stopping it is recorded.`,
-      okText: "Kill it",
-      okType: "danger",
-      onOk: () =>
-        axios
-          .delete(`/api/admin/jobs/${row.job_id}`)
-          .then(() => {
-            notification.success("Query stopped.");
-            return load();
-          })
-          .catch(() => notification.error("Could not stop that query.")),
-    });
-  };
 
   const cleanup = (what, label) =>
     axios
@@ -316,15 +228,16 @@ export default function Overview({ onError }) {
           </Panel>
         </div>
 
-        {/* Full width and last: it is a table that grows sideways with long
-            query names, and it is what you read after the numbers above have
-            told you something is wrong. */}
-        <Panel
-          title="Running now"
-          className="admin-panel-wide"
-          note="From the job queue, so this includes the scheduler's own refreshes."
-        >
-          <RunningQueries rows={running} onKill={kill} />
+        {/* Not the table itself: that is its own page now, because it is read
+            while somebody is waiting and wants refreshing far more often than
+            table sizes do. This is the one line that says whether to go. */}
+        <Panel title="Running now" className="admin-panel-wide">
+          <p className="admin-muted">
+            {running.length === 0
+              ? "Nothing is running."
+              : `${running.length} ${running.length === 1 ? "query is" : "queries are"} in flight, counting the scheduler's own refreshes.`}
+          </p>
+          <Link href="admin/queries/running">See what is running, and stop any of it</Link>
         </Panel>
       </div>
     </Layout>

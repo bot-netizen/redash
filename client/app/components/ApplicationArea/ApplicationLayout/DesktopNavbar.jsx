@@ -1,7 +1,7 @@
 import React from "react";
 import cx from "classnames";
 import PropTypes from "prop-types";
-import { first, includes } from "lodash";
+import { includes } from "lodash";
 import Dropdown from "antd/lib/dropdown";
 import Menu from "antd/lib/menu";
 import Link from "@/components/Link";
@@ -9,14 +9,14 @@ import PlainButton from "@/components/PlainButton";
 import HelpTrigger from "@/components/HelpTrigger";
 import CreateDashboardDialog from "@/components/dashboards/CreateDashboardDialog";
 import { useCurrentRoute } from "@/components/ApplicationArea/Router";
-import { Auth, clientConfig, currentUser } from "@/services/auth";
+import { Auth, currentUser } from "@/services/auth";
 import { axios } from "@/services/axios";
 import settingsMenu from "@/services/settingsMenu";
+import { adminTabs, firstLine } from "@/pages/admin/adminTabs";
 import logoUrl from "@/assets/images/sqldesk_icon.svg";
 
 import PlusOutlinedIcon from "@ant-design/icons/PlusOutlined";
 import QuestionCircleOutlinedIcon from "@ant-design/icons/QuestionCircleOutlined";
-import SettingOutlinedIcon from "@ant-design/icons/SettingOutlined";
 
 import VersionInfo from "./VersionInfo";
 
@@ -37,6 +37,70 @@ NavLink.propTypes = {
 };
 
 NavLink.defaultProps = { active: false, children: null };
+
+/*
+  A button that opens a menu, told apart from one that goes somewhere.
+
+  Every dropdown in this bar wears the same chevron. Dashboards had one and
+  Admin did not, so two controls that behave identically looked like two
+  different kinds of thing -- and the one without it read as a link that had
+  stopped working when a click produced a menu instead of a page.
+*/
+function NavMenuButton({ overlay, active, children, ...rest }) {
+  return (
+    <Dropdown overlay={overlay} trigger={["click"]} placement="bottomLeft">
+      <PlainButton className={cx("desktop-navbar-link", { "desktop-navbar-link-active": active })} {...rest}>
+        {children}
+        <i className="fa fa-angle-down desktop-navbar-caret" aria-hidden="true" />
+      </PlainButton>
+    </Dropdown>
+  );
+}
+
+NavMenuButton.propTypes = {
+  overlay: PropTypes.node.isRequired,
+  active: PropTypes.bool,
+  children: PropTypes.node,
+};
+
+NavMenuButton.defaultProps = { active: false, children: null };
+
+/** A menu entry with the line that says what it is. */
+function MenuEntry({ href, title, hint }) {
+  return (
+    <Link href={href} className="desktop-navbar-menu-entry">
+      <span className="desktop-navbar-menu-title">{title}</span>
+      <span className="desktop-navbar-menu-hint">{hint}</span>
+    </Link>
+  );
+}
+
+MenuEntry.propTypes = {
+  href: PropTypes.string.isRequired,
+  title: PropTypes.string.isRequired,
+  hint: PropTypes.string.isRequired,
+};
+
+const SETTINGS_ROUTES = [
+  "AlertDestinations.Edit",
+  "AlertDestinations.List",
+  "AlertDestinations.New",
+  "DataSources.Edit",
+  "DataSources.List",
+  "DataSources.New",
+  "Groups.DataSources",
+  "Groups.List",
+  "Groups.Members",
+  "QuerySnippets.List",
+  "QuerySnippets.NewOrEdit",
+  "Settings.Organization",
+  "Users.Account",
+  "Users.Disabled",
+  "Users.List",
+  "Users.New",
+  "Users.Pending",
+  "Users.ViewOrEdit",
+];
 
 function useNavbarActiveState() {
   const currentRoute = useCurrentRoute();
@@ -67,17 +131,16 @@ function useNavbarActiveState() {
         ],
         currentRoute.id
       ),
-      dataSources: includes(["DataSources.List"], currentRoute.id),
       alerts: includes(["Alerts.List", "Alerts.New", "Alerts.View", "Alerts.Edit"], currentRoute.id),
       catalog: currentRoute.id === "Catalog",
       streams: includes(
         ["Streams.Topics", "Streams.Query", "Streams.QueryEdit", "Streams.Running", "Dashboards.Streaming"],
         currentRoute.id
       ),
-      admin: includes(
-        ["Admin.Overview", "Admin.MCP", "Admin.SystemStatus", "Admin.Jobs", "Admin.OutdatedQueries"],
-        currentRoute.id
-      ),
+      settings: includes(SETTINGS_ROUTES, currentRoute.id),
+      // Every Admin page, from the one list that draws the menu -- so a page
+      // added there lights the right tab here without this being touched.
+      admin: (currentRoute.id || "").startsWith("Admin."),
     }),
     [currentRoute.id]
   );
@@ -113,7 +176,7 @@ function useDashboardFolders() {
 }
 
 export default function DesktopNavbar() {
-  const firstSettingsTab = first(settingsMenu.getAvailableItems());
+  const settingsTabs = settingsMenu.getAvailableItems();
   const activeState = useNavbarActiveState();
   const folders = useDashboardFolders();
 
@@ -121,6 +184,7 @@ export default function DesktopNavbar() {
   const canCreateDashboard = currentUser.hasPermission("create_dashboard");
   const canCreateAlert = currentUser.hasPermission("list_alerts");
   const canCreate = canCreateQuery || canCreateDashboard || canCreateAlert;
+  const canUseStreams = currentUser.can("use_streams") || currentUser.can("manage_streams");
 
   const createMenu = (
     <Menu className="desktop-navbar-dropdown-menu">
@@ -148,33 +212,16 @@ export default function DesktopNavbar() {
     </Menu>
   );
 
-  // Everything an admin does, in one place. These pages existed already and
-  // were reachable only through the profile menu, filed next to "Log out" --
-  // which is not where anyone looks when the instance is slow.
+  // Everything an admin does, from the same list that draws the tab strip on
+  // the pages themselves -- Storage and Streams were pages with routes and no
+  // way to reach either, because two hand-written menus had drifted apart.
   const adminMenu = (
-    <Menu className="desktop-navbar-dropdown-menu">
-      <Menu.Item key="admin-overview">
-        <Link href="admin/overview">Overview</Link>
-      </Menu.Item>
-      {/*
-        MCP lives here rather than in the top row: it is an audit of who
-        connected and what they asked for, which is a thing an administrator
-        checks, not a place anyone goes between queries.
-      */}
-      {clientConfig.mcpEnabled && (
-        <Menu.Item key="admin-mcp">
-          <Link href="admin/mcp">MCP</Link>
+    <Menu className="desktop-navbar-dropdown-menu desktop-navbar-described-menu">
+      {adminTabs().map((tab) => (
+        <Menu.Item key={`admin-${tab.key}`}>
+          <MenuEntry href={tab.path} title={tab.title} hint={firstLine(tab.description)} />
         </Menu.Item>
-      )}
-      <Menu.Item key="admin-status">
-        <Link href="admin/status">System Status</Link>
-      </Menu.Item>
-      <Menu.Item key="admin-jobs">
-        <Link href="admin/queries/jobs">RQ Status</Link>
-      </Menu.Item>
-      <Menu.Item key="admin-outdated">
-        <Link href="admin/queries/outdated">Outdated Queries</Link>
-      </Menu.Item>
+      ))}
     </Menu>
   );
 
@@ -208,26 +255,43 @@ export default function DesktopNavbar() {
     </Menu>
   );
 
-  // Streams is a place of its own rather than a kind of query. A topic's
-  // window exists only while somebody is watching it, so a saved query over
-  // one would run against whatever happened to be there -- which is why the
-  // editor does not offer clusters at all and these pages exist instead.
+  // Named for the one thing it connects to. "Streams" invited the question of
+  // what else might be one; every stream in SQLDesk is a Kafka topic, and a
+  // menu that says so stops somebody looking for a Kinesis or a Pulsar that
+  // is not there.
   const streamsMenu = (
     <Menu className="desktop-navbar-dropdown-menu">
       <Menu.Item key="streams-query">
-        <Link href="streams/query">Query a stream</Link>
+        <Link href="streams/query">Streaming Query</Link>
       </Menu.Item>
       <Menu.Item key="streams-dashboards">
-        <Link href="dashboards/streaming">Streaming dashboards</Link>
+        <Link href="dashboards/streaming">Streaming Dashboards</Link>
       </Menu.Item>
       <Menu.Item key="streams-running">
-        <Link href="streams/running">Running streams</Link>
+        <Link href="streams/running">Running Streams</Link>
       </Menu.Item>
+      {/* Not everybody, and not only administrators: an administrator hands
+          `manage_streams` to a group, and whoever knows what the topics are
+          for sets them up. */}
       {currentUser.can("manage_streams") && (
         <Menu.Item key="streams-topics">
-          <Link href="streams/topics">Manage topics</Link>
+          <Link href="streams/topics">Manage Topics</Link>
         </Menu.Item>
       )}
+    </Menu>
+  );
+
+  // Out of the gear on the right and into the row, because what it holds
+  // depends entirely on who you are: an administrator sees data sources,
+  // groups and the organisation's settings; everybody else sees their own
+  // account and their snippets. An icon cannot say that; a named menu can.
+  const settingsNavMenu = (
+    <Menu className="desktop-navbar-dropdown-menu">
+      {settingsTabs.map((tab) => (
+        <Menu.Item key={`settings-${tab.id || tab.path}`}>
+          <Link href={tab.path}>{tab.title}</Link>
+        </Menu.Item>
+      ))}
     </Menu>
   );
 
@@ -241,9 +305,6 @@ export default function DesktopNavbar() {
         how to point one at SQLDesk and what yours has been doing. Reachable
         only from the Admin menu, nobody without super_admin could find it at
         all -- which was the state before this.
-
-        System Status used to be here. It is in the Admin menu now, and a
-        profile menu is not where somebody looks for the queue depth.
       */}
       {currentUser.can("use_mcp") && (
         <Menu.Item key="mcp">
@@ -272,25 +333,24 @@ export default function DesktopNavbar() {
 
       <div className="desktop-navbar-links">
         {currentUser.hasPermission("list_dashboards") && (
-          <Dropdown overlay={dashboardsMenu} trigger={["click"]} placement="bottomLeft">
-            <PlainButton
-              className={cx("desktop-navbar-link", { "desktop-navbar-link-active": activeState.dashboards })}
-              data-test="DashboardsMenuButton"
-            >
-              Dashboards
-              <i className="fa fa-angle-down m-l-5" aria-hidden="true" />
-            </PlainButton>
-          </Dropdown>
+          <NavMenuButton overlay={dashboardsMenu} active={activeState.dashboards} data-test="DashboardsMenuButton">
+            Dashboards
+          </NavMenuButton>
         )}
         {currentUser.hasPermission("view_query") && (
           <NavLink href="queries" active={activeState.queries}>
             Queries
           </NavLink>
         )}
-        {currentUser.hasPermission("list_alerts") && (
-          <NavLink href="alerts" active={activeState.alerts}>
-            Alerts
-          </NavLink>
+        {/*
+          Shown to anyone who may watch a stream, and to anyone who may set
+          topics up. Watching somebody else's running stream needs neither, but
+          somebody with no streams permission at all has nothing to do here.
+        */}
+        {canUseStreams && (
+          <NavMenuButton overlay={streamsMenu} active={activeState.streams} data-test="StreamsMenuButton">
+            Kafka Streams
+          </NavMenuButton>
         )}
         {/*
           Beside the others rather than under Admin: describing a table is
@@ -302,31 +362,20 @@ export default function DesktopNavbar() {
             Catalog
           </NavLink>
         )}
-        {/*
-          Shown to anyone who may watch one, and to anyone who may set topics
-          up. Watching somebody else's running stream needs neither, but
-          somebody with no streams permission at all has nothing to do here.
-        */}
-        {(currentUser.can("use_streams") || currentUser.can("manage_streams")) && (
-          <Dropdown overlay={streamsMenu} trigger={["click"]} placement="bottomLeft">
-            <PlainButton
-              className={cx("desktop-navbar-link", { "desktop-navbar-link-active": activeState.streams })}
-              data-test="StreamsMenuButton"
-            >
-              Streams
-              <i className="fa fa-angle-down m-l-5" aria-hidden="true" />
-            </PlainButton>
-          </Dropdown>
+        {currentUser.hasPermission("list_alerts") && (
+          <NavLink href="alerts" active={activeState.alerts}>
+            Alerts
+          </NavLink>
+        )}
+        {settingsTabs.length > 0 && (
+          <NavMenuButton overlay={settingsNavMenu} active={activeState.settings} data-test="SettingsMenuButton">
+            Settings
+          </NavMenuButton>
         )}
         {currentUser.hasPermission("super_admin") && (
-          <Dropdown overlay={adminMenu} trigger={["click"]} placement="bottomLeft">
-            <PlainButton
-              className={cx("desktop-navbar-link", { "desktop-navbar-link-active": activeState.admin })}
-              data-test="AdminMenuButton"
-            >
-              Admin
-            </PlainButton>
-          </Dropdown>
+          <NavMenuButton overlay={adminMenu} active={activeState.admin} data-test="AdminMenuButton">
+            Admin
+          </NavMenuButton>
         )}
       </div>
 
@@ -337,6 +386,7 @@ export default function DesktopNavbar() {
           <PlainButton className="desktop-navbar-create-button" data-test="CreateButton">
             <PlusOutlinedIcon aria-hidden="true" />
             <span>Create</span>
+            <i className="fa fa-angle-down desktop-navbar-caret" aria-hidden="true" />
           </PlainButton>
         </Dropdown>
       )}
@@ -346,20 +396,10 @@ export default function DesktopNavbar() {
         <span className="sr-only">Help</span>
       </HelpTrigger>
 
-      {firstSettingsTab && (
-        <Link
-          href={firstSettingsTab.path}
-          data-test="SettingsLink"
-          className={cx("desktop-navbar-icon-link", { "desktop-navbar-link-active": activeState.dataSources })}
-        >
-          <SettingOutlinedIcon aria-hidden="true" />
-          <span className="sr-only">Settings</span>
-        </Link>
-      )}
-
       <Dropdown overlay={profileMenu} trigger={["click"]} placement="bottomRight">
         <PlainButton className="desktop-navbar-profile-button" data-test="ProfileDropdown" aria-label="Account menu">
           <img className="profile__image_thumb" src={currentUser.profile_image_url} alt="" />
+          <i className="fa fa-angle-down desktop-navbar-caret" aria-hidden="true" />
         </PlainButton>
       </Dropdown>
     </nav>

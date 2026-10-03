@@ -54,6 +54,7 @@ const EXPECTED = [
   ["Settings.Organization", "/settings/general"],
   ["Catalog", "/catalog"],
   ["Admin.Overview", "/admin/overview"],
+  ["Admin.RunningQueries", "/admin/queries/running"],
   ["Admin.Jobs", "/admin/queries/jobs"],
   ["Admin.OutdatedQueries", "/admin/queries/outdated"],
   ["Admin.SystemStatus", "/admin/status"],
