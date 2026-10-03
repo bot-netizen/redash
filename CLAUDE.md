@@ -2,6 +2,17 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Read `plan/` first
+
+`plan/` holds the working context this file does not: where the project is,
+how a release is named and cut, the local minikube cluster and the traps that
+cost hours, what breaks at scale, the next release's scope, and what is
+waiting on Iqbal. Start at [plan/README.md](plan/README.md).
+
+It is in the repo rather than in Claude's memory on purpose — memory is keyed
+to the directory the repo sits in, and renaming that directory once already
+stranded all of it.
+
 ## What this is
 
 SQLDesk is a web app for querying data sources (35+ SQL/NoSQL backends) and building visualizations/dashboards on top of the results. It's a Flask/Python backend + React/TypeScript frontend, with RQ (Redis Queue) workers handling query execution, scheduling, and alerts asynchronously.

@@ -37,6 +37,43 @@ class TestThePermissionsTable(unittest.TestCase):
         self.assertEqual(invented, set())
 
 
+class TestThePlanDirectory(unittest.TestCase):
+    """
+    `plan/` is the working context a new session reads before anything else,
+    and a plan describing something the code does not do is worse than no
+    plan. These check the few claims in it that a code change can silently
+    falsify -- not the prose, which only a person can keep honest.
+    """
+
+    def plan(self, name):
+        with open(os.path.join(os.path.dirname(DOCS), "plan", name), encoding="utf-8") as f:
+            return f.read()
+
+    def test_every_file_the_index_lists_exists(self):
+        import re
+
+        root = os.path.join(os.path.dirname(DOCS), "plan")
+        listed = set(re.findall(r"\]\((\w[\w.-]*\.md)\)", self.plan("README.md")))
+
+        self.assertTrue(listed, "the index links to nothing")
+        for name in listed:
+            self.assertTrue(os.path.exists(os.path.join(root, name)), "plan/README.md links to a missing " + name)
+
+    def test_the_release_names_match_the_ones_in_the_docs(self):
+        # The naming convention is the thing most likely to drift, because it
+        # is written down in three places and only one of them is code.
+        conventions = self.plan("conventions.md")
+        roadmap = page("roadmap.html")
+
+        for version, name in (("0.4", "Live"), ("0.5", "Interface"), ("0.6", "MCP"), ("0.8", "Notebooks")):
+            self.assertIn(name, conventions)
+            self.assertIn("{} &mdash; {}".format(version, name), roadmap)
+
+    def test_claude_md_sends_people_to_it(self):
+        with open(os.path.join(os.path.dirname(DOCS), "CLAUDE.md"), encoding="utf-8") as f:
+            self.assertIn("plan/README.md", f.read())
+
+
 class TestTheDeploymentDefaults(unittest.TestCase):
     """
     The deploying page tells somebody what is off until they ask for it. If a
